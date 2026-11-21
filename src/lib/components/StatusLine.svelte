@@ -13,7 +13,7 @@
     pick: '←→↑↓ move · shift+↑↓ bigger / smaller · shift+←→ extend · tab jump labels · enter choose · esc cancel',
     hint: 'type a label to jump · esc cancel',
     palette: 'enter accept · ↑↓ choose · esc cancel',
-    label: 'type on the page (click, drag to select) · $…$ math · ←→ ctrl+←→ home end move · shift selects · enter save · esc cancel',
+    label: 'type on the page (click, drag to select) · $…$ math · ←→ ctrl+←→ home end move · shift selects · ctrl+z undo · enter save · esc cancel',
   };
   // a drawing's keys, from the same table as its menu
   const styleHint = $derived(

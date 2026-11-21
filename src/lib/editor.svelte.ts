@@ -37,6 +37,7 @@ export type Loc =
 export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
+type LabelSnap = { text: string; at: number; anchor: number | null };
 export type DrawingAction = { name: string; desc: string; keys: string[]; run: (key?: string) => void; menu?: false; keyOnly?: true };
 export type PaletteItem = { name: string; desc: string; draw?: boolean };
 export type Spacer = { above?: number; below?: number };
@@ -674,7 +675,7 @@ export class Editor {
       e.preventDefault();
       if (!sel) return;
       e.clipboardData?.setData('text/plain', this.label!.text.slice(...sel));
-      if (cut) this.labelInsert('');
+      if (cut) this.labelRecord('other'), this.labelInsert('');
       this.touch();
       return;
     }
@@ -711,6 +712,7 @@ export class Editor {
     const text = e.clipboardData?.getData('text/plain') ?? '';
     e.preventDefault();
     if (this.mode === 'label') {
+      this.labelRecord('other');
       this.labelInsert(text.replace(/\s*\n\s*/g, ' '));
       this.touch();
       return;
@@ -3257,6 +3259,7 @@ export class Editor {
     const d = this.doc.arrows.find((x) => x.id === this.styling) ?? this.stylingMark;
     if (!d) return;
     this.label = { text: d.label, at: at ?? d.label.length, anchor: null };
+    this.labelHist = { undo: [], redo: [], run: null };
     this.setMode('label');
   }
 
@@ -3284,6 +3287,13 @@ export class Editor {
       lb.anchor = null;
     };
     const sel = this.labelSel();
+    switch (k) {
+      case 'C-z': this.labelUndo(-1); return true;
+      case 'C-y': case 'C-S-z': this.labelUndo(1); return true;
+      // a run of single deletes is one undo step
+      case 'Backspace': case 'Delete': this.labelRecord('delete', !sel); break;
+      case 'C-Backspace': case 'C-Delete': this.labelRecord('other'); break;
+    }
     // where a move goes; with Shift it extends the selection, without it collapses it
     const target = (key: string): number | null => {
       switch (key) {
@@ -3307,13 +3317,50 @@ export class Editor {
     }
     switch (k) {
       case 'C-a': lb.anchor = 0; lb.at = t.length; if (!t) lb.anchor = null; return true;
-      case 'Backspace': if (sel) cut(...sel); else if (lb.at > 0) cut(lb.at - 1, lb.at); return true;
+      case 'Backspace': if (sel) cut(...sel); else if (lb.at > 0) cut(lb.at - 1, lb.at); this.labelEdited(); return true;
       case 'C-Backspace': if (sel) cut(...sel); else cut(wordBack(lb.at), lb.at); return true;
-      case 'Delete': if (sel) cut(...sel); else if (lb.at < t.length) cut(lb.at, lb.at + 1); return true;
+      case 'Delete': if (sel) cut(...sel); else if (lb.at < t.length) cut(lb.at, lb.at + 1); this.labelEdited(); return true;
       case 'C-Delete': if (sel) cut(...sel); else cut(lb.at, wordFwd(lb.at)); return true;
     }
-    if (k.length === 1) this.labelInsert(k);
+    // typing on from the last letter typed is one undo step (a space starts a new one)
+    if (k.length === 1) this.labelRecord('type', !sel && /\S/.test(k)), this.labelInsert(k), this.labelEdited();
     return true;
+  }
+
+  /**
+   * Undo history of the note being typed (once kept, the whole note is one step of the
+   * document's history). `run`: the kind of the last edit and where it left the caret, so
+   * typing (or deleting) on from there joins it.
+   */
+  private labelHist: { undo: LabelSnap[]; redo: LabelSnap[]; run: { kind: string; at: number } | null } = { undo: [], redo: [], run: null };
+
+  /** Remember the note before an edit, unless it continues the last one (`joins`). */
+  private labelRecord(kind: 'type' | 'delete' | 'other', joins = false) {
+    const lb = this.label, h = this.labelHist;
+    if (!lb) return;
+    const cont = joins && h.run?.kind === kind && h.run.at === lb.at && lb.anchor === null;
+    if (!cont) h.undo.push({ text: lb.text, at: lb.at, anchor: lb.anchor });
+    if (h.undo.length > 200) h.undo.shift();
+    h.redo = [];
+    h.run = { kind, at: -1 };
+  }
+
+  /** After an edit: where it left the caret, for the next edit to join. */
+  private labelEdited() {
+    const h = this.labelHist;
+    if (h.run && this.label) h.run.at = this.label.at;
+  }
+
+  /** Step back (-1) or forward (1) through the note's history. */
+  private labelUndo(d: -1 | 1) {
+    const lb = this.label, h = this.labelHist;
+    if (!lb) return;
+    const [from, to] = d < 0 ? [h.undo, h.redo] : [h.redo, h.undo];
+    const s = from.pop();
+    if (!s) return this.flash(d < 0 ? 'nothing to undo in this note' : 'nothing to redo in this note');
+    to.push({ text: lb.text, at: lb.at, anchor: lb.anchor });
+    Object.assign(lb, s);
+    h.run = null;
   }
 
   /** Keep the note being typed (trimmed) and go back to the drawing. */
