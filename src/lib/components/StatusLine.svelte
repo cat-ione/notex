@@ -13,12 +13,18 @@
     pick: '←→↑↓ move · shift+↑↓ bigger / smaller · shift+←→ extend · tab jump labels · enter choose · esc cancel',
     hint: 'type a label to jump · esc cancel',
     palette: 'enter accept · ↑↓ choose · esc cancel',
-    label: 'type on the page (click, drag to select) · $…$ math · ←→ ctrl+←→ home end move · shift selects · ctrl+z undo · enter save · esc cancel',
+    label: 'type on the page · $…$ math · ←→ ctrl+←→ home end move · shift selects · ctrl+z undo · enter save · esc cancel',
   };
   // a drawing's keys, from the same table as its menu
   const styleHint = $derived(
     ed.mode === 'style' && ed.styling
-      ? [...ed.drawingActions(ed.styling).filter((a) => !a.keyOnly && a.name !== 'menu').map((a) => `${keyLabel(a.keys[0])} ${a.name}`), 'enter done', 'drag to move · wheel changes it · right-click or shift+f10 for more'].join(' · ')
+      ? [
+          ...(ed.stylingMark ? [] : ['↑↓←→ middle']),
+          // (what the menu shows; the step-by-step keys are in the menu's tooltips and F1)
+          ...ed.drawingActions(ed.styling).filter((a) => a.menu !== false && !a.keyOnly).map((a) => `${keyLabel(a.keys[0])} ${a.name}`),
+          'enter done',
+          'shift+f10 more',
+        ].join(' · ')
       : '',
   );
   // Counts don't need to follow every keystroke: refresh them when typing pauses.
