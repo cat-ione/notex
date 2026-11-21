@@ -79,6 +79,11 @@ type Opts = {
   gap?: number;
   /** Ink on the line, other shapes and notes already placed: notes and leaders keep off these. */
   obstacles?: Rect[];
+  /**
+   * While typing: a row that changed keeps its last layout, each note moved with its
+   * shape, instead of being solved again (see `provisional`).
+   */
+  quick?: boolean;
 };
 
 /** Notes wider than this (px) wrap into a block. */
@@ -260,6 +265,15 @@ export function cost(notes: RowNote[], placed: Placed[], o: Opts): number {
 }
 
 const memo = new Map<string, Placed[]>();
+/** The last layout of each set of notes (by id), with the tips it was made for. */
+const last = new Map<string, { tips: Map<string, { x: number; y: number }>; res: Placed[] }>();
+let provisionals = 0;
+/** How many rows were given a quick layout since the last call (they want solving later). */
+export function provisional() {
+  const n = provisionals;
+  provisionals = 0;
+  return n;
+}
 
 /**
  * Lay out the notes of one line and side (memoised: rows are laid out again on
@@ -289,13 +303,31 @@ export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
       box: { ...p.box, x: p.box.x + dx, y: p.box.y + dy },
       leader: p.leader && [p.leader[0] + dx, p.leader[1] + dy, p.leader[2] + dx, p.leader[3] + dy],
     }));
-  if (hit) return shift(hit, ox, oy);
+  // (a note's text is part of it: a changed text has to be measured and solved again)
+  const ids = notes.map((n) => JSON.stringify([n.id, n.key ?? ''])).sort().join('|');
+  const remember = (res: Placed[]) => {
+    if (last.size > 400) last.clear();
+    last.set(ids, { tips: new Map(notes.map((n) => [n.id, n.tip])), res });
+    return res;
+  };
+  // (a hit may come from another row laid out the same way: results are in the notes' order)
+  if (hit) return remember(shift(hit, ox, oy).map((p, k) => ({ ...p, id: notes[k].id })));
+  const prev = o.quick ? last.get(ids) : undefined;
+  if (prev) {
+    provisionals++;
+    return remember(
+      prev.res.map((p) => {
+        const a = prev.tips.get(p.id)!, b = notes.find((n) => n.id === p.id)!.tip;
+        return shift([p], b.x - a.x, b.y - a.y)[0];
+      }),
+    );
+  }
   const res = solveRow(notes, { ...o, obstacles });
   if (key !== null) {
     if (memo.size > 400) memo.clear();
     memo.set(key, shift(res, -ox, -oy));
   }
-  return res;
+  return remember(res);
 }
 
 /**

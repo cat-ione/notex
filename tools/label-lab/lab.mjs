@@ -18,6 +18,8 @@ await page.setViewportSize({ width: 1000, height: 900 });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
 await page.goto(process.env.URL ?? 'http://127.0.0.1:1420/');
 await page.waitForFunction(() => window.__nx);
+// the scenarios are measured whole, not just what is on screen
+await page.evaluate(() => (window.__nx.ed.cullScreens = Infinity));
 await page.evaluate(() => document.fonts.ready);
 
 const all = [];

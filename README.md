@@ -16,7 +16,7 @@ pnpm test          # unit tests
 With `pnpm dev` running (or a production build served with `?lab` in the URL):
 
 ```sh
-node tools/perf/perf.mjs [--profile[=action]]   # editing speed on large notes
+node tools/perf/perf.mjs [--profile[=action]] [--file=note.ntx]   # editing speed on large notes
 node tools/label-lab/lab.mjs <name>             # note layout scenarios + typing check
 ```
 

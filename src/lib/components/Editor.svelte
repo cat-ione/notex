@@ -40,12 +40,12 @@
     const ro = new ResizeObserver(() => {
       if (page.clientWidth === width) return;
       width = page.clientWidth;
-      ed.layout();
+      ed.relayoutAll();
     });
     ro.observe(page);
-    document.fonts?.ready.then(() => ed.layout());
+    document.fonts?.ready.then(() => ed.relayoutAll());
     // KaTeX loads some fonts (big delimiters, scripts) only when first used, which moves glyphs
-    const relayout = () => (ed.fontEpoch++, ed.layout());
+    const relayout = () => (ed.fontEpoch++, ed.relayoutAll());
     document.fonts?.addEventListener('loadingdone', relayout);
     return () => {
       document.fonts?.removeEventListener('loadingdone', relayout);
@@ -88,7 +88,7 @@
 
 <div class="shell">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="scroller" onmousedown={(e) => ed.mouseDown(e)}>
+  <div class="scroller" onmousedown={(e) => ed.mouseDown(e)} onscroll={() => ed.scrolled()}>
     <div class="page" bind:this={page}>
       <MarkLayer {ed} under />
       {#each ed.selRects as r, i (i)}
@@ -201,6 +201,11 @@
     position: relative;
     padding-left: 0;
     transition: background-color 200ms ease;
+    /* off-screen blocks skip rendering (long notes: every character is an element);
+       their last size is remembered so the page doesn't jump */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 2.1em;
+    overflow-clip-margin: 40px;
   }
   .block::before {
     content: '';
