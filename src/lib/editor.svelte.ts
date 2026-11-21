@@ -1004,7 +1004,15 @@ export class Editor {
       this.followed = this.version;
       this.followUntil = performance.now() + 300;
     }
-    if (performance.now() < this.followUntil) page.querySelector('.caret')?.scrollIntoView({ block: 'nearest' });
+    if (performance.now() < this.followUntil && caret) {
+      // from the caret just computed: the caret element still shows the old position until
+      // the next render, and scrolling to that would jump back to where the caret was
+      const scroller = page.parentElement!;
+      const view = scroller.getBoundingClientRect();
+      const top = origin.top + caret.r.y, bottom = top + caret.r.h, M = 8;
+      if (top < view.top + M) scroller.scrollTop -= view.top + M - top;
+      else if (bottom > view.bottom - M) scroller.scrollTop += bottom - (view.bottom - M);
+    }
   }
   private followed = -1;
   private followUntil = 0;
