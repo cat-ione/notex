@@ -14,7 +14,7 @@
 import { tick } from 'svelte';
 import { arrowGeo, bendThrough, defaultBend, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
-import { besideNote, layoutRow, measureLabel, provisional, type RowNote } from './labels';
+import { besideNote, labelOffsetAt, layoutRow, measureLabel, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
@@ -844,6 +844,8 @@ export class Editor {
     const h = this.hitTest(e.clientX, e.clientY);
     if (!h) return;
     if (this.mode === 'palette') this.closePalette();
+    // clicking away from a note being typed keeps it, as leaving a text field would
+    if (this.mode === 'label' && this.label) this.commitLabel();
     this.styling = null;
     this.hints = null;
     this.label = null;
@@ -907,6 +909,88 @@ export class Editor {
     if (this.msel === this.mc.off) this.msel = null;
   }
 
+  // ── notes and the mouse ──
+
+  /** The drawing under the mouse (its outline or its note), highlighted with its note. */
+  hovered = $state<Id | null>(null);
+
+  hover(id: Id, on: boolean) {
+    if (on) this.hovered = id;
+    else if (this.hovered === id) this.hovered = null;
+  }
+
+  /** Selecting inside the note being typed by dragging. */
+  private labelDrag: { id: Id } | null = null;
+  /** A press on a note: a drag from it moves the note. */
+  private noteDrag: { id: Id; x: number; y: number; moved: boolean } | null = null;
+
+  /** The note element for a drawing (not the offscreen one notes are measured with). */
+  private noteEl(id: Id): HTMLElement | null {
+    return this.page?.querySelector<HTMLElement>(`.dlabel[data-id="${id}"]`) ?? null;
+  }
+
+  /**
+   * A press on a note. In the note being typed: place the caret there (Shift extends the
+   * selection, a double press takes the word, a triple one everything). Otherwise: select
+   * its drawing, and a drag from here moves the note.
+   */
+  noteDown(id: Id, e: MouseEvent) {
+    this.withFrame(() => {
+      this.menu = null;
+      const lb = this.label;
+      if (this.mode === 'label' && lb && this.styling === id) {
+        const at = labelOffsetAt(e.currentTarget as Element, e.clientX, e.clientY);
+        const t = lb.text;
+        if (e.detail >= 3) (lb.anchor = 0), (lb.at = t.length);
+        else if (e.detail === 2) {
+          let a = at, b = at;
+          while (a > 0 && !/\s/.test(t[a - 1])) a--;
+          while (b < t.length && !/\s/.test(t[b])) b++;
+          (lb.anchor = a), (lb.at = b);
+        } else if (e.shiftKey) (lb.anchor ??= lb.at), (lb.at = at);
+        else (lb.anchor = null), (lb.at = at);
+        if (lb.anchor === lb.at) lb.anchor = null;
+        this.labelDrag = e.detail === 1 ? { id } : null;
+        this.touch();
+        return;
+      }
+      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      this.noteDrag = { id, x: e.clientX, y: e.clientY, moved: false };
+      this.touch();
+    });
+  }
+
+  /** Double-click on a note: type in it, the caret where it was clicked. */
+  noteDblClick(id: Id, e: MouseEvent) {
+    if (this.mode === 'label' && this.styling === id) return; // a double press in it selects a word
+    const at = labelOffsetAt(e.currentTarget as Element, e.clientX, e.clientY);
+    this.withFrame(() => {
+      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      this.editNote(at);
+      this.touch();
+    });
+  }
+
+  /** Double-click on a drawing: type its note (a new one, or at the end of the one it has). */
+  editNoteOf(id: Id) {
+    this.withFrame(() => {
+      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      this.editNote();
+      this.touch();
+    });
+  }
+
+  private dragLabelSel(e: MouseEvent) {
+    const lb = this.label, el = this.labelDrag && this.noteEl(this.labelDrag.id);
+    if (!lb || !el || this.mode !== 'label') return void (this.labelDrag = null);
+    const at = labelOffsetAt(el, e.clientX, e.clientY);
+    if (at !== lb.at) (lb.anchor ??= lb.at), (lb.at = at);
+    if (lb.anchor === lb.at) lb.anchor = null;
+    this.touch();
+  }
+
+  private dragNote(_e: MouseEvent) {}
+
   /** Dragging a handle of the selected arrow. */
   private handleDrag: { id: Id; part: 'from' | 'to' | 'bend' } | null = null;
 
@@ -934,12 +1018,14 @@ export class Editor {
   }
 
   mouseMove(e: MouseEvent) {
-    if (!this.handleDrag && !this.dragging) return;
+    if (!this.handleDrag && !this.dragging && !this.labelDrag && !this.noteDrag) return;
     this.withFrame(() => this.mouseMoveInner(e));
   }
 
   private mouseMoveInner(e: MouseEvent) {
     if (this.handleDrag) return this.dragHandle(e);
+    if (this.labelDrag) return this.dragLabelSel(e);
+    if (this.noteDrag) return this.dragNote(e);
     if (!this.dragging) return;
     const h = this.hitTest(e.clientX, e.clientY);
     if (!h) return;
@@ -969,6 +1055,8 @@ export class Editor {
   mouseUp() {
     this.dragging = false;
     this.mathDrag = null;
+    this.labelDrag = null;
+    this.noteDrag = null;
     const hd = this.handleDrag;
     this.handleDrag = null;
     if (hd && hd.part !== 'bend' && this.pick?.edit) {
@@ -2524,6 +2612,7 @@ export class Editor {
 
   /** Enter style mode for an arrow or mark. */
   selectDrawing(id: Id) {
+    if (this.mode === 'label' && this.label) this.commitLabel();
     this.anchor = null;
     this.hints = null;
     this.palette = null;
@@ -2863,7 +2952,6 @@ export class Editor {
   /** Select a drawing and open its menu at (x, y), or under the drawing (from the keyboard). */
   openDrawingMenu(id: Id, x?: number, y?: number) {
     this.withFrame(() => {
-      if (this.mode === 'label') this.commitLabel();
       if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
       if (x === undefined || y === undefined) {
         const r = this.drawingRect(id), o = this.page?.getBoundingClientRect();

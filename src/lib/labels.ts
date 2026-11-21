@@ -31,8 +31,17 @@ export function renderLabel(text: string, edit?: { at: number; anchor: number | 
   let html = htmlCache.get(key);
   if (html !== undefined) return html;
   const parts = text.split(/(\$[^$]+\$)/);
-  if (!edit) html = parts.map((p) => (/^\$[^$]+\$$/.test(p) ? katexHtml(p.slice(1, -1)) : esc(p))).join('');
-  else {
+  // each part says where it starts in the text (and a $math$ part where it ends), so a
+  // click can be turned back into a caret offset (labelOffsetAt)
+  const wrap = (h: string, start: number, end?: number) => (h ? `<span data-o="${start}"${end === undefined ? '' : ` data-e="${end}"`}>${h}</span>` : '');
+  if (!edit) {
+    let pos = 0;
+    html = parts.map((p) => {
+      const start = pos;
+      pos += p.length;
+      return /^\$[^$]+\$$/.test(p) ? wrap(katexHtml(p.slice(1, -1)), start, pos) : wrap(esc(p), start);
+    }).join('');
+  } else {
     const { at: caret } = edit;
     const [s, e] = edit.anchor === null ? [caret, caret] : [Math.min(edit.anchor, caret), Math.max(edit.anchor, caret)];
     const sel = (h: string) => `<span class="lsel">${h}</span>`;
@@ -44,7 +53,7 @@ export function renderLabel(text: string, edit?: { at: number; anchor: number | 
         const here = !placed && caret >= start && caret <= end && (caret < end || end === text.length || /^\$[^$]+\$$/.test(p));
         if (here) placed = true;
         if (/^\$[^$]+\$$/.test(p)) {
-          const h = s < end && e > start ? sel(katexHtml(p.slice(1, -1))) : katexHtml(p.slice(1, -1));
+          const h = wrap(s < end && e > start ? sel(katexHtml(p.slice(1, -1))) : katexHtml(p.slice(1, -1)), start, end);
           return here ? (caret === start ? CARET + h : h + CARET) : h;
         }
         // prose, character by character: the caret before its offset, the selection wrapped
@@ -57,7 +66,7 @@ export function renderLabel(text: string, edit?: { at: number; anchor: number | 
           if (inSel && !open) (out += '<span class="lsel">'), (open = true);
           out += esc(text[i]);
         }
-        return out;
+        return wrap(out, start);
       })
       .join('');
     if (!text) html = CARET;
@@ -493,4 +502,41 @@ export function besideNote(shape: Rect, size: { w: number; h: number }, o: { lef
   if (!best) return null;
   const { d, box, side } = best;
   return { box, leader: d > NEAR ? (side < 0 ? [shape.x, cy, box.x + box.w, cy] : [shape.x + shape.w, cy, box.x, cy]) : null };
+}
+
+/**
+ * The text offset in a note (as drawn by renderLabel) at a window point: within prose,
+ * the nearest character boundary; on a $math$ part, whichever of its ends is nearer.
+ */
+export function labelOffsetAt(el: Element, x: number, y: number): number {
+  const parts = [...el.querySelectorAll<HTMLElement>(':scope > [data-o]')];
+  if (!parts.length) return 0;
+  const len = (p: HTMLElement) => (p.dataset.e !== undefined ? +p.dataset.e - +p.dataset.o! : (p.textContent ?? '').length);
+  // the part under the point, else the nearest (a wrapped note: lines first, then sideways)
+  let best = parts[0], bestD = Infinity;
+  for (const p of parts)
+    for (const r of p.getClientRects()) {
+      const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      const d = dy * 1000 + dx;
+      if (d < bestD) (bestD = d), (best = p);
+    }
+  const o = +best.dataset.o!;
+  if (best.dataset.e !== undefined) {
+    const r = best.getBoundingClientRect();
+    return x < r.left + r.width / 2 ? o : +best.dataset.e;
+  }
+  const r = best.getBoundingClientRect();
+  if (bestD > 0 && x <= r.left) return o;
+  if (bestD > 0 && x >= r.right) return o + len(best);
+  // inside prose: the character boundary the browser puts the caret at
+  const doc = el.ownerDocument as Document & { caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null };
+  const cp = doc.caretPositionFromPoint?.(x, y);
+  const hit = cp ? { node: cp.offsetNode, off: cp.offset } : (() => { const rg = doc.caretRangeFromPoint?.(x, y); return rg ? { node: rg.startContainer, off: rg.startOffset } : null; })();
+  if (!hit || !best.contains(hit.node) || hit.node.nodeType !== Node.TEXT_NODE) return x < r.left + r.width / 2 ? o : o + len(best);
+  // characters before it in this part (the selection and caret spans split the text)
+  let n = 0;
+  const walk = doc.createTreeWalker(best, NodeFilter.SHOW_TEXT);
+  for (let t = walk.nextNode(); t && t !== hit.node; t = walk.nextNode()) n += t.textContent?.length ?? 0;
+  return o + n + hit.off;
 }

@@ -38,7 +38,7 @@
     {#if g}
       {@const sel = ed.styling === a.id}
       {@const head = sel && !a.color ? 'url(#nx-head-sel)' : marker(a.color)}
-      <g data-id={a.id} class="arrow" class:sel class:inked={!!a.color} class:ghost={ed.pick?.edit?.id === a.id} style="--ink: {inkVar(a.color)}">
+      <g data-id={a.id} class="arrow" class:sel class:hover={ed.hovered === a.id} class:inked={!!a.color} class:ghost={ed.pick?.edit?.id === a.id} style="--ink: {inkVar(a.color)}">
         {#if a.boxed}
           <rect class="box" x={g.from.x} y={g.from.y} width={g.from.w} height={g.from.h} rx="4" in:fade={{ duration: 150 }} />
           <rect class="box" x={g.to.x} y={g.to.y} width={g.to.w} height={g.to.h} rx="4" in:fade={{ duration: 150 }} />
@@ -56,6 +56,9 @@
           d={g.d}
           onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(a.id); }}
           oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(a.id, e.clientX, e.clientY); }}
+            ondblclick={(e) => { e.stopPropagation(); ed.editNoteOf(a.id); }}
+            onpointerenter={() => ed.hover(a.id, true)}
+            onpointerleave={() => ed.hover(a.id, false)}
         />
         {#if sel && ed.mode === 'style'}
           {#each [['from', g.p0], ['to', g.p2], ['bend', g.mid]] as const as [part, p] (part)}
@@ -107,6 +110,10 @@
   .sel.inked path {
     stroke: var(--ink);
     filter: drop-shadow(0 0 3px var(--ink));
+  }
+  .clickable .hover:not(.sel) path:not(.hit) {
+    stroke-width: 2;
+    filter: drop-shadow(0 0 2px var(--ink, var(--arrow)));
   }
   .ghost {
     opacity: 0.25;

@@ -74,10 +74,12 @@ describe('layoutRow', () => {
 
 describe('renderLabel caret', () => {
   const C = '<span class="lcaret"></span>';
+  // a prose part as drawn: tagged with where it starts in the text
+  const w = (o: number, h: string) => `<span data-o="${o}">${h}</span>`;
   it('sits between characters without replacing any', () => {
-    expect(renderLabel('abc', { at: 1, anchor: null })).toBe(`a${C}bc`);
-    expect(renderLabel('abc', { at: 0, anchor: null })).toBe(`${C}abc`);
-    expect(renderLabel('abc', { at: 3, anchor: null })).toBe(`abc${C}`);
+    expect(renderLabel('abc', { at: 1, anchor: null })).toBe(w(0, `a${C}bc`));
+    expect(renderLabel('abc', { at: 0, anchor: null })).toBe(w(0, `${C}abc`));
+    expect(renderLabel('abc', { at: 3, anchor: null })).toBe(w(0, `abc${C}`));
   });
   it('shows in an empty label', () => {
     expect(renderLabel('', { at: 0, anchor: null })).toBe(C);
@@ -86,16 +88,22 @@ describe('renderLabel caret', () => {
     const html = renderLabel('a $x+y$ b', { at: 5, anchor: null });
     expect(html.split(C).length).toBe(2);
     expect(html.indexOf(C)).toBeGreaterThan(html.lastIndexOf('katex'));
-    expect(renderLabel('a $x$', { at: 2, anchor: null }).indexOf(C)).toBe(2); // right before the math
+    expect(renderLabel('a $x$', { at: 2, anchor: null }).startsWith(w(0, 'a ') + C)).toBe(true); // right before the math
     expect(renderLabel('a $x$', { at: 5, anchor: null }).endsWith(C)).toBe(true);
     for (let i = 0; i <= 'p $x$ q $y$'.length; i++) expect(renderLabel('p $x$ q $y$', { at: i, anchor: null }).split(C).length).toBe(2);
   });
   it('highlights the selection, a math part it touches as a whole', () => {
-    expect(renderLabel('abcd', { at: 3, anchor: 1 })).toBe(`a<span class="lsel">bc</span>${C}d`);
-    expect(renderLabel('abcd', { at: 1, anchor: 3 })).toBe(`a${C}<span class="lsel">bc</span>d`);
+    expect(renderLabel('abcd', { at: 3, anchor: 1 })).toBe(w(0, `a<span class="lsel">bc</span>${C}d`));
+    expect(renderLabel('abcd', { at: 1, anchor: 3 })).toBe(w(0, `a${C}<span class="lsel">bc</span>d`));
     const m = renderLabel('a $x$ b', { at: 3, anchor: 0 });
-    expect(m.startsWith('<span class="lsel">a </span>')).toBe(true);
+    expect(m.startsWith(w(0, '<span class="lsel">a </span>'))).toBe(true);
     expect(m).toMatch(/<span class="lsel"><span class="katex"/);
+  });
+  it('tags each part with its offsets, so a click maps back to the text', () => {
+    const h = renderLabel('ab $x$ c');
+    expect(h.startsWith(w(0, 'ab '))).toBe(true);
+    expect(h).toContain('<span data-o="3" data-e="6">');
+    expect(h.endsWith(w(6, ' c'))).toBe(true);
   });
 });
 

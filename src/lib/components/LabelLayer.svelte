@@ -32,9 +32,13 @@
     }
     return out;
   });
+
+  // notes answer the mouse where drawings do (and while one is being typed)
+  const live = $derived(ed.mode === 'text' || ed.mode === 'math' || ed.mode === 'style' || ed.mode === 'label');
 </script>
 
 {#each labels as l (l.id)}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     data-id={l.id}
     class="dlabel"
@@ -44,6 +48,13 @@
     class:inked={!!l.color}
     class:wrapped={!!l.maxW}
     class:typing={!!l.edit}
+    class:live
+    class:hover={ed.hovered === l.id}
+    onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.noteDown(l.id, e); }}
+    ondblclick={(e) => { e.stopPropagation(); ed.noteDblClick(l.id, e); }}
+    oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(l.id, e.clientX, e.clientY); }}
+    onpointerenter={() => ed.hover(l.id, true)}
+    onpointerleave={() => ed.hover(l.id, false)}
     style="left: {l.x}px; top: {l.y}px; --ink: {inkVar(l.color)};{l.maxW ? ` max-width: ${l.maxW}px;` : ''}"
     in:fade={{ duration: 200 }}
   >
@@ -78,6 +89,21 @@
   }
   :global(.dlabel.sel:not(.inked)) {
     color: var(--accent);
+  }
+  :global(.dlabel.live) {
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  :global(.dlabel.live.sel) {
+    cursor: grab;
+  }
+  :global(.dlabel.live.typing) {
+    cursor: text;
+  }
+  /* hovering a note or its drawing shows them together */
+  :global(.dlabel.live.hover) {
+    background: color-mix(in srgb, var(--ink) 14%, var(--bg));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 45%, transparent);
   }
   :global(.dlabel.ghost) {
     opacity: 0.25;

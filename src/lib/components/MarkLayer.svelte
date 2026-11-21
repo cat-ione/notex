@@ -15,7 +15,7 @@
     {@const g = ed.markGeos[m.id]}
     {#if g && g.filled === under}
       {@const sel = ed.styling === m.id}
-      <g data-id={m.id} class="mark {m.kind}" class:sel class:ghost={ed.pick?.edit?.id === m.id} style="--ink: {inkVar(m.color)}">
+      <g data-id={m.id} class="mark {m.kind}" class:sel class:hover={ed.hovered === m.id} class:ghost={ed.pick?.edit?.id === m.id} style="--ink: {inkVar(m.color)}">
         {#if g.filled}
           <path class="fill" d={g.d} in:fade={{ duration: 200 }} />
         {:else}
@@ -29,6 +29,9 @@
             d={g.d}
             onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(m.id); }}
             oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(m.id, e.clientX, e.clientY); }}
+            ondblclick={(e) => { e.stopPropagation(); ed.editNoteOf(m.id); }}
+            onpointerenter={() => ed.hover(m.id, true)}
+            onpointerleave={() => ed.hover(m.id, false)}
           />
         {/if}
       </g>
@@ -73,6 +76,10 @@
   .sel .line {
     stroke-width: 2.2;
     filter: drop-shadow(0 0 3px var(--ink));
+  }
+  .clickable .hover:not(.sel) .line {
+    stroke-width: 2;
+    filter: drop-shadow(0 0 2px var(--ink));
   }
   .sel .fill {
     opacity: 0.38;
