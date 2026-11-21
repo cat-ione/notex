@@ -247,10 +247,14 @@ export const AUTO_REPLACE: Record<string, string> = {
   del: '\\partial',
   grad: '\\nabla',
 };
-for (const f of 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh log ln exp det dim ker deg arg gcd'.split(' '))
+for (const f of 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh log ln exp det dim ker deg arg gcd max min sup inf Pr liminf limsup'.split(' '))
   AUTO_REPLACE[f] = '\\' + f;
-for (const g of 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda sigma upsilon phi chi psi omega rho tau Gamma Delta Theta Lambda Sigma Phi Psi Omega'.split(' '))
+for (const f of 'sgn rank span'.split(' ')) AUTO_REPLACE[f] = `\\operatorname{${f}}`;
+for (const g of 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi pi sigma upsilon phi chi psi omega rho tau Gamma Delta Theta Lambda Xi Pi Sigma Phi Psi Omega infty'.split(' '))
   AUTO_REPLACE[g] = '\\' + g;
+
+/** Big operators that, with LaTeX-style scripts, become the bare symbol (limits come from `_` / `^`). */
+export const BARE_OPS: Record<string, string> = { sum: '\\sum', prod: '\\prod', int: '\\int', lim: '\\lim' };
 
 /** Auto-replacements that produce structure (big operators with limits). */
 export const AUTO_STRUCT: Record<string, Inserter> = {

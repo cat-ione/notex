@@ -23,6 +23,12 @@ export type Config = {
   themes: Record<string, ThemeDef>;
   /** Extra CSS appended to the page. */
   css: string;
+  typing: {
+    /** Math: `^` / `_` take one thing (`x^2+1`), as in LaTeX; off: stay in the script until space. */
+    latexScripts: boolean;
+    /** Text: `x^2` or `a_n` typed in prose turns into math. */
+    autoMath: boolean;
+  };
 };
 
 export const BUILTIN_THEMES = ['midnight', 'phosphor', 'paper'];
@@ -54,6 +60,7 @@ export const DEFAULT_CONFIG: Config = {
     },
   },
   css: '',
+  typing: { latexScripts: true, autoMath: true },
 };
 
 const LOCAL_KEY = 'notex.config';
@@ -70,6 +77,7 @@ export function withDefaults(user: Partial<Config> | null | undefined): Config {
       text: u.snippets?.text ?? DEFAULT_CONFIG.snippets.text,
     },
     themes: u.themes ?? DEFAULT_CONFIG.themes,
+    typing: { ...DEFAULT_CONFIG.typing, ...(u.typing ?? {}) },
   };
 }
 

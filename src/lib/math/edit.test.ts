@@ -13,7 +13,7 @@ function typed(keys: string) {
     if (k === '‹') M.backspace(root, cur);
     else if (k === '→') M.moveRight(root, cur);
     else if (k === '←') M.moveLeft(root, cur);
-    else if (k === '␣') M.exitStructure(root, cur);
+    else if (k === '␣') M.space(root, cur);
     else if (k === '⇥') M.nextSlot(root, cur);
     else M.typeChar(root, cur, k);
   }
@@ -30,7 +30,7 @@ describe('typing math', () => {
     ['12/b', '\\frac{12}{b}'],
     ['x+a/b', 'x+\\frac{a}{b}'],
     ['(a+b)/c', '\\frac{a+b}{c}'],
-    ['x^2/2', 'x^{\\frac{2}{2}}'],
+    ['x^2/2', '\\frac{x^{2}}{2}'],
     ['/', '\\frac{}{}'],
     ['f(x)', 'f(x)'],
     ['(a/b)', '\\left(\\frac{a}{b}\\right)'],
@@ -49,12 +49,62 @@ describe('typing math', () => {
     expect(typed(keys).tex).toBe(tex);
   });
 
-  it('sum opens limits and tab moves between them', () => {
-    expect(typed('sumi=1⇥n').tex).toBe('\\sum _{i=1}^{n}');
+  it('sum opens limits and tab moves between them (scripts that stay open)', () => {
+    M.setLatexScripts(false);
+    try {
+      expect(typed('sumi=1⇥n').tex).toBe('\\sum _{i=1}^{n}');
+      expect(typed('x^2+1').tex).toBe('x^{2+1}');
+    } finally {
+      M.setLatexScripts(true);
+    }
   });
 
   it('closing paren leaves the delimiter', () => {
     expect(typed('(a)b').tex).toBe('(a)b');
+  });
+});
+
+describe('LaTeX-style scripts', () => {
+  it.each([
+    // one thing, then back on the line
+    ['x^2+1', 'x^{2}+1'],
+    ['x^10y', 'x^{10}y'],
+    ['x^ab', 'x^{a}b'],
+    ['e^-x', 'e^{-x}'],
+    ['x_1^2', 'x_{1}^{2}'],
+    ['a_0^2/2', '\\frac{a_{0}^{2}}{2}'],
+    ['x^alpha+1', 'x^{\\alpha }+1'],
+    ['x^infty', 'x^{\\infty }'],
+    // a group in brackets that don't show
+    ['e^(-x^2/2)', 'e^{-\\frac{x^{2}}{2}}'],
+    ['x^{n+1}', 'x^{n+1}'],
+    ['f(x^2)', 'f\\left(x^{2}\\right)'],
+    // big operators: limits as you'd write them in LaTeX
+    ['int_0^(2pi)', '\\int _{0}^{2\\pi }'],
+    ['sum_(n=1)^oo a_n', '\\sum _{n=1}^{\\infty }a_{n}'],
+    ['lim_(x->0)', '\\lim _{x\\to 0}'],
+    ['int f', '\\int f'],
+    // spaces inside brackets don't leave them
+    ['(a + b)/2', '\\frac{a+b}{2}'],
+    ['(a_n^2 + b_n^2)', '\\left(a_{n}^{2}+b_{n}^{2}\\right)'],
+    ['e^(a + b)', 'e^{a+b}'],
+    // more symbols and functions
+    ['1/pi', '\\frac{1}{\\pi }'],
+    ['max f', '\\max f'],
+    ['sgn x', '\\operatorname{sgn}x'],
+  ])('%s → %s', (keys, tex) => {
+    expect(typed(keys.replace(/ /g, '␣')).tex).toBe(tex);
+  });
+
+  it('a big operator from the palette: _ stays in the lower limit, ^ goes to the upper', () => {
+    const root: MRow = [];
+    const cur: MCursor = { path: [], off: 0 };
+    M.insertNode(root, cur, cmd('subsup', [[], []]), 0);
+    M.typeChar(root, cur, '_');
+    M.typeChar(root, cur, '0');
+    M.typeChar(root, cur, '^');
+    M.typeChar(root, cur, '1');
+    expect(toLatex(root).replace(/\s+/g, '')).toBe('{}_{0}^{1}');
   });
 });
 
@@ -176,7 +226,7 @@ describe('selection ranges', () => {
   });
 
   it('keeps a big operator and its limits together with the caret between them', () => {
-    const { root } = typed('int0⇥1⇥');
+    const { root } = typed('int_0^1');
     // caret right after the operator, before its limits: emitted after the limits
     const tex = toLatex(root, true, { path: [], off: 1 });
     expect(tex).toMatch(/^\\htmlData\{nx=[^}]+\}\{\\int.*\}\\htmlClass\{nx-caret nx-caret-script\}\{\}$/);

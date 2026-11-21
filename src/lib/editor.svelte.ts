@@ -2437,9 +2437,12 @@ export class Editor {
     const cur = this.mc;
     const leader = this.pending === ';';
     this.pending = '';
+    // a key that isn't typing ends LaTeX-style scripts in progress (the caret may go anywhere)
+    if (k.length !== 1 && cur.auto) cur.auto = undefined;
 
     if (leader && k.length === 1) {
       this.checkpoint('type');
+      M.settleAuto(root, cur, '\\'); // a symbol: one thing of its own
       if (k === ';') M.insertNode(root, cur, sym(';'));
       else if (GREEK_LEADER[k]) M.insertNode(root, cur, sym('\\' + GREEK_LEADER[k]));
       else M.typeChar(root, cur, k);
@@ -2514,7 +2517,7 @@ export class Editor {
         } else this.exitMath(true);
         return true;
       case ' ':
-        M.exitStructure(root, cur);
+        M.space(root, cur);
         return true;
       case ';': this.pending = ';'; return true;
       case '\\': this.openPalette('math'); return true;
@@ -2699,6 +2702,7 @@ export class Editor {
         }
         M.takeRange(item.root, this.mc, range.s, range.e);
       }
+      M.settleAuto(item.root, this.mc, '\\');
       if (key && user[key] !== undefined) M.insertParsed(item.root, this.mc, parseLatex(user[key]));
       else if (key && MATH_PALETTE[key]) M.applyInserter(item.root, this.mc, MATH_PALETTE[key]);
       else if (q) M.insertNode(item.root, this.mc, sym('\\' + q));
@@ -2762,6 +2766,7 @@ export class Editor {
     this.config = c;
     C.applyConfig(c);
     M.setMathSnippets(c.snippets.math);
+    M.setLatexScripts(c.typing.latexScripts);
     this.geoEpoch++; // sizes may have changed
     this.touch();
   }

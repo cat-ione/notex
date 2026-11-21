@@ -6,7 +6,7 @@
 // returning false at the root boundary lets the caller exit the math item.
 
 import { cmd, sym, type MCmd, type MNode, type MRow } from '../model';
-import { AUTO_REPLACE, AUTO_STRUCT, CMDS, OPENERS, type Inserter } from './defs';
+import { AUTO_REPLACE, AUTO_STRUCT, BARE_OPS, CMDS, OPENERS, type Inserter } from './defs';
 import type { MCursor, Step } from './latex';
 import { caretFor, parseLatex, type Parsed } from './parse';
 
@@ -330,6 +330,14 @@ export function fraction(root: MRow, cur: MCursor) {
 /** `^` / `_`: attach a script, merging into an adjacent one when possible. */
 export function script(root: MRow, cur: MCursor, kind: 'sup' | 'sub') {
   const r = rowAt(root, cur.path);
+  // in an empty limit already (∑ from the palette): `_` stays in the lower one, `^` goes up
+  const here = parentOf(root, cur);
+  if (here && !r.length && here.node.name === 'subsup') {
+    cur.path[cur.path.length - 1] = { ...here.step, s: kind === 'sub' ? 0 : 1 };
+    cur.off = rowAt(root, cur.path).length;
+    return;
+  }
+  if (here && !r.length && here.node.name === kind) return;
   // `x_1^2`: at the end of a subscript, `^` adds a superscript to the same base (and vice versa).
   const p = parentOf(root, cur);
   const other = kind === 'sup' ? 'sub' : 'sup';
@@ -357,6 +365,86 @@ export function exitStructure(root: MRow, cur: MCursor): boolean {
   return exitAfter(root, cur);
 }
 
+/**
+ * LaTeX-style scripts: `^` / `_` take one thing (a number, a letter, a symbol, a sign and
+ * one of those, or a group typed as `(…)` / `{…}` whose brackets don't show) and the
+ * line carries on after it, so `x^2+1` and `a_0^2/2` come out as written.
+ */
+let latexScripts = true;
+export function setLatexScripts(on: boolean) {
+  latexScripts = on;
+}
+
+const samePath = (a: Step[], b: Step[]) => a.length === b.length && a.every((x, i) => x.i === b[i].i && x.s === b[i].s);
+const startsWith = (p: Step[], pre: Step[]) => pre.length <= p.length && pre.every((x, i) => x.i === p[i].i && x.s === p[i].s);
+
+/** Does typing `c` continue the one thing in a LaTeX-style script slot? */
+function continues(slot: MRow, c: string): boolean {
+  const pieces = slot.map((n) => (n.k === 'sym' ? (n.src ?? n.v) : null));
+  if (pieces.some((p) => p === null)) return false; // a structure is one thing
+  const body = pieces.join('').replace(/^[-+]/, '');
+  if (!body) return true; // only a sign so far
+  if (/^[0-9.]+$/.test(body)) return /[0-9.]/.test(c);
+  // letters: only while they could still become a symbol (`alpha`, `infty`, a snippet)
+  if (/^[a-zA-Z]+$/.test(body) && /^[a-zA-Z]$/.test(c)) {
+    const w = body + c;
+    return [AUTO_REPLACE, AUTO_STRUCT, BARE_OPS, userSnippets].some((t) => Object.keys(t).some((k) => k.startsWith(w)));
+  }
+  return false;
+}
+
+/**
+ * Before typing `c`: leave LaTeX-style script slots it doesn't continue (innermost first).
+ * Returns true when `c` was used up: the `(` that opens a group, the `)` that closes one.
+ */
+export function settleAuto(root: MRow, cur: MCursor, c: string): boolean {
+  const stack = cur.auto;
+  if (!stack) return false;
+  // slots the caret has left
+  while (stack.length && !startsWith(cur.path, stack[stack.length - 1].path)) stack.pop();
+  while (stack.length) {
+    const top = stack[stack.length - 1];
+    if (!samePath(top.path, cur.path)) {
+      // deeper inside the slot: only the group's closing bracket reaches out (through a
+      // fraction, a script…, as a real bracket would; not out of another bracket)
+      if (!top.grouped || (c !== ')' && c !== '}')) break;
+      let d = top.path.length;
+      for (; d < cur.path.length; d++) if (def(rowAt(root, cur.path.slice(0, d))[cur.path[d].i] as MCmd)?.close) break;
+      if (d < cur.path.length) break;
+      cur.path = top.path.map((s) => ({ ...s }));
+      exitAfter(root, cur);
+      stack.pop();
+      if (!stack.length) cur.auto = undefined;
+      return true;
+    }
+    const slot = rowAt(root, cur.path);
+    if (top.grouped) {
+      if (c !== ')' && c !== '}') break;
+      exitAfter(root, cur);
+      stack.pop();
+      return true;
+    }
+    if (!slot.length && (c === '(' || c === '{')) {
+      top.grouped = true;
+      return true;
+    }
+    if (!slot.length || continues(slot, c)) break;
+    exitAfter(root, cur);
+    stack.pop();
+  }
+  if (!stack.length) cur.auto = undefined;
+  return false;
+}
+
+/** Space: leave the box you're in, but not brackets (spaces there mean nothing) or a `^(…)` group. */
+export function space(root: MRow, cur: MCursor): boolean {
+  const top = cur.auto?.[cur.auto.length - 1];
+  if (top?.grouped && samePath(top.path, cur.path)) return true;
+  const p = parentOf(root, cur);
+  if (p && def(p.node)?.close) return true;
+  return exitAfter(root, cur);
+}
+
 /** Type a character, applying structure keys and auto-replacements. */
 export function typeChar(root: MRow, cur: MCursor, c: string) {
   if (isText(root, cur)) {
@@ -364,9 +452,19 @@ export function typeChar(root: MRow, cur: MCursor, c: string) {
     else insertNode(root, cur, sym(c));
     return;
   }
+  if (latexScripts && settleAuto(root, cur, c)) return;
   if (c === '/') return fraction(root, cur);
-  if (c === '^') return script(root, cur, 'sup');
-  if (c === '_') return script(root, cur, 'sub');
+  if (c === '^' || c === '_') {
+    script(root, cur, c === '^' ? 'sup' : 'sub');
+    const p = parentOf(root, cur);
+    if (latexScripts && p && def(p.node)?.script) {
+      // (assigned first, then pushed: in the editor `cur` is a state proxy, and pushing onto
+      // the value of `??=` would push onto the plain array, not the one stored)
+      cur.auto ??= [];
+      cur.auto.push({ path: cur.path.map((s) => ({ ...s })), grouped: false });
+    }
+    return;
+  }
   if (c === '"') return insertNode(root, cur, cmd('text', [[]]), 0);
   if (OPENERS[c]) return insertNode(root, cur, cmd(OPENERS[c], [[]]), 0);
   if (c === '\'') return insertNode(root, cur, sym("'"));
@@ -406,7 +504,7 @@ function autoReplace(root: MRow, cur: MCursor) {
     const piece = n.src ?? (n.v.startsWith('\\') && n.v.length > 1 ? null : n.v);
     if (piece == null) break;
     s = piece + s;
-    if (userSnippets[s] !== undefined || AUTO_REPLACE[s] || AUTO_STRUCT[s]) best = { k, key: s };
+    if (userSnippets[s] !== undefined || AUTO_REPLACE[s] || AUTO_STRUCT[s] || (latexScripts && BARE_OPS[s])) best = { k, key: s };
   }
   if (!best) return;
   r.splice(cur.off - best.k, best.k);
@@ -418,6 +516,7 @@ function autoReplace(root: MRow, cur: MCursor) {
     if (parsed.row.length === 1 && parsed.row[0].k === 'sym' && !parsed.cursor) insertNode(root, cur, sym(parsed.row[0].v, best.key));
     else insertParsed(root, cur, parsed);
   } else if (AUTO_REPLACE[best.key]) insertNode(root, cur, sym(AUTO_REPLACE[best.key], best.key));
+  else if (latexScripts && BARE_OPS[best.key]) insertNode(root, cur, sym(BARE_OPS[best.key], best.key));
   else applyInserter(root, cur, AUTO_STRUCT[best.key]);
 }
 

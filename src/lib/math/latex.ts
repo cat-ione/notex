@@ -8,7 +8,11 @@ import type { MCmd, MNode, MRow } from '../model';
 import { BIG_OPS, CMDS } from './defs';
 
 export type Step = { i: number; s: number };
-export type MCursor = { path: Step[]; off: number };
+/**
+ * A caret in a formula. `auto`: LaTeX-style script slots being typed into, innermost last
+ * (see settleAuto in ./edit): where each is, and whether it was opened with `(` / `{`.
+ */
+export type MCursor = { path: Step[]; off: number; auto?: { path: Step[]; grouped: boolean }[] };
 
 /** A selected range [s, e) of the row at `path` (aligned to base+script groups). */
 export type MSelRange = { path: Step[]; s: number; e: number };
