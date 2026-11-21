@@ -15,7 +15,7 @@
     {@const g = ed.markGeos[m.id]}
     {#if g && g.filled === under}
       {@const sel = ed.styling === m.id}
-      <g class="mark {m.kind}" class:sel style="--ink: {inkVar(m.color)}">
+      <g class="mark {m.kind}" class:sel class:ghost={ed.pick?.edit?.id === m.id} style="--ink: {inkVar(m.color)}">
         {#if g.filled}
           <path class="fill" d={g.d} in:fade={{ duration: 200 }} />
         {:else}
@@ -71,6 +71,9 @@
   }
   .sel .fill {
     opacity: 0.38;
+  }
+  .ghost {
+    opacity: 0.25;
   }
   .hit {
     fill: none;

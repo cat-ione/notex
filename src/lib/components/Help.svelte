@@ -20,7 +20,7 @@
     ]],
     ['changing a drawing  (click it, or \\drawings)', [
       ['↑ ↓', 'bend an arrow'], ['0', 'straight'], ['t', 'arrowheads / next shape'], ['d', 'dashed'], ['b', 'box the ends'],
-      ['c', 'colour'], ['l', 'label / note'], ['r', 'reverse'], ['del', 'remove'],
+      ['c', 'colour'], ['l', 'label / note'], ['s  e', 'move the start / tip (shape: e)'], ['r', 'reverse'], ['del', 'remove'],
     ]],
   ];
 </script>

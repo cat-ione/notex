@@ -37,7 +37,7 @@ Ctrl+C/X/V (math survives copy/paste), Ctrl+Z/Y, Ctrl+←/→ by word. On top of
 | math   | `/` fraction from previous operand · `^ _` · `( [ {` · `"` text · `;a` greek · `sum int lim sqrt` · `-> => <= oo xx` · `\name` any command · space leaves a box · Tab next box · `&`/Enter grow matrix · `$`, → or Esc back to text · click anywhere inside a formula · Shift+←/→ selects (growing out of boxes), Ctrl+A all; `/`, `(` or a `\command` wraps the selection; copy gives `$LaTeX$` |
 | `\arrow` | arrow keys or click to choose · Shift+↑/↓ whole expression / inside it · Shift+←/→ extend · Tab jump labels · Enter confirm (start, then end). With text selected, the arrow starts there |
 | shapes | `\circle` `\box` `\underline` `\highlight` `\brace` `\strike`: choose the target like an arrow end, or select text first to draw on it at once |
-| changing drawings | click one, or `\drawings`. Arrows: ↑/↓ bend · `0` straight · `t` heads · `b` box ends · `r` reverse. Shapes: `t` or ←/→ next shape. Both: `d` dashed · `c` colour · `l` label · Del remove · Enter done |
+| changing drawings | click one, or `\drawings`. Arrows: ↑/↓ bend · `0` straight · `t` heads · `b` box ends · `r` reverse · `s`/`e` move the start/tip. Shapes: `t` or ←/→ next shape · `e` move it. Both: `d` dashed · `c` colour · `l` label · Del remove · Enter done |
 
 Arrow picking also accepts `hjkl`/`HJKL` for people who like them.
 

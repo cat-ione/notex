@@ -55,7 +55,7 @@ export class Editor {
 
   palette = $state<{ ctx: 'math' | 'text'; query: string; sel: number } | null>(null);
   /** Choosing a target: for an arrow (two phases) or a mark (one). */
-  pick = $state<{ phase: 'from' | 'to'; loc: Loc; from?: Loc; purpose: 'arrow' | MarkKind } | null>(null);
+  pick = $state<{ phase: 'from' | 'to'; loc: Loc; from?: Loc; purpose: 'arrow' | MarkKind; edit?: { id: Id; end: 'from' | 'to' | 'at' } } | null>(null);
   styling = $state<Id | null>(null);
   hints = $state<{ list: Hint[]; typed: string } | null>(null);
   label = $state<{ text: string } | null>(null);
@@ -1395,6 +1395,7 @@ export class Editor {
     this.hints = null;
     this.palette = null;
     this.label = null;
+    this.message = '';
     this.styling = id;
     this.setMode('style');
   }
@@ -1425,10 +1426,17 @@ export class Editor {
         // jump back to the nearest top-level target
         const near = l0.find((x) => x.b === l.b && (l.k === 'block' || (x as any).o === l.o));
         if (near) pk.loc = near;
+      } else {
+        // an arbitrary range (from a selection or a saved drawing): step to the neighbouring target
+        const ids = new Set(this.anchorIds(l));
+        const outside = l0.filter((x) => !this.anchorIds(x).some((i) => ids.has(i)));
+        const next = d > 0 ? outside.find((x) => cmpLoc(x, l) > 0) : outside.findLast((x) => cmpLoc(x, l) < 0);
+        if (next) pk.loc = next;
       }
     };
     switch (k) {
       case 'Escape':
+        if (pk.edit) return this.selectDrawing(pk.edit.id), (this.pick = null), true;
         this.pick = null;
         this.setMode('text');
         return true;
@@ -1446,7 +1454,8 @@ export class Editor {
       case 'C-Home': if (l0.length) pk.loc = l0[0]; return true;
       case 'C-End': if (l0.length) pk.loc = l0[l0.length - 1]; return true;
       case 'Enter': case ' ':
-        if (pk.purpose !== 'arrow') this.addMark(pk.purpose, this.anchorIds(l));
+        if (pk.edit) this.finishRetarget(pk.edit, this.anchorIds(l));
+        else if (pk.purpose !== 'arrow') this.addMark(pk.purpose, this.anchorIds(l));
         else if (pk.phase === 'from') {
           const next = l0[idx + 1] ?? l;
           this.pick = { phase: 'to', from: l, loc: idx >= 0 ? next : l, purpose: 'arrow' };
@@ -1589,6 +1598,50 @@ export class Editor {
     this.flash('arrow drawn — ↑↓ to bend it, Enter when done');
   }
 
+  /** The best Loc for a set of anchor ids (so re-picking starts where the drawing is). */
+  private locForIds(ids: Id[]): Loc {
+    const key = ids.join();
+    const exact = this.level0().find((l) => this.anchorIds(l).join() === key);
+    if (exact) return exact;
+    const first = ids.length ? this.locFromId(ids[0]) : null;
+    if (first && this.anchorIds(first).join() === key) return first;
+    const pos = ids.map((id) => this.findItem(id));
+    if (pos.length && pos.every((p) => p && p.b === pos[0]!.b)) {
+      const os = pos.map((p) => p!.o);
+      return { k: 'word', b: pos[0]!.b, s: Math.min(...os), e: Math.max(...os) };
+    }
+    return first ?? { k: 'ids', b: pos.find((p) => p)?.b ?? this.b, ids };
+  }
+
+  /** Re-pick one end of an arrow, or the target of a mark. */
+  private retarget(id: Id, end: 'from' | 'to' | 'at') {
+    const a = this.doc.arrows.find((x) => x.id === id);
+    const m = this.doc.marks.find((x) => x.id === id);
+    if (end === 'at' && m) {
+      this.pick = { phase: 'from', loc: this.locForIds(m.at), purpose: m.kind, edit: { id, end } };
+    } else if (a && end !== 'at') {
+      const other = end === 'from' ? a.to : a.from;
+      this.pick = { phase: 'to', loc: this.locForIds(a[end]), from: this.locForIds(other), purpose: 'arrow', edit: { id, end } };
+    } else return;
+    this.setMode('pick');
+    this.flash(end === 'at' ? 'choose the new target · Enter to confirm · Esc to keep it' : `move the arrow's ${end === 'from' ? 'start' : 'tip'} · Enter to confirm · Esc to keep it`);
+  }
+
+  private finishRetarget(edit: { id: Id; end: 'from' | 'to' | 'at' }, ids: Id[]) {
+    const a = this.doc.arrows.find((x) => x.id === edit.id);
+    const m = this.doc.marks.find((x) => x.id === edit.id);
+    if (a && edit.end !== 'at') {
+      if ((edit.end === 'from' ? a.to : a.from).join() === ids.join()) return this.flash('arrow needs two different endpoints');
+      this.checkpoint();
+      a[edit.end] = ids;
+    } else if (m) {
+      this.checkpoint();
+      m.at = ids;
+    }
+    this.pick = null;
+    this.selectDrawing(edit.id);
+  }
+
   private styleKey(k: string): boolean {
     const mk = this.stylingMark;
     if (mk) return this.markKey(mk, k);
@@ -1608,6 +1661,8 @@ export class Editor {
       case 'd': edit(() => (a.dash = !a.dash)); return true;
       case 'b': edit(() => (a.boxed = !a.boxed)); return true;
       case 'c': edit(() => (a.color = nextInk(a.color))); return true;
+      case 's': this.retarget(a.id, 'from'); return true;
+      case 'e': this.retarget(a.id, 'to'); return true;
       case 'l': case 'i': case '"': this.label = { text: a.label }; this.setMode('label'); return true;
       case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();
@@ -1630,6 +1685,7 @@ export class Editor {
       case 'S-t': case 'T': case 'Left': case 'Up': shape(-1); return true;
       case 'd': edit(() => (m.dash = !m.dash)); return true;
       case 'c': edit(() => (m.color = nextInk(m.color))); return true;
+      case 'e': case 'm': this.retarget(m.id, 'at'); return true;
       case 'l': case 'i': case '"': this.label = { text: m.label }; this.setMode('label'); return true;
       case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();

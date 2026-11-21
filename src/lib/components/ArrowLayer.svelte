@@ -10,7 +10,11 @@
   const preview = $derived.by(() => {
     const { from, cur } = ed.pickRects;
     if (ed.pick?.phase !== 'to' || !from || !cur) return null;
-    return arrowGeo(from, cur, defaultBend(from, cur));
+    // Re-picking one end of an existing arrow keeps its bend and direction.
+    const edit = ed.pick.edit;
+    const a = edit && ed.doc.arrows.find((x) => x.id === edit.id);
+    if (a && edit?.end === 'from') return arrowGeo(cur, from, a.bend);
+    return arrowGeo(from, cur, a ? a.bend : defaultBend(from, cur));
   });
 
   const clickable = $derived(ed.mode === 'text' || ed.mode === 'style' || ed.mode === 'math');
@@ -34,7 +38,7 @@
     {#if g}
       {@const sel = ed.styling === a.id}
       {@const head = sel && !a.color ? 'url(#nx-head-sel)' : marker(a.color)}
-      <g class="arrow" class:sel class:inked={!!a.color} style="--ink: {inkVar(a.color)}">
+      <g class="arrow" class:sel class:inked={!!a.color} class:ghost={ed.pick?.edit?.id === a.id} style="--ink: {inkVar(a.color)}">
         {#if a.boxed}
           <rect class="box" x={g.from.x} y={g.from.y} width={g.from.w} height={g.from.h} rx="4" in:fade={{ duration: 150 }} />
           <rect class="box" x={g.to.x} y={g.to.y} width={g.to.w} height={g.to.h} rx="4" in:fade={{ duration: 150 }} />
@@ -86,6 +90,9 @@
   .sel.inked path {
     stroke: var(--ink);
     filter: drop-shadow(0 0 3px var(--ink));
+  }
+  .ghost {
+    opacity: 0.25;
   }
   path.hit {
     stroke: transparent;
