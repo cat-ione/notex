@@ -15,8 +15,8 @@
     const a = edit && ed.doc.arrows.find((x) => x.id === edit.id);
     // (dragging an end: attached where it would be let go)
     const here = ed.dragEnd ? ed.dragEnd.at : undefined;
-    if (a && edit?.end === 'from') return arrowGeo(cur, from, a.bend, {}, { from: ed.dragEnd ? here : a.fromAt, to: a.toAt });
-    return arrowGeo(from, cur, a ? a.bend : defaultBend(from, cur), {}, a ? { from: a.fromAt, to: ed.dragEnd ? here : a.toAt } : {});
+    if (a && edit?.end === 'from') return arrowGeo(cur, from, a.bend, {}, { from: ed.dragEnd ? here : a.fromAt, to: a.toAt }, a.skew);
+    return arrowGeo(from, cur, a ? a.bend : defaultBend(from, cur), {}, a ? { from: a.fromAt, to: ed.dragEnd ? here : a.toAt } : {}, a?.skew);
   });
 
   const clickable = $derived(ed.mode === 'text' || ed.mode === 'style' || ed.mode === 'math');
@@ -74,8 +74,8 @@
               cy={p.y}
               r={part === 'bend' ? 4 : 5}
               onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.beginHandleDrag(a.id, part); }}
-              data-tip={part === 'bend' ? 'drag to bend' : `drag to move the ${part === 'from' ? 'start' : 'tip'}`}
-              data-tip-key={part === 'bend' ? '↑ ↓' : part === 'from' ? 's / shift+s' : 'e / shift+e'}
+              data-tip={part === 'bend' ? 'drag to move the middle anywhere' : `drag to move the ${part === 'from' ? 'start' : 'tip'}`}
+              data-tip-key={part === 'bend' ? '↑ ↓ ← →' : part === 'from' ? 's / shift+s' : 'e / shift+e'}
               data-tip-more={part === 'bend' ? '' : 'let go on a side of the target to attach there, in its middle for automatic'}
               in:fade={{ duration: 120 }}
             />
@@ -140,7 +140,7 @@
   }
   .handle.bend {
     fill: var(--ink, var(--accent));
-    cursor: ns-resize;
+    cursor: move;
   }
   path.hit {
     stroke: transparent;

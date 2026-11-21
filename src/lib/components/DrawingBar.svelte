@@ -58,7 +58,7 @@
       <div class="group">
         <button class="txt" {...tip('heads')} onclick={() => ed.runAction(id, 'heads')}>{HEADS[arrow.head]}</button>
         <button class="txt" {...tip('reverse')} onclick={() => ed.runAction(id, 'reverse')}>⇄</button>
-        <button class="txt" class:on={arrow.bend === 0} {...tip('straight', 'the wheel near it bends it')} onclick={() => ed.runAction(id, 'straight')}>⌒</button>
+        <button class="txt" class:on={arrow.bend === 0 && !arrow.skew} {...tip('straight', 'the wheel near it bends it')} onclick={() => ed.runAction(id, 'straight')}>⌒</button>
         <button class="txt" class:on={arrow.boxed} {...tip('boxes')} onclick={() => ed.runAction(id, 'boxes')}>▢</button>
       </div>
     {/if}

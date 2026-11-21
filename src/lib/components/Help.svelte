@@ -23,7 +23,7 @@
       ['alt+drag', 'arrow from one thing to another'], ['alt+shift+drag', 'shape around a range (the last kind)'],
     ]],
     ['changing a drawing  (click it, or \\drawings)', [
-      ['drag the dots', 'move an arrow\'s ends or bend it'], ['↑ ↓', 'bend an arrow'], ['0', 'straight'], ['t', 'arrowheads / next shape'], ['d', 'dashed'], ['b', 'box the ends'],
+      ['drag the dots', 'move an arrow\'s ends, or its middle anywhere'], ['↑ ↓  ← →', 'move an arrow\'s middle across / along it'], ['0', 'straight'], ['t', 'arrowheads / next shape'], ['d', 'dashed'], ['b', 'box the ends'],
       ['c', 'colour'], ['l', 'label / note ($math$ works)'], ['s  e', 'move the start / tip (shape: e)'], ['shift+s  shift+e', 'where the start / tip attaches'], ['r', 'reverse'], ['del', 'remove'],
       ['shift+← →', 'shape: move its end (ctrl+shift: its start)'], ['alt+arrows', 'move the note (shift: by a pixel)'], ['alt+0', 'put the note back'],
       ['shift+f10', 'menu of all of these'], ['\\', 'search them by name'],

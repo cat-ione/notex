@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrowGeo, attachAt, nextSide, sideName } from './arrows';
+import { arrowGeo, attachAt, curveThrough, nextSide, sideName } from './arrows';
 
 describe('where an arrow end attaches', () => {
   const box = { x: 100, y: 100, w: 40, h: 20 };
@@ -23,5 +23,17 @@ describe('where an arrow end attaches', () => {
     // the tip on the top edge of b (padded by 3), in its middle
     expect(g.p2.x).toBeCloseTo(210);
     expect(g.p2.y).toBeCloseTo(-3);
+  });
+});
+
+describe('moving the middle of an arrow', () => {
+  it('puts the curve through the point, anywhere (not only across the arrow)', () => {
+    const a = { x: 0, y: 0, w: 20, h: 20 }, b = { x: 200, y: 0, w: 20, h: 20 };
+    for (const p of [{ x: 60, y: -40 }, { x: 160, y: 30 }, { x: 110, y: -10 }]) {
+      const c = curveThrough(a, b, p);
+      const g = arrowGeo(a, b, c.bend, {}, {}, c.skew)!;
+      // (the ends are clipped to the boxes, so the middle lands within a few pixels)
+      expect(Math.hypot(g.mid.x - p.x, g.mid.y - p.y)).toBeLessThan(6);
+    }
   });
 });

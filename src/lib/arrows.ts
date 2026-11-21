@@ -27,7 +27,7 @@ function attachPoint(r: Rect, at: Attach, round = false): Pt {
   return rayExit(r, center(r), { x: r.x + at.x * r.w, y: r.y + at.y * r.h }, round);
 }
 
-export function arrowGeo(a: Rect, b: Rect, bend: number, outline: { from?: Outline; to?: Outline } = {}, at: { from?: Attach; to?: Attach } = {}): ArrowGeo | null {
+export function arrowGeo(a: Rect, b: Rect, bend: number, outline: { from?: Outline; to?: Outline } = {}, at: { from?: Attach; to?: Attach } = {}, skew = 0): ArrowGeo | null {
   const pa = outline.from ? pad(outline.from.r, 2) : pad(a, 3), pb = outline.to ? pad(outline.to.r, 2) : pad(b, 3);
   const ca = center(pa), cb = center(pb);
   // an end attached at a chosen point runs from there; otherwise from the middle, clipped
@@ -38,7 +38,9 @@ export function arrowGeo(a: Rect, b: Rect, bend: number, outline: { from?: Outli
   if (len < 1) return null;
   // Left-hand perpendicular in screen coordinates: positive bend arcs "up" for a rightward arrow.
   const nx = dy / len, ny = -dx / len;
-  const ctrl = { x: (A.x + B.x) / 2 + nx * bend * len, y: (A.y + B.y) / 2 + ny * bend * len };
+  // the control point: off the chord's middle, across it by `bend` and along it by `skew`
+  const ux = dx / len, uy = dy / len;
+  const ctrl = { x: (A.x + B.x) / 2 + (nx * bend + ux * skew) * len, y: (A.y + B.y) / 2 + (ny * bend + uy * skew) * len };
   const p0 = fa ?? rayExit(pa, ca, ctrl, outline.from?.round);
   const p2 = fb ?? rayExit(pb, cb, ctrl, outline.to?.round);
   const mid = { x: 0.25 * p0.x + 0.5 * ctrl.x + 0.25 * p2.x, y: 0.25 * p0.y + 0.5 * ctrl.y + 0.25 * p2.y };
@@ -77,14 +79,19 @@ export function nextSide(at: Attach | undefined): Attach | undefined {
   return i < 0 ? { ...SIDES[0].at } : i === SIDES.length - 1 ? undefined : { ...SIDES[i + 1].at };
 }
 
-/** The bend that puts the curve's middle at `p` (for dragging the bend handle). */
-export function bendThrough(a: Rect, b: Rect, p: Pt, at: { from?: Attach; to?: Attach } = {}): number {
+/**
+ * The bend and skew that put the curve's middle at `p` (dragging the middle dot or the
+ * line): anywhere, not only across the arrow.
+ */
+export function curveThrough(a: Rect, b: Rect, p: Pt, at: { from?: Attach; to?: Attach } = {}): { bend: number; skew: number } {
   const ca = at.from ? attachPoint(a, at.from) : center(a), cb = at.to ? attachPoint(b, at.to) : center(b);
   const dx = cb.x - ca.x, dy = cb.y - ca.y;
   const len = Math.hypot(dx, dy) || 1;
   // The curve's midpoint sits halfway between the chord's midpoint and the control point.
-  const off = (p.x - (ca.x + cb.x) / 2) * (dy / len) + (p.y - (ca.y + cb.y) / 2) * (-dx / len);
-  return Math.round(((2 * off) / len) * 100) / 100;
+  const ox = p.x - (ca.x + cb.x) / 2, oy = p.y - (ca.y + cb.y) / 2;
+  const across = ox * (dy / len) + oy * (-dx / len), along = ox * (dx / len) + oy * (dy / len);
+  const r = (v: number) => Math.round(((2 * v) / len) * 100) / 100;
+  return { bend: r(across), skew: r(along) };
 }
 
 /** A pleasant default curvature: arc over the text when roughly horizontal. */

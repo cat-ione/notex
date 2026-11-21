@@ -12,7 +12,7 @@
 //   label   — typing an arrow label (transient)
 
 import { tick } from 'svelte';
-import { arrowGeo, attachAt, bendThrough, defaultBend, nextSide, sideName, type ArrowGeo, type Outline } from './arrows';
+import { arrowGeo, attachAt, curveThrough, defaultBend, nextSide, sideName, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
@@ -1045,7 +1045,7 @@ export class Editor {
     }
     if (a) {
       const fr = this.rectOfIds(a.from), tr = this.rectOfIds(a.to);
-      if (fr && tr) a.bend = bendThrough(fr, tr, { x: e.clientX, y: e.clientY }, { from: a.fromAt, to: a.toAt });
+      if (fr && tr) this.setCurve(a, curveThrough(fr, tr, { x: e.clientX, y: e.clientY }, { from: a.fromAt, to: a.toAt }));
       return this.touch();
     }
     // the shape lands on what's under the mouse, the grabbed piece there, as many pieces as before
@@ -1309,6 +1309,13 @@ export class Editor {
     this.withFrame(() => this.pickKey('Enter'));
   }
 
+  /** Put an arrow's middle where `curveThrough` says (no skew left over when it's in the middle). */
+  private setCurve(a: Arrow, c: { bend: number; skew: number }) {
+    a.bend = c.bend;
+    if (Math.abs(c.skew) < 0.03) delete a.skew;
+    else a.skew = c.skew;
+  }
+
   /** While an arrow end is dragged: where on the target under it it would attach. */
   dragEnd = $state<{ at?: Attach } | null>(null);
 
@@ -1352,7 +1359,7 @@ export class Editor {
     if (!a || !this.page) return;
     if (hd.part === 'bend') {
       const fr = this.rectOfIds(a.from), tr = this.rectOfIds(a.to);
-      if (fr && tr) a.bend = bendThrough(fr, tr, { x: e.clientX, y: e.clientY }, { from: a.fromAt, to: a.toAt });
+      if (fr && tr) this.setCurve(a, curveThrough(fr, tr, { x: e.clientX, y: e.clientY }, { from: a.fromAt, to: a.toAt }));
     } else if (this.pick) {
       const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
       const loc = id ? this.locFromId(id) : null;
@@ -1561,7 +1568,7 @@ export class Editor {
       const fa = rel(this.rectOfIds(a.from));
       const ta = rel(this.rectOfIds(a.to));
       if (!fa || !ta) continue;
-      const g = arrowGeo(fa, ta, a.bend, { from: outlines.get(idKey(a.from)), to: outlines.get(idKey(a.to)) }, { from: a.fromAt, to: a.toAt });
+      const g = arrowGeo(fa, ta, a.bend, { from: outlines.get(idKey(a.from)), to: outlines.get(idKey(a.to)) }, { from: a.fromAt, to: a.toAt }, a.skew);
       if (g && a.note && a.label) {
         const ld = pinnedLeader({ x: g.mid.x - 2, y: g.mid.y - 2, w: 4, h: 4 }, this.pinnedBox(a, g));
         if (ld) g.leader = `M${ld[0].toFixed(1)},${ld[1].toFixed(1)} L${ld[2].toFixed(1)},${ld[3].toFixed(1)}`;
@@ -3563,9 +3570,17 @@ export class Editor {
       return [
         { name: 'bend', desc: 'bend one way', keys: ['Up', 'k'], run: edit(() => (a.bend = round(a.bend + 0.1 * dir()))), menu: false },
         { name: 'unbend', desc: 'bend the other way', keys: ['Down', 'j'], run: edit(() => (a.bend = round(a.bend - 0.1 * dir()))), menu: false },
-        { name: 'straight', desc: 'straighten', keys: ['0', '='], run: edit(() => (a.bend = 0)), more: 'bend it: drag its line, or the wheel near it' },
+        {
+          name: 'along', desc: 'move its middle along it', keys: ['Left', 'Right'], menu: false, more: 'or drag its middle dot (or its line) anywhere',
+          run: (k) => edit(() => {
+            const s = round((a.skew ?? 0) + (k === 'Right' ? 0.1 : -0.1) * dir());
+            if (Math.abs(s) < 0.03) delete a.skew;
+            else a.skew = s;
+          })(),
+        },
+        { name: 'straight', desc: 'straighten', keys: ['0', '='], run: edit(() => { a.bend = 0; delete a.skew; }), more: 'bend it: drag its line, or the wheel near it' },
         { name: 'heads', desc: `arrowheads (${a.head === 'end' ? 'tip' : a.head})`, keys: ['t'], run: edit(() => (a.head = a.head === 'end' ? 'both' : a.head === 'both' ? 'none' : 'end')) },
-        { name: 'reverse', desc: 'reverse', keys: ['r'], run: edit(() => { [a.from, a.to] = [a.to, a.from]; a.bend = -a.bend; }) },
+        { name: 'reverse', desc: 'reverse', keys: ['r'], run: edit(() => { [a.from, a.to] = [a.to, a.from]; [a.fromAt, a.toAt] = [a.toAt, a.fromAt]; a.bend = -a.bend; if (a.skew) a.skew = -a.skew; if (!a.fromAt) delete a.fromAt; if (!a.toAt) delete a.toAt; }) },
         { name: 'dash', desc: a.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (a.dash = !a.dash)) },
         { name: 'boxes', desc: a.boxed ? 'hide the end boxes' : 'box the ends', keys: ['b'], run: edit(() => (a.boxed = !a.boxed)) },
         { name: 'colour', desc: `colour (${a.color || 'default'})`, keys: ['c'], run: edit(() => (a.color = nextInk(a.color))), more: 'or shift+wheel near it' },

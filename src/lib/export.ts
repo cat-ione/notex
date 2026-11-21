@@ -245,7 +245,12 @@ function arrowCmd(a: Arrow, from: string, to: string): string {
   const style = `${tip}${a.dash ? ', dashed' : ''}${tikzColor(a.color)}`;
   // A quadratic curve with control offset bend*len leaves its ends at atan(2*bend).
   const deg = Math.round((Math.atan(2 * Math.abs(a.bend)) * 180) / Math.PI);
-  const path = deg < 2 ? '--' : `to[bend ${a.bend > 0 ? 'left' : 'right'}=${deg}]`;
+  // pulled along the arrow too: leave and arrive at the curve's own angles (relative to the chord)
+  const skew = a.skew ?? 0;
+  const ang = (y: number, x: number) => Math.round((Math.atan2(y, x) * 180) / Math.PI);
+  const path = skew
+    ? `to[out=${ang(a.bend, 0.5 + skew)}, in=${ang(a.bend, skew - 0.5)}, relative]`
+    : deg < 2 ? '--' : `to[bend ${a.bend > 0 ? 'left' : 'right'}=${deg}]`;
   const label = a.label ? ` node[midway, above, font=\\scriptsize] {${escText(a.label)}}` : '';
   const boxes = a.boxed ? [from, to].map((n) => `\\node[draw, dashed, rounded corners=2pt, inner sep=1pt, fit=(${n})] {};`).join(' ') + ' ' : '';
   return `${boxes}\\draw[${style}] (${from}) ${path}${label} (${to});`;

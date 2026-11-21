@@ -29,7 +29,10 @@ export type Arrow = {
   id: Id;
   from: Id[];
   to: Id[];
+  /** How far the curve's middle is pulled across the arrow (a fraction of its length)... */
   bend: number;
+  /** ...and along it, towards the tip (absent: 0, the middle). */
+  skew?: number;
   head: ArrowHead;
   dash: boolean;
   boxed: boolean;
