@@ -15,7 +15,7 @@
     mark: '←→ or t shape · d dashed · c colour · l note · e move · del remove · enter done',
     hint: 'type a label to jump · esc cancel',
     palette: 'enter accept · ↑↓ choose · esc cancel',
-    label: 'enter save · esc cancel',
+    label: 'type on the page · $…$ math · ←→ ctrl+←→ home end move · enter save · esc cancel',
   };
   // Counts don't need to follow every keystroke: refresh them when typing pauses.
   let counts = $state({ words: 0, maths: 0, drawings: 0 });
@@ -32,9 +32,7 @@
   {#key LABEL[ed.mode]}
     <span class="mode m-{ed.mode}" in:fly={{ y: 6, duration: 160 }}>{LABEL[ed.mode]}</span>
   {/key}
-  {#if ed.mode === 'label' && ed.label}
-    <span class="input">label: {ed.label.text.slice(0, ed.label.at)}<span class="blink">▏</span>{ed.label.text.slice(ed.label.at)}</span>
-  {:else if ed.message}
+  {#if ed.message}
     <span class="msg" in:fly={{ x: -8, duration: 160 }}>{ed.message}</span>
   {:else}
     <span class="keys">{HINTS[ed.mode === 'style' && ed.stylingMark ? 'mark' : ed.mode]}</span>
@@ -77,9 +75,6 @@
   .m-pick, .m-style, .m-hint, .m-label { background: var(--mode-arrow); }
   .keys { overflow: hidden; text-overflow: ellipsis; }
   .msg { color: var(--fg); }
-  .input { color: var(--fg); }
-  .blink { color: var(--accent); animation: blink 1s steps(1) infinite; }
-  @keyframes blink { 50% { opacity: 0; } }
   .spacer { flex: 1; }
   .pos { color: var(--fg); }
   .file { color: var(--fg); }
