@@ -38,8 +38,8 @@ export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
 type LabelSnap = { text: string; at: number; anchor: number | null };
-/** A find match: characters [s, e) of block b, or (math) the formula at s. */
-export type FindMatch = { b: number; s: number; e: number; math?: true };
+/** A find match: characters [s, e) of block b, (math) the formula at s, or (note) a drawing's note. */
+export type FindMatch = { b: number; s: number; e: number; math?: true; note?: Id };
 /**
  * Something a menu entry, a key, a toolbar button or the palette can do. `more`: another
  * way to do it (for tooltips); `off`: not possible right now; `sep`: a menu rule before it.
@@ -3608,7 +3608,8 @@ export class Editor {
 
   /**
    * Where the search text occurs, in reading order: runs of characters within a paragraph
-   * (case-insensitive), and formulas whose LaTeX contains it (as a whole).
+   * (case-insensitive), formulas whose LaTeX contains it (as a whole), and the notes on
+   * drawings (where the drawing starts).
    */
   findMatches = $derived.by((): FindMatch[] => {
     const q = this.find?.q.toLowerCase();
@@ -3624,6 +3625,20 @@ export class Editor {
       });
       out.push(...hits.sort((x, y) => x.s - y.s));
     });
+    // notes: placed by where their drawing starts (after the text there)
+    const notes: FindMatch[] = [];
+    for (const d of [...this.doc.marks, ...this.doc.arrows]) {
+      if (!d.label.toLowerCase().includes(q)) continue;
+      const first = 'at' in d ? d.at[0] : d.from[0];
+      const pos = first ? this.findItem(first) : null;
+      const b = pos?.b ?? (first ? this.withFrame(() => this.blockOf(first)) : -1);
+      if (b >= 0) notes.push({ b, s: pos?.o ?? 0, e: (pos?.o ?? 0) + 1, note: d.id });
+    }
+    if (notes.length) {
+      const key = (m: FindMatch) => m.b * 1e6 + m.s + (m.note ? 0.5 : 0);
+      out.push(...notes);
+      out.sort((x, y) => key(x) - key(y));
+    }
     return out;
   });
 
@@ -3673,6 +3688,19 @@ export class Editor {
   private showMatch() {
     const m = this.findMatches[this.find?.i ?? -1];
     if (!m) return;
+    if (m.note) {
+      const id = m.note;
+      return this.withFrame(() => {
+        this.selectDrawing(id);
+        // scroll it into view
+        const r = this.drawingRect(id), sc = this.page?.parentElement, o = this.page?.getBoundingClientRect();
+        if (r && sc && o) {
+          const y = o.top + r.y, v = sc.getBoundingClientRect();
+          if (y < v.top + 60 || y > v.bottom - 80) sc.scrollTop += y - (v.top + v.height / 3);
+        }
+        this.touch();
+      });
+    }
     this.withFrame(() => {
       if (this.mode !== 'text') {
         if (this.mode === 'label' && this.label) this.commitLabel();
@@ -3705,6 +3733,11 @@ export class Editor {
       const br = el?.getBoundingClientRect();
       // only what's near the screen
       if (!br || (view && (br.bottom < view.top - 400 || br.top > view.bottom + 400))) return;
+      if (m.note) {
+        const el = this.noteEl(m.note);
+        if (el) out.push({ r: relTo(fromDOM(el.getBoundingClientRect()), origin), cur: k === this.find!.i });
+        return;
+      }
       const ids = this.doc.blocks[m.b].items.slice(m.s, m.e).map((i) => i.id);
       for (const r of byLine(this.rectsOfIds(ids))) out.push({ r: relTo(r, origin), cur: k === this.find!.i });
     });

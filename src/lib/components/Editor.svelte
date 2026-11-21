@@ -298,13 +298,14 @@
   .block.ol {
     padding-left: calc(1.4em + var(--indent, 0) * 1.4em);
   }
+  /* markers: the text's own size and line height (so they sit on its line), drawn smaller */
   .block.li::after {
     content: '▸';
     position: absolute;
     left: calc(0.2em + var(--indent, 0) * 1.4em);
     top: 0;
     color: var(--accent);
-    font-size: 0.85em;
+    transform: scale(0.85);
   }
   .block.li[data-depth='1']::after,
   .block.li[data-depth='3']::after {
@@ -323,8 +324,9 @@
     top: 0;
     text-align: right;
     font-family: var(--mono);
-    font-size: 0.85em;
     color: var(--accent);
+    transform: scale(0.82);
+    transform-origin: right center;
   }
   /* the text selection, drawn behind the text (see Editor.selectionRects) */
   .selrect {
