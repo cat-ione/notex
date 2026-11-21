@@ -733,9 +733,14 @@ export class Editor {
   // ───────────────────────── mouse ─────────────────────────
 
   /** Caret position nearest to a viewport point, or a math target if the point is on math. */
+  /** The text or formula element at a point, looking through drawings (their click targets catch the pointer). */
+  private under(x: number, y: number): Element | undefined {
+    return document.elementsFromPoint(x, y).find((e) => !e.closest('svg.marks, svg.arrows, .dlabel'));
+  }
+
   private hitTest(x: number, y: number): { pos: Pos; math?: { item: MathItem; id: Id | null; after: boolean } } | null {
     if (!this.page) return null;
-    const hit = document.elementFromPoint(x, y);
+    const hit = this.under(x, y);
     const mel = hit?.closest('.math');
     if (mel && this.page.contains(mel)) {
       const pos = this.findItem(mel.getAttribute('data-nx')!);
@@ -804,7 +809,7 @@ export class Editor {
     if (e.button !== 0) return;
     e.preventDefault();
     if (this.mode === 'pick') {
-      const id = (document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
+      const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
       const loc = id ? this.locFromId(id) : null;
       if (loc) {
         this.pick!.loc = loc;
@@ -898,7 +903,7 @@ export class Editor {
       const fr = this.rectOfIds(a.from), tr = this.rectOfIds(a.to);
       if (fr && tr) a.bend = bendThrough(fr, tr, { x: e.clientX, y: e.clientY });
     } else if (this.pick) {
-      const id = (document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
+      const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
       const loc = id ? this.locFromId(id) : null;
       if (loc) this.pick.loc = loc;
     }
