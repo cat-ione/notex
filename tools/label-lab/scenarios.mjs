@@ -29,6 +29,16 @@ export const scenarios = [
     { kind: 'brace', at: { f: 0, i: 4, j: 5 }, label: 'values' }, { kind: 'brace', at: { f: 0, i: 7, j: 8 }, label: 'partial sum' } ] },
   { title: 'sum: circles with notes above', parts: [D(SUM)], marks: [
     { kind: 'circle', at: { f: 0, i: 2, j: 3 }, label: 'weight' }, { kind: 'circle', at: { f: 0, i: 4, j: 5 }, label: 'value' }, { kind: 'circle', at: { f: 0, i: 7, j: 8 }, label: S } ] },
+  // ── circles low on the line: notes beside ──
+  { title: 'int: circled limits + braces', parts: [D(INT)], marks: [
+    { kind: 'brace', at: { f: 0, i: 0, j: 1 }, label: 'over [0,1]' }, { kind: 'brace', at: { f: 0, i: 2, j: 3 }, label: 'function of x' },
+    { kind: 'brace', at: { f: 0, i: 5, j: 6 }, label: 'change in x' }, { kind: 'circle', at: { f: 0, i: 0, path: [[1, 1]] }, label: 'upper bound' },
+    { kind: 'circle', at: { f: 0, i: 0, path: [[1, 0]] }, label: 'lower bound' } ] },
+  { title: 'sum: circled lower limit + subscript', parts: [D(SUM)], marks: [
+    { kind: 'circle', at: { f: 0, i: 0, j: 2, path: [[1, 0]] }, label: 'start' }, { kind: 'circle', at: { f: 0, i: 0, path: [[5, 0]] }, label: 'index' },
+    { kind: 'brace', at: { f: 0, i: 2, j: 5 }, label: 'products' } ] },
+  { title: 'prose: circled subscripts inline', parts: ['the terms ', { tex: String.raw`a_i b_i` }, ' and ', { tex: String.raw`x_n` }, ' here'], marks: [
+    { kind: 'circle', at: { f: 0, i: 0, path: [[1, 0]] }, label: 'index' }, { kind: 'circle', at: { f: 1, i: 0, path: [[1, 0]] }, label: 'step n' } ] },
 
   // ── fractions: nested targets ──
   { title: 'frac: numerator and denominator parts', parts: [D(FRAC)], marks: [

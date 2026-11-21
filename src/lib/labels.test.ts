@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutRow, renderLabel, type RowNote } from './labels';
+import { besideNote, layoutRow, renderLabel, type RowNote } from './labels';
 
 // fake text metrics: 6px per char, 14px lines, words wrap at maxW
 function note(id: string, x: number, text: string, edge = 20): RowNote {
@@ -96,5 +96,29 @@ describe('renderLabel caret', () => {
     const m = renderLabel('a $x$ b', { at: 3, anchor: 0 });
     expect(m.startsWith('<span class="lsel">a </span>')).toBe(true);
     expect(m).toMatch(/<span class="lsel"><span class="katex"/);
+  });
+});
+
+describe('besideNote', () => {
+  const shape = { x: 200, y: 100, w: 16, h: 20 }, size = { w: 60, h: 14 };
+  const page = { left: 0, right: 800 };
+  it('sits level with the shape, on the left when it is free', () => {
+    const r = besideNote(shape, size, { ...page, obstacles: [] })!;
+    expect(r.box.x + r.box.w).toBe(196);
+    expect(r.box.y + r.box.h / 2).toBe(110);
+    expect(r.leader).toBeNull();
+  });
+  it('slides past nearby ink, and takes the closer side', () => {
+    const wall = { x: 218, y: 90, w: 300, h: 40 };
+    const left = besideNote(shape, size, { ...page, obstacles: [{ x: 190, y: 90, w: 4, h: 40 }, wall] })!;
+    expect(left.box.x + left.box.w).toBeLessThanOrEqual(188);
+    // further out, its leader would cut through the ink
+    expect(besideNote(shape, size, { ...page, obstacles: [{ x: 184, y: 90, w: 6, h: 40 }, wall] })).toBeNull();
+    const right = besideNote(shape, size, { ...page, obstacles: [{ x: 100, y: 90, w: 98, h: 40 }] })!;
+    expect(right.box.x).toBe(220);
+  });
+  it('gives up when both sides are blocked or off the page', () => {
+    expect(besideNote(shape, size, { ...page, obstacles: [{ x: 100, y: 90, w: 98, h: 40 }, { x: 218, y: 90, w: 98, h: 40 }] })).toBeNull();
+    expect(besideNote(shape, size, { left: 180, right: 240, obstacles: [] })).toBeNull();
   });
 });

@@ -14,7 +14,7 @@
 import { tick } from 'svelte';
 import { arrowGeo, bendThrough, defaultBend, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
-import { layoutRow, measureLabel, provisional, type RowNote } from './labels';
+import { besideNote, layoutRow, measureLabel, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
@@ -1261,6 +1261,30 @@ export class Editor {
 
     const placed: Rect[] = [];
     const noteOf = new Map<Id, Rect[]>();
+    // A circle low on its line (a lower limit, a subscript) gets its note level with it, on
+    // whichever side is open: above, its leader would reach past the rest of the formula.
+    // If neither side is clear, below.
+    const beside = new Set<Info>();
+    for (const i of infos) {
+      const { m, g } = i;
+      if (m.kind !== 'circle' || !m.label || !g.outline || i.line < 0) continue;
+      // low compared with the ink around it (a tall sum elsewhere on the line doesn't count)
+      const t = i.t, u = union([t, ...inkLines(i.blockEl)[i.line].filter((r) => r.x < t.x + t.w + 12 && t.x - 12 < r.x + r.w)])!;
+      if (t.y + t.h / 2 <= u.y + u.h * 0.6) continue;
+      const shape = g.outline.r;
+      const others = infos.filter((o) => o !== i).map((o) => o.g.bounds);
+      const r = besideNote(shape, measureLabel(m.label, Infinity, this.typingLabel === m.id), { left, right, obstacles: [...inkLines(i.blockEl)[i.line], ...others, ...placed] });
+      if (!r) {
+        g.label = { x: shape.x + shape.w / 2, y: shape.y + shape.h + 15, below: true };
+        continue;
+      }
+      beside.add(i);
+      placed.push(r.box);
+      noteOf.set(m.id, [r.box]);
+      // drawn hanging from y - 12, like a note below
+      g.label = { x: r.box.x + r.box.w / 2, y: r.box.y + 12, below: true };
+      if (r.leader) g.leader = `M${r.leader[0].toFixed(1)},${r.leader[1].toFixed(1)} L${r.leader[2].toFixed(1)},${r.leader[3].toFixed(1)}`;
+    }
     const maxLevel = Math.max(0, ...infos.map((i) => i.level));
     for (let level = 0; level <= maxLevel; level++) {
       // nested under-marks: drop below what they contain (shapes and their notes)
@@ -1277,7 +1301,7 @@ export class Editor {
       }
       // rows: same block, line, side and level
       const rows = new Map<string, Info[]>();
-      for (const i of infos.filter((i) => i.level === level && i.m.label)) {
+      for (const i of infos.filter((i) => i.level === level && i.m.label && !beside.has(i))) {
         const key = `${firstOfBlock.get(i.blockEl)}:${i.line}:${i.g.label.below}`;
         rows.set(key, [...(rows.get(key) ?? []), i]);
       }

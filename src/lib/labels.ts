@@ -467,3 +467,30 @@ function solveRow(notes: RowNote[], o: Opts): Placed[] {
   order.forEach((orig, k) => (res[orig] = best![k]));
   return res;
 }
+
+/**
+ * A note level with its shape and beside it, for a circle low on its line (a lower
+ * limit, a subscript), where a note above or below would reach past other drawings.
+ * Tries the left, then the right, sliding out past ink by up to `reach`; whichever
+ * side stays closer wins. A leader only once the note is away from the shape (and
+ * never through ink). Null when neither side is clear.
+ */
+export function besideNote(shape: Rect, size: { w: number; h: number }, o: { left: number; right: number; obstacles: Rect[] }, reach = 24): Omit<Placed, 'id' | 'maxW'> | null {
+  const GAP = 4, NEAR = 8;
+  const cy = shape.y + shape.h / 2, y = cy - size.h / 2;
+  let best: { d: number; box: Rect; side: -1 | 1 } | null = null;
+  for (const side of [-1, 1] as const) {
+    for (let d = 0; d <= reach && (!best || d < best.d); d++) {
+      const x = side < 0 ? shape.x - GAP - size.w - d : shape.x + shape.w + GAP + d;
+      const box = { x, y, w: size.w, h: size.h };
+      if (x < o.left || x + size.w > o.right) break;
+      if (o.obstacles.some((r) => area(grow(box, 2), r) > 0)) continue;
+      if (d > NEAR && o.obstacles.some((r) => segHitsBox(side < 0 ? [shape.x, cy, x + size.w, cy] : [shape.x + shape.w, cy, x, cy], grow(r, -1)))) break;
+      best = { d, box, side };
+      break;
+    }
+  }
+  if (!best) return null;
+  const { d, box, side } = best;
+  return { box, leader: d > NEAR ? (side < 0 ? [shape.x, cy, box.x + box.w, cy] : [shape.x + shape.w, cy, box.x, cy]) : null };
+}
