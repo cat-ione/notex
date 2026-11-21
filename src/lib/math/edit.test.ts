@@ -112,6 +112,13 @@ describe('selection ranges', () => {
     expect(cur).toEqual({ path: [], off: 1 });
   });
 
+  it('keeps a big operator and its limits together with the caret between them', () => {
+    const { root } = typed('int0⇥1⇥');
+    // caret right after the operator, before its limits: emitted after the limits
+    const tex = toLatex(root, true, { path: [], off: 1 });
+    expect(tex).toMatch(/^\\htmlData\{nx=[^}]+\}\{\\int.*\}\\htmlClass\{nx-caret nx-caret-script\}\{\}$/);
+  });
+
   it('marks the selection in rendered output', () => {
     const { root } = typed('a+b');
     expect(toLatex(root, true, null, { path: [], s: 1, e: 3 })).toMatch(/htmlClass\{nx-sel\}\{.*\+.*b.*\}$/);

@@ -836,9 +836,12 @@ export class Editor {
   /** The caret position inside a formula for a hit. */
   private mathPos(m: { item: MathItem; id: Id | null; after: boolean }): MCursor {
     const found = m.id ? findNode(m.item.root, m.id) : null;
-    return found
-      ? { path: found.path, off: found.i + (m.after ? 1 : 0) }
-      : { path: [], off: m.after ? m.item.root.length : 0 };
+    if (!found) return { path: [], off: m.after ? m.item.root.length : 0 };
+    // after a base means after its scripts too (not wedged between them)
+    const row = M.rowAt(m.item.root, found.path);
+    let off = found.i + (m.after ? 1 : 0);
+    if (m.after) while (off < row.length && row[off].k === 'cmd' && CMDS[(row[off] as MCmd).name]?.script) off++;
+    return { path: found.path, off };
   }
 
   /** A drag that started inside a formula: where, and the caret position it started at. */

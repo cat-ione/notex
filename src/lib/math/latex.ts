@@ -76,14 +76,17 @@ function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
 
     if (n.k === 'sym' && BIG_OPS.has(n.v) && o.anchors && !text) {
       // Keep big operators and their limits in one group so limits stay attached.
+      // A caret among the limits goes after them (anything between the operator and
+      // its limits would take the limits from it); the overlay puts it in place.
       let j = i + 1;
       let inner = symLatex(n.v);
+      let caret = false;
       while (j < r.length && isScript(r[j])) {
-        if (j === off) inner += CARET_PRE_SCRIPT;
+        if (j === off) caret = true;
         inner += cmdLatex(r[j] as MCmd, path, j, o, false);
         j++;
       }
-      out += `\\htmlData{nx=${n.id}}{${inner}}`;
+      out += `\\htmlData{nx=${n.id}}{${inner}}` + (caret ? CARET_PRE_SCRIPT : '');
       i = j;
       continue;
     }
