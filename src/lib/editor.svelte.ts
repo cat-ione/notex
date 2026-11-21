@@ -20,10 +20,10 @@ import * as F from './files';
 import * as C from './config';
 import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
 import * as M from './math/edit';
-import { CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
+import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
-import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MRow } from './model';
+import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
 
@@ -1518,8 +1518,20 @@ export class Editor {
       const r = this.rectOfIds([next.id]);
       if (r) x = r.x;
     }
-    const neighbour = row[this.mc.off - 1] ?? next;
-    let v = neighbour ? this.rectOfIds([neighbour.id]) : null;
+    // The caret is as tall as what it stands next to on its own row: after a base with
+    // scripts or primes, that base (not the small script just before the caret);
+    // for an operator with limits, the operator itself; spacing has no height of its own.
+    const small = (n: MNode | undefined) => M.isAttached(n) || (n?.k === 'sym' && SPACES.has(n.v));
+    const extent = (n: MNode | undefined): Rect | null => {
+      if (!n) return null;
+      const r = n.k === 'sym' && BIG_OPS.has(n.v)
+        ? (() => { const op = this.el(n.id, this.b)?.querySelector('.mop'); return op ? fromDOM(op.getBoundingClientRect()) : null; })() ?? this.rectOfIds([n.id])
+        : this.rectOfIds([n.id]);
+      return r && r.h >= 4 ? r : null;
+    };
+    let i = this.mc.off - 1;
+    while (i > 0 && small(row[i])) i--;
+    let v = extent(row[i]) ?? (small(next) ? null : extent(next)) ?? extent(row[this.mc.off - 1]) ?? extent(next);
     if (!v) {
       const empty = mel.querySelector('.nx-active-row .nx-empty') ?? mel.querySelector('.nx-empty');
       v = empty ? measure(empty) : measure(mel);
@@ -2811,6 +2823,9 @@ export class Editor {
 }
 
 // ───────────────────────── utilities ─────────────────────────
+
+/** Spacing commands in math (no ink, so no height to size the caret by). */
+const SPACES = new Set(['\\,', '\\:', '\\;', '\\!', '\\ ', '\\quad', '\\qquad', '\\enspace']);
 
 const isSpace = (it: { t: string; ch?: string }) => it.t === 'c' && /\s/.test(it.ch!);
 const cmpPos = (a: Pos, b: Pos) => a.b - b.b || a.o - b.o;

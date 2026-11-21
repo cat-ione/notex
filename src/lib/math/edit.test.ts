@@ -117,6 +117,22 @@ describe('caret stops', () => {
     expect(cur).toEqual({ path: [], off: 2 });
   });
 
+  it('treats primes as part of their base', () => {
+    walk("f'(x)");
+    walk("f''^2␣x");
+    const { root } = typed("f'");
+    const cur: MCursor = { path: [], off: 0 };
+    M.moveRight(root, cur);
+    expect(cur).toEqual({ path: [], off: 2 });
+    M.moveLeft(root, cur);
+    expect(cur).toEqual({ path: [], off: 0 });
+    // Delete takes the base's primes along (else they would go to the y)
+    const d = typed("y␣f'x");
+    const c2: MCursor = { path: [], off: 1 };
+    M.deleteForward(d.root, c2);
+    expect(toLatex(d.root)).toBe('yx');
+  });
+
   it('delete before a base with scripts goes into them instead of orphaning them', () => {
     const { root } = typed('y␣x^2');
     const cur: MCursor = { path: [], off: 1 };

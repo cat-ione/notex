@@ -10,6 +10,8 @@ import { AUTO_REPLACE, AUTO_STRUCT, CMDS, OPENERS, type Inserter } from './defs'
 import type { MCursor, Step } from './latex';
 import { caretFor, parseLatex, type Parsed } from './parse';
 
+const PRIME = '\\prime';
+
 export function rowAt(root: MRow, path: Step[]): MRow {
   let r = root;
   for (const st of path) r = (r[st.i] as MCmd).slots[st.s];
@@ -32,13 +34,16 @@ const isText = (root: MRow, cur: MCursor) => {
 export const inTextSlot = isText;
 
 const isScriptNode = (n: MNode | undefined) => n?.k === 'cmd' && !!CMDS[n.name]?.script;
+const isPrime = (n: MNode | undefined) => n?.k === 'sym' && (n.v === "'" || n.v === PRIME);
+/** Scripts and primes belong to the node before them (their base). */
+export const isAttached = (n: MNode | undefined) => isScriptNode(n) || isPrime(n);
 
 /**
- * Whether the caret may stop at `off` in `row`. Not between a base and its scripts
- * (nor between two scripts of one base): typing there would take the scripts from
- * their base, so arrowing, clicking and selecting skip those places.
+ * Whether the caret may stop at `off` in `row`. Not between a base and its scripts or
+ * primes (nor between two of them): typing there would take them from their base, so
+ * arrowing, clicking and selecting skip those places.
  */
-export const isStop = (row: MRow, off: number) => !(off > 0 && isScriptNode(row[off]));
+export const isStop = (row: MRow, off: number) => !(off > 0 && isAttached(row[off]));
 
 /** The first offset at or after `off` that is a stop: past the scripts. */
 const pastScripts = (row: MRow, off: number) => {
@@ -46,11 +51,15 @@ const pastScripts = (row: MRow, off: number) => {
   return off;
 };
 
-/** Move the caret off a non-stop: into the script (forward) or to before its base (back). */
+/**
+ * Move the caret off a non-stop: forward into the script (past a prime), or back to
+ * before the base.
+ */
 export function toStop(root: MRow, cur: MCursor, dir: 1 | -1) {
-  while (!isStop(rowAt(root, cur.path), cur.off)) {
-    if (dir > 0) enter(cur, cur.off, 0, false, root);
-    else moveLeft(root, cur);
+  for (let row = rowAt(root, cur.path); !isStop(row, cur.off); row = rowAt(root, cur.path)) {
+    if (dir < 0) moveLeft(root, cur);
+    else if (isPrime(row[cur.off])) cur.off++;
+    else enter(cur, cur.off, 0, false, root);
   }
 }
 
@@ -98,7 +107,10 @@ export function moveLeft(root: MRow, cur: MCursor): boolean {
     if (hasSlots(n)) {
       const s = def(n)?.linear ? n.slots.length - 1 : 0;
       enter(cur, cur.off - 1, s, true, root);
-    } else cur.off--;
+    } else {
+      cur.off--;
+      toStop(root, cur, -1); // over a prime: on to before its base
+    }
     return true;
   }
   const p = parentOf(root, cur);
@@ -192,8 +204,8 @@ export function applyInserter(root: MRow, cur: MCursor, ins: Inserter) {
 
 /** Widen [s, e) so it never separates a base from its scripts. */
 export function alignRange(row: MRow, s: number, e: number): [number, number] {
-  while (s > 0 && isScriptNode(row[s])) s--;
-  while (e < row.length && isScriptNode(row[e])) e++;
+  while (s > 0 && isAttached(row[s])) s--;
+  while (e < row.length && isAttached(row[e])) e++;
   return [s, e];
 }
 
@@ -271,10 +283,16 @@ export function deleteForward(root: MRow, cur: MCursor): boolean {
       enter(cur, cur.off, 0, false, root);
       return true;
     }
-    // a base with scripts: deleting it alone would hand its scripts to whatever is
-    // before it, so go into the scripts instead (as into a structure)
-    if (cur.off > 0 && isScriptNode(r[cur.off + 1])) {
-      enter(cur, cur.off + 1, 0, false, root);
+    // a base with scripts or primes: deleting it alone would hand them to whatever is
+    // before it. Go into its scripts (as into a structure); primes go with the base.
+    if (cur.off > 0 && isAttached(r[cur.off + 1])) {
+      let j = cur.off + 1;
+      while (isPrime(r[j])) j++;
+      if (isScriptNode(r[j])) {
+        enter(cur, j, 0, false, root);
+        return true;
+      }
+      r.splice(cur.off, j - cur.off);
       return true;
     }
     r.splice(cur.off, 1);
