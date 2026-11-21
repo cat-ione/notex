@@ -540,3 +540,22 @@ export function labelOffsetAt(el: Element, x: number, y: number): number {
   for (let t = walk.nextNode(); t && t !== hit.node; t = walk.nextNode()) n += t.textContent?.length ?? 0;
   return o + n + hit.off;
 }
+
+/**
+ * Leader for a note placed by hand: from the edge of its shape toward the note, to the
+ * note's edge. Null when the note is at the shape anyway (within `near`).
+ */
+export function pinnedLeader(shape: Rect, box: Rect, near = 6): [number, number, number, number] | null {
+  const gapX = Math.max(box.x - (shape.x + shape.w), shape.x - (box.x + box.w), 0);
+  const gapY = Math.max(box.y - (shape.y + shape.h), shape.y - (box.y + box.h), 0);
+  if (Math.hypot(gapX, gapY) < near) return null;
+  const sc = { x: shape.x + shape.w / 2, y: shape.y + shape.h / 2 }, bc = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+  // where the line between the centres leaves a rect
+  const exit = (r: Rect, c: { x: number; y: number }, to: { x: number; y: number }) => {
+    const dx = to.x - c.x, dy = to.y - c.y;
+    const t = Math.min(dx ? r.w / 2 / Math.abs(dx) : Infinity, dy ? r.h / 2 / Math.abs(dy) : Infinity, 1);
+    return { x: c.x + dx * t, y: c.y + dy * t };
+  };
+  const a = exit(shape, sc, bc), b = exit(box, bc, sc);
+  return [a.x, a.y, b.x, b.y];
+}

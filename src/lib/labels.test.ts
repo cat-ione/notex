@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { besideNote, layoutRow, renderLabel, type RowNote } from './labels';
+import { besideNote, layoutRow, pinnedLeader, renderLabel, type RowNote } from './labels';
 
 // fake text metrics: 6px per char, 14px lines, words wrap at maxW
 function note(id: string, x: number, text: string, edge = 20): RowNote {
@@ -128,5 +128,19 @@ describe('besideNote', () => {
   it('gives up when both sides are blocked or off the page', () => {
     expect(besideNote(shape, size, { ...page, obstacles: [{ x: 100, y: 90, w: 98, h: 40 }, { x: 218, y: 90, w: 98, h: 40 }] })).toBeNull();
     expect(besideNote(shape, size, { left: 180, right: 240, obstacles: [] })).toBeNull();
+  });
+});
+
+describe('pinnedLeader', () => {
+  const shape = { x: 100, y: 100, w: 40, h: 20 };
+  it('is absent when the note sits at its shape', () => {
+    expect(pinnedLeader(shape, { x: 142, y: 100, w: 50, h: 14 })).toBeNull();
+  });
+  it('runs from the shape edge to the note edge, along the line between them', () => {
+    const l = pinnedLeader(shape, { x: 200, y: 150, w: 40, h: 20 })!;
+    expect(l[0]).toBeCloseTo(140); // leaves the shape's right side
+    expect(l[2]).toBeCloseTo(200); // reaches the note's left side
+    expect(l[1]).toBeGreaterThan(110);
+    expect(l[3]).toBeLessThan(160);
   });
 });

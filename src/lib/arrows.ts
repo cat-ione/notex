@@ -4,7 +4,7 @@
 import { center, pad, type Rect } from './geom';
 
 type Pt = { x: number; y: number };
-export type ArrowGeo = { d: string; mid: Pt; dir: number; from: Rect; to: Rect; p0: Pt; p2: Pt };
+export type ArrowGeo = { d: string; mid: Pt; dir: number; from: Rect; to: Rect; p0: Pt; p2: Pt; leader?: string };
 
 /** An arrow end that should touch an outline (a circled / boxed target) instead of the text. */
 export type Outline = { r: Rect; round: boolean };

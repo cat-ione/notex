@@ -14,7 +14,7 @@
 import { tick } from 'svelte';
 import { arrowGeo, bendThrough, defaultBend, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
-import { besideNote, labelOffsetAt, layoutRow, measureLabel, provisional, type RowNote } from './labels';
+import { besideNote, labelOffsetAt, layoutRow, measureLabel, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
@@ -23,7 +23,7 @@ import * as M from './math/edit';
 import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
-import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
+import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type NoteAt, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
 
@@ -37,7 +37,7 @@ export type Loc =
 export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
-export type DrawingAction = { name: string; desc: string; keys: string[]; run: () => void; menu?: false };
+export type DrawingAction = { name: string; desc: string; keys: string[]; run: (key?: string) => void; menu?: false; keyOnly?: true };
 export type PaletteItem = { name: string; desc: string; draw?: boolean };
 export type Spacer = { above?: number; below?: number };
 type Hint = { label: string; rect: Rect; act: () => void };
@@ -922,7 +922,7 @@ export class Editor {
   /** Selecting inside the note being typed by dragging. */
   private labelDrag: { id: Id } | null = null;
   /** A press on a note: a drag from it moves the note. */
-  private noteDrag: { id: Id; x: number; y: number; moved: boolean } | null = null;
+  private noteDrag: { id: Id; x: number; y: number; moved: boolean; from?: NoteAt } | null = null;
 
   /** The note element for a drawing (not the offscreen one notes are measured with). */
   private noteEl(id: Id): HTMLElement | null {
@@ -989,7 +989,38 @@ export class Editor {
     this.touch();
   }
 
-  private dragNote(_e: MouseEvent) {}
+  private drawing(id: Id): Arrow | Mark | undefined {
+    return this.doc.arrows.find((x) => x.id === id) ?? this.doc.marks.find((x) => x.id === id);
+  }
+
+  /** A note's offset from the middle of its drawing as drawn now (placed by hand or not). */
+  private noteOffset(id: Id): NoteAt | null {
+    const d = this.drawing(id);
+    if (d?.note) return { ...d.note };
+    const el = this.noteEl(id), o = this.page?.getBoundingClientRect();
+    const g = this.markGeos[id], ag = this.arrowGeos[id];
+    const c = g ? { x: g.bounds.x + g.bounds.w / 2, y: g.bounds.y + g.bounds.h / 2 } : ag?.mid;
+    if (!el || !o || !c) return null;
+    const r = el.getBoundingClientRect();
+    return { dx: r.left + r.width / 2 - o.left - c.x, dy: r.top + r.height / 2 - o.top - c.y };
+  }
+
+  /** Dragging a note: once it has moved a few pixels it is placed by hand (one undo step). */
+  private dragNote(e: MouseEvent) {
+    const nd = this.noteDrag!;
+    const d = this.drawing(nd.id);
+    if (!d) return void (this.noteDrag = null);
+    if (!nd.moved) {
+      if (Math.hypot(e.clientX - nd.x, e.clientY - nd.y) < 3) return;
+      const from = this.noteOffset(nd.id);
+      if (!from) return void (this.noteDrag = null);
+      nd.moved = true;
+      nd.from = from;
+      this.checkpoint();
+    }
+    d.note = { dx: Math.round(nd.from!.dx + e.clientX - nd.x), dy: Math.round(nd.from!.dy + e.clientY - nd.y) };
+    this.touch();
+  }
 
   /** Dragging a handle of the selected arrow. */
   private handleDrag: { id: Id; part: 'from' | 'to' | 'bend' } | null = null;
@@ -1187,6 +1218,10 @@ export class Editor {
       const ta = rel(this.rectOfIds(a.to));
       if (!fa || !ta) continue;
       const g = arrowGeo(fa, ta, a.bend, { from: outlines.get(idKey(a.from)), to: outlines.get(idKey(a.to)) });
+      if (g && a.note && a.label) {
+        const ld = pinnedLeader({ x: g.mid.x - 2, y: g.mid.y - 2, w: 4, h: 4 }, this.pinnedBox(a, g));
+        if (ld) g.leader = `M${ld[0].toFixed(1)},${ld[1].toFixed(1)} L${ld[2].toFixed(1)},${ld[3].toFixed(1)}`;
+      }
       if (g) geos[a.id] = g;
     }
     this.arrowGeos = geos;
@@ -1289,6 +1324,23 @@ export class Editor {
   }
   private scrollQueued = false;
 
+  /** The box of a hand-placed note (page coordinates). */
+  private pinnedBox(d: Mark | Arrow, g: MarkGeo | ArrowGeo): Rect {
+    const s = measureLabel(d.label, Infinity, this.typingLabel === d.id);
+    const c = 'bounds' in g ? { x: g.bounds.x + g.bounds.w / 2, y: g.bounds.y + g.bounds.h / 2 } : g.mid;
+    return { x: c.x + d.note!.dx - s.w / 2, y: c.y + d.note!.dy - s.h / 2, w: s.w, h: s.h };
+  }
+
+  /** Place a hand-placed mark note: its label position (as LabelLayer draws it) and leader. */
+  private pinNote(m: Mark, g: MarkGeo): Rect {
+    const box = this.pinnedBox(m, g);
+    const below = box.y + box.h / 2 > g.bounds.y + g.bounds.h / 2;
+    g.label = { x: box.x + box.w / 2, y: below ? box.y + 12 : box.y + box.h - 3, below };
+    const ld = pinnedLeader(g.bounds, box);
+    g.leader = ld ? `M${ld[0].toFixed(1)},${ld[1].toFixed(1)} L${ld[2].toFixed(1)},${ld[3].toFixed(1)}` : undefined;
+    return box;
+  }
+
   /**
    * Lay out notes (see $lib/labels for the rules): notes along the same line
    * and side form a row laid out by `layoutRow`; the row then moves off ink on
@@ -1358,9 +1410,20 @@ export class Editor {
     // A circle low on its line (a lower limit, a subscript) gets its note level with it, on
     // whichever side is open: above, its leader would reach past the rest of the formula.
     // If neither side is clear, below.
+    // A note placed by hand stays at its offset from the drawing (a leader once it's
+    // away); automatic notes keep clear of it.
+    const pinned = new Set<Info>();
+    for (const i of infos) {
+      if (!i.m.note || !i.m.label) continue;
+      const box = this.pinNote(i.m, i.g);
+      pinned.add(i);
+      placed.push(box);
+      noteOf.set(i.m.id, [box]);
+    }
     const beside = new Set<Info>();
     for (const i of infos) {
       const { m, g } = i;
+      if (pinned.has(i)) continue;
       if (m.kind !== 'circle' || !m.label || !g.outline || i.line < 0) continue;
       // low compared with the ink around it (a tall sum elsewhere on the line doesn't count)
       const t = i.t, u = union([t, ...inkLines(i.blockEl)[i.line].filter((r) => r.x < t.x + t.w + 12 && t.x - 12 < r.x + r.w)])!;
@@ -1390,12 +1453,12 @@ export class Editor {
         const drop = bottom + 4 - (a.t.y + a.t.h);
         if (drop > 0) {
           const g = markGeo(a.m.kind, lines[a.m.id].map((r, k, all) => (k === all.length - 1 ? { ...r, h: r.h + drop } : r)));
-          if (g) Object.assign(a.g, g, { leader: undefined });
+          if (g) Object.assign(a.g, g, pinned.has(a) ? { label: a.g.label, leader: a.g.leader } : { leader: undefined });
         }
       }
       // rows: same block, line, side and level
       const rows = new Map<string, Info[]>();
-      for (const i of infos.filter((i) => i.level === level && i.m.label && !beside.has(i))) {
+      for (const i of infos.filter((i) => i.level === level && i.m.label && !beside.has(i) && !pinned.has(i))) {
         const key = `${firstOfBlock.get(i.blockEl)}:${i.line}:${i.g.label.below}`;
         rows.set(key, [...(rows.get(key) ?? []), i]);
       }
@@ -2210,7 +2273,7 @@ export class Editor {
     const rankDraws = (n: number) => rank(draws.map((c) => c.name), q).slice(0, n).map((n) => draws.find((c) => c.name === n)!);
     if (p.ctx === 'draw') return rankDraws(10);
     if (p.ctx === 'style') {
-      const acts = this.styling ? this.drawingActions(this.styling) : [];
+      const acts = this.styling ? this.drawingActions(this.styling).filter((a) => !a.keyOnly) : [];
       return rank(acts.map((c) => c.name), q).slice(0, 10).map((n) => {
         const c = acts.find((c) => c.name === n)!;
         return { name: c.name, desc: `${c.desc}  ${keyLabel(c.keys[0])}` };
@@ -2877,6 +2940,24 @@ export class Editor {
       ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note ($math$ works)', keys: ['l', 'i', '"'], run: () => this.editNote() });
     const remove = (f: () => void): DrawingAction =>
       ({ name: 'delete', desc: 'remove it', keys: ['x', 'Delete', 'Backspace'], run: () => { this.checkpoint(); f(); this.endDrawing(); } });
+    // a note can be moved by hand: Alt+arrows (Shift: by a pixel), Alt+0 puts it back
+    const d = a ?? m;
+    const placing: DrawingAction[] = d?.label
+      ? [
+          {
+            name: 'nudge', desc: 'move the note', keys: ['A-Left', 'A-Right', 'A-Up', 'A-Down', 'A-S-Left', 'A-S-Right', 'A-S-Up', 'A-S-Down'], keyOnly: true,
+            run: (k) => {
+              const dir = k && /(Left|Right|Up|Down)$/.exec(k)?.[1];
+              const o = dir && this.noteOffset(id);
+              if (!o) return;
+              const step = k!.includes('S-') ? 1 : 4;
+              this.checkpoint('style');
+              d.note = { dx: o.dx + (dir === 'Left' ? -step : dir === 'Right' ? step : 0), dy: o.dy + (dir === 'Up' ? -step : dir === 'Down' ? step : 0) };
+            },
+          },
+          ...(d.note ? [{ name: 'autonote', desc: 'put the note back', keys: ['A-0'], run: () => { this.checkpoint(); delete d.note; } }] : []),
+        ]
+      : [];
     const menu: DrawingAction = { name: 'menu', desc: 'this menu', keys: ['S-F10', 'ContextMenu'], run: () => this.openDrawingMenu(id), menu: false };
     if (a) {
       const dir = () => this.arrowGeos[a.id]?.dir ?? 1;
@@ -2892,6 +2973,7 @@ export class Editor {
         note(a),
         { name: 'start', desc: 'move the start', keys: ['s'], run: () => this.retarget(a.id, 'from') },
         { name: 'tip', desc: 'move the tip', keys: ['e'], run: () => this.retarget(a.id, 'to') },
+        ...placing,
         remove(() => this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1)),
         menu,
       ];
@@ -2905,6 +2987,7 @@ export class Editor {
         { name: 'colour', desc: `colour (${m.color || 'default'})`, keys: ['c'], run: edit(() => (m.color = nextInk(m.color))) },
         note(m),
         { name: 'target', desc: 'choose what it marks', keys: ['e', 'm'], run: () => this.retarget(m.id, 'at') },
+        ...placing,
         remove(() => this.doc.marks.splice(this.doc.marks.indexOf(m), 1)),
         menu,
       ];
@@ -2922,7 +3005,7 @@ export class Editor {
       case 'C-y': case 'C-S-z': this.styling = null; this.redo(); return true;
       case '\\': case ':': this.openPalette('style'); return true;
     }
-    acts.find((x) => x.keys.includes(k))?.run();
+    acts.find((x) => x.keys.includes(k))?.run(k);
     return true;
   }
 
@@ -2946,7 +3029,7 @@ export class Editor {
   menu = $state<{ id: Id; x: number; y: number; sel: number } | null>(null);
 
   get menuItems(): DrawingAction[] {
-    return this.menu ? this.drawingActions(this.menu.id).filter((a) => a.menu !== false) : [];
+    return this.menu ? this.drawingActions(this.menu.id).filter((a) => a.menu !== false && !a.keyOnly) : [];
   }
 
   /** Select a drawing and open its menu at (x, y), or under the drawing (from the keyboard). */

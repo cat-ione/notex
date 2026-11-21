@@ -30,11 +30,15 @@ export type Arrow = {
   boxed: boolean;
   label: string;
   color?: string;
+  /** Where its note was put by hand (see NoteAt); absent: placed automatically. */
+  note?: NoteAt;
 };
 
 /** A shape drawn around / under a run of text or math. */
 export type MarkKind = 'box' | 'circle' | 'underline' | 'highlight' | 'brace' | 'strike';
-export type Mark = { id: Id; kind: MarkKind; at: Id[]; dash: boolean; label: string; color?: string };
+export type Mark = { id: Id; kind: MarkKind; at: Id[]; dash: boolean; label: string; color?: string; note?: NoteAt };
+/** A note placed by hand: its centre's offset from the middle of its drawing (an arrow's midpoint). */
+export type NoteAt = { dx: number; dy: number };
 
 export type Doc = { blocks: Block[]; arrows: Arrow[]; marks: Mark[] };
 

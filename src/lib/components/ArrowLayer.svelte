@@ -50,6 +50,9 @@
           marker-start={a.head === 'both' ? head : undefined}
           in:draw={{ duration: 420 }}
         />
+        {#if g.leader}
+          <path class="leader" d={g.leader} in:fade={{ duration: 150 }} />
+        {/if}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <path
           class="hit"
@@ -114,6 +117,11 @@
   .clickable .hover:not(.sel) path:not(.hit) {
     stroke-width: 2;
     filter: drop-shadow(0 0 2px var(--ink, var(--arrow)));
+  }
+  path.leader {
+    stroke-width: 1;
+    stroke-dasharray: 2 2;
+    opacity: 0.7;
   }
   .ghost {
     opacity: 0.25;

@@ -8,7 +8,7 @@
   // contain $math$.
   let { ed }: { ed: Editor } = $props();
 
-  type L = { id: string; text: string; edit?: { at: number; anchor: number | null }; x: number; y: number; below: boolean; maxW?: number; color?: string; sel: boolean; ghost: boolean };
+  type L = { id: string; text: string; edit?: { at: number; anchor: number | null }; pinned?: boolean; x: number; y: number; below: boolean; maxW?: number; color?: string; sel: boolean; ghost: boolean };
   const labels = $derived.by(() => {
     const out: L[] = [];
     const ghost = ed.pick?.edit?.id;
@@ -20,7 +20,10 @@
     for (const a of ed.doc.arrows) {
       const g = ed.arrowGeos[a.id];
       const t = text(a.id, a.label);
-      if (g && (t || editing(a.id))) out.push({ id: a.id, text: t, edit: edit(a.id), x: g.mid.x, y: g.mid.y - 4, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
+      if (!g || !(t || editing(a.id))) continue;
+      // placed by hand: centred at its offset from the midpoint
+      if (a.note) out.push({ id: a.id, text: t, edit: edit(a.id), pinned: true, x: g.mid.x + a.note.dx, y: g.mid.y + a.note.dy, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
+      else out.push({ id: a.id, text: t, edit: edit(a.id), x: g.mid.x, y: g.mid.y - 4, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
     }
     for (const m of ed.doc.marks) {
       const g = ed.markGeos[m.id];
@@ -48,6 +51,7 @@
     class:inked={!!l.color}
     class:wrapped={!!l.maxW}
     class:typing={!!l.edit}
+    class:pinned={l.pinned}
     class:live
     class:hover={ed.hovered === l.id}
     onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.noteDown(l.id, e); }}
@@ -104,6 +108,9 @@
   :global(.dlabel.live.hover) {
     background: color-mix(in srgb, var(--ink) 14%, var(--bg));
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 45%, transparent);
+  }
+  :global(.dlabel.pinned) {
+    transform: translate(-50%, -50%);
   }
   :global(.dlabel.ghost) {
     opacity: 0.25;
