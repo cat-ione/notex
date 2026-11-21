@@ -74,3 +74,13 @@ describe('lists', () => {
     );
   });
 });
+
+describe('bold and italic', () => {
+  it('export as \\textbf / \\emph runs', () => {
+    const items = chars('a bold, both and it');
+    items.slice(2, 6).forEach((c) => c.t === 'c' && (c.b = true));
+    items.slice(8, 12).forEach((c) => c.t === 'c' && ((c.b = true), (c.i = true)));
+    items.slice(17).forEach((c) => c.t === 'c' && (c.i = true));
+    expect(docToLatex({ blocks: [block(items)], arrows: [], marks: [] })).toBe('a \\textbf{bold}, \\textbf{\\emph{both}} and \\emph{it}\n');
+  });
+});

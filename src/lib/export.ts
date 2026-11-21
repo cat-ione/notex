@@ -191,13 +191,22 @@ export function docToLatex(doc: Doc): string {
   for (const [k, ws] of before) if (!k.includes(':')) mathWraps.before.set(k, opens(ws));
   for (const [k, ws] of after) if (!k.includes(':')) mathWraps.after.set(k, closes(ws));
 
-  const inline = (items: Item[], b: number) =>
-    items
-      .map((it, o) => {
-        const body = it.t === 'c' ? (ESC[it.ch] ?? it.ch) : it.display ? `\n\\[ ${toLatexWrapped(it.root, mathWraps)} \\]\n` : `$${toLatexWrapped(it.root, mathWraps)}$`;
-        return opens(before.get(`${b}:${o}`)) + body + closes(after.get(`${b}:${o}`));
-      })
-      .join('');
+  // bold / italic runs as \textbf / \emph (closed around a drawing's wrapper, so they nest)
+  const OPEN: Record<string, string> = { b: '\\textbf{', i: '\\emph{', bi: '\\textbf{\\emph{' };
+  const CLOSE: Record<string, string> = { b: '}', i: '}', bi: '}}' };
+  const inline = (items: Item[], b: number) => {
+    let out = '', cur = '';
+    items.forEach((it, o) => {
+      const pre = opens(before.get(`${b}:${o}`)), post = closes(after.get(`${b}:${o}`));
+      const st = it.t === 'c' ? (it.b ? 'b' : '') + (it.i ? 'i' : '') : '';
+      if (st !== cur || pre) (out += CLOSE[cur] ?? ''), (cur = '');
+      out += pre;
+      if (st !== cur) (out += OPEN[st] ?? ''), (cur = st);
+      out += it.t === 'c' ? (ESC[it.ch] ?? it.ch) : it.display ? `\n\\[ ${toLatexWrapped(it.root, mathWraps)} \\]\n` : `$${toLatexWrapped(it.root, mathWraps)}$`;
+      if (post) (out += CLOSE[cur] ?? ''), (cur = ''), (out += post);
+    });
+    return out + (CLOSE[cur] ?? '');
+  };
 
   const out: string[] = [];
   // open lists, outermost first (a nested item opens one inside the item before it)

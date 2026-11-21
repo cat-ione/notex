@@ -82,3 +82,14 @@ describe('lists in the file', () => {
     expect(back.blocks.map((x) => [x.kind, x.indent ?? 0])).toEqual([['ol', 0], ['li', 2]]);
   });
 });
+
+describe('bold and italic in the file', () => {
+  it('are stored as styled runs and come back', () => {
+    const items = chars('plain bold');
+    items.slice(6).forEach((c) => c.t === 'c' && (c.b = true));
+    const text = serialize({ blocks: [block(items)], arrows: [], marks: [] });
+    expect(text).toContain('{"s":"bold","b":1}');
+    const back = deserialize(text).blocks[0].items;
+    expect(back.map((c) => (c.t === 'c' && c.b ? 'B' : '.')).join('')).toBe('......BBBB');
+  });
+});

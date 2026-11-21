@@ -2269,6 +2269,8 @@ export class Editor {
       case 'C-y': case 'C-S-z': this.redo(); return true;
       case 'C-k': this.anchor = null; this.openPalette('text'); return true;
       case 'C-m': this.deleteSelection(); this.insertMath(false); return true;
+      case 'C-b': this.toggleStyle('b'); return true;
+      case 'C-i': this.toggleStyle('i'); return true;
       case 'Enter': case 'S-Enter': {
         this.checkpoint();
         this.deleteSelection();
@@ -2367,9 +2369,14 @@ export class Editor {
     if (k.length === 1) {
       this.checkpoint('type');
       this.deleteSelection();
-      this.blk.items.splice(this.o, 0, ch(k));
+      const c = ch(k), st = this.typingStyle();
+      if (st.b) c.b = true;
+      if (st.i) c.i = true;
+      this.blk.items.splice(this.o, 0, c);
       this.o++;
+      if (this.pendingStyle) this.pendingStyle.at = { b: this.b, o: this.o };
       if (k === ' ') this.markdownShortcut();
+      if (k === '*') this.emphasisShortcut();
       this.textSnippet();
       return true;
     }
@@ -2406,6 +2413,65 @@ export class Editor {
     this.setMode('math');
     this.island = m.id;
     return true;
+  }
+
+  /**
+   * Bold / italic for what's typed next (Ctrl+B / Ctrl+I without a selection, or plain right
+   * after a *…* conversion), while the caret stays where it was left.
+   */
+  private pendingStyle: { b: boolean; i: boolean; at: Pos } | null = null;
+
+  /** The style a character typed now gets: the pending one, else the character before's. */
+  private typingStyle(): { b: boolean; i: boolean } {
+    const p = this.pendingStyle;
+    if (p && p.at.b === this.b && p.at.o === this.o) return p;
+    this.pendingStyle = null;
+    const prev = this.blk.items[this.o - 1];
+    return prev?.t === 'c' ? { b: !!prev.b, i: !!prev.i } : { b: false, i: false };
+  }
+
+  /** Ctrl+B / Ctrl+I: on the selection (all of it on → off), or for what's typed next. */
+  private toggleStyle(s: 'b' | 'i') {
+    const sel = this.selection;
+    if (!sel) {
+      const st = this.typingStyle();
+      this.pendingStyle = { ...st, [s]: !st[s], at: { b: this.b, o: this.o } };
+      this.flash(`${s === 'b' ? 'bold' : 'italic'} ${this.pendingStyle[s] ? 'on' : 'off'}`);
+      return;
+    }
+    const chars = this.selectedItems().flat().filter((it): it is Char => it.t === 'c' && !/\s/.test(it.ch));
+    if (!chars.length) return;
+    this.checkpoint();
+    const on = !chars.every((c) => c[s]);
+    // (the live characters: selectedItems may hand back the document's own objects or copies)
+    const ids = new Set(chars.map((c) => c.id));
+    for (let b = sel.s.b; b <= sel.e.b; b++)
+      for (const it of this.doc.blocks[b].items)
+        if (it.t === 'c' && ids.has(it.id)) {
+          if (on) it[s] = true;
+          else delete it[s];
+        }
+  }
+
+  /**
+   * `*word*` → italic, `**word**` → bold, on the closing `*`: the run opened after a space,
+   * a bracket or the line start, with no space just inside the stars. One undo step.
+   */
+  private emphasisShortcut() {
+    const items = this.blk.items;
+    const text = items.slice(0, this.o).map((i) => (i.t === 'c' ? i.ch : '\0')).join('');
+    const m = /(^|[\s(["'])(\*\*|\*)([^\s*](?:[^*]*[^\s*])?)\2$/.exec(text);
+    if (!m) return;
+    const L = m[2].length, inner = m[3].length;
+    const end = this.o, start = end - L - inner - L;
+    this.checkpoint();
+    for (const it of items.slice(start + L, end - L)) if (it.t === 'c') it[L === 2 ? 'b' : 'i'] = true;
+    items.splice(end - L, L);
+    items.splice(start, L);
+    this.o = end - 2 * L;
+    // what's typed next is plain again
+    const st = this.typingStyle();
+    this.pendingStyle = { ...st, [L === 2 ? 'b' : 'i']: false, at: { b: this.b, o: this.o } };
   }
 
   /** Last text snippet expansion, so an immediate Backspace can undo it. */
@@ -2807,6 +2873,8 @@ export class Editor {
       { name: 'p', desc: 'paragraph', run: setKind('p') },
       { name: 'li', desc: 'list item  - ␣', run: setKind('li') },
       { name: 'ol', desc: 'numbered list item  1. ␣', run: setKind('ol') },
+      { name: 'bold', desc: 'bold  ctrl+b · **word**', run: () => this.toggleStyle('b') },
+      { name: 'italic', desc: 'italic  ctrl+i · *word*', run: () => this.toggleStyle('i') },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
       { name: 'config', desc: 'edit the config file (snippets, themes, css)', run: () => this.editConfig() },

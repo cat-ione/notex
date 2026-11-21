@@ -12,7 +12,8 @@ export type MCmd = { k: 'cmd'; id: Id; name: string; slots: MRow[]; cols?: numbe
 export type MNode = MSym | MCmd;
 export type MRow = MNode[];
 
-export type Char = { t: 'c'; id: Id; ch: string };
+/** A character of text; `b` / `i`: bold, italic. */
+export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true };
 export type MathItem = { t: 'm'; id: Id; root: MRow; display: boolean };
 export type Item = Char | MathItem;
 

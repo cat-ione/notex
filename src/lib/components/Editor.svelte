@@ -133,7 +133,7 @@
         <div class="block {blk.kind}" class:current={ed.b === b} data-nx={blk.id} data-depth={blk.indent || undefined} data-n={listNums[b]} style:--indent={blk.indent || undefined}>
           {#each blk.items as it, o (it.id)}
             {#if it.t === 'c'}
-              <span class="ch" data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
+              <span class="ch" class:b={it.b} class:i={it.i} data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {:else}
               <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {/if}
@@ -351,6 +351,12 @@
   .eol {
     display: inline-block;
     width: 0;
+  }
+  .ch.b {
+    font-weight: 700;
+  }
+  .ch.i {
+    font-style: italic;
   }
   /* after a display formula it would get a line of its own: an empty line under every one */
   :global(.block .math.display + .eol) {

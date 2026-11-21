@@ -5,7 +5,7 @@
 // characters/blocks are rewritten as positions. Math nodes keep their ids.
 //
 //   { format: 'notex', version: 1,
-//     blocks: [{ kind, content: ['plain text', { m: MRow, id, d?: 1 }, ...] }],
+//     blocks: [{ kind, content: ['plain text', { s: 'bold text', b: 1 }, { m: MRow, id, d?: 1 }, ...] }],
 //     arrows: [{ from: ['c0.4', 'c0.5', '<math node id>'], to: [...], ... }],
 //     marks: [{ kind: 'circle', at: [...], ... }] }
 //
@@ -14,7 +14,8 @@
 
 import { block, ch, type Arrow, type Mark, type Block, type BlockKind, type Doc, type Id, type Item, type MRow } from './model';
 
-type Content = string | { m: MRow; id: Id; d?: 1 };
+/** Plain text, styled text (bold / italic), or a formula. */
+type Content = string | { s: string; b?: 1; i?: 1 } | { m: MRow; id: Id; d?: 1 };
 type FileBlock = { kind: BlockKind; content: Content[]; indent?: number };
 type FileArrow = Omit<Arrow, 'id'>;
 type FileMark = Omit<Mark, 'id'>;
@@ -25,17 +26,24 @@ export function encode(doc: Doc): NoteFile {
   const blocks = doc.blocks.map((b, bi): FileBlock => {
     where.set(b.id, `b${bi}`);
     const content: Content[] = [];
-    let run = '';
+    // runs of text in one style
+    let run = '', style = '';
+    const flush = () => {
+      if (run) content.push(style ? { s: run, ...(style.includes('b') ? { b: 1 as const } : {}), ...(style.includes('i') ? { i: 1 as const } : {}) } : run);
+      run = '';
+    };
     b.items.forEach((it, o) => {
       if (it.t === 'c') {
         where.set(it.id, `c${bi}.${o}`);
+        const st = (it.b ? 'b' : '') + (it.i ? 'i' : '');
+        if (st !== style) flush(), (style = st);
         run += it.ch;
       } else {
-        if (run) content.push(run), (run = '');
+        flush();
         content.push(it.display ? { m: it.root, id: it.id, d: 1 } : { m: it.root, id: it.id });
       }
     });
-    if (run) content.push(run);
+    flush();
     return b.indent ? { kind: b.kind, content, indent: b.indent } : { kind: b.kind, content };
   });
   const mapIds = (ids: Id[]) => ids.map((id) => where.get(id) ?? id);
@@ -51,6 +59,13 @@ export function decode(file: NoteFile): Doc {
     const items: Item[] = [];
     for (const c of fb.content) {
       if (typeof c === 'string') for (const s of c) items.push(ch(s));
+      else if ('s' in c)
+        for (const s of c.s) {
+          const x = ch(s);
+          if (c.b) x.b = true;
+          if (c.i) x.i = true;
+          items.push(x);
+        }
       else items.push({ t: 'm', id: c.id, root: c.m, display: !!c.d });
     }
     const blk = block(items, fb.kind);
