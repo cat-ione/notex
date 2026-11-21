@@ -52,6 +52,21 @@
         />
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <path class="hit" d={g.d} onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(a.id); }} />
+        {#if sel && ed.mode === 'style'}
+          {#each [['from', g.p0], ['to', g.p2], ['bend', g.mid]] as const as [part, p] (part)}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <circle
+              class="handle {part}"
+              cx={p.x}
+              cy={p.y}
+              r={part === 'bend' ? 4 : 5}
+              onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.beginHandleDrag(a.id, part); }}
+              in:fade={{ duration: 120 }}
+            >
+              <title>{part === 'bend' ? 'drag to bend' : `drag to move the ${part === 'from' ? 'start' : 'tip'}`}</title>
+            </circle>
+          {/each}
+        {/if}
       </g>
     {/if}
   {/each}
@@ -90,6 +105,21 @@
   }
   .ghost {
     opacity: 0.25;
+  }
+  .handle {
+    fill: var(--bg);
+    stroke: var(--ink, var(--accent));
+    stroke-width: 1.5;
+    pointer-events: all;
+    cursor: grab;
+    transition: r 120ms ease;
+  }
+  .handle:hover {
+    r: 6.5;
+  }
+  .handle.bend {
+    fill: var(--ink, var(--accent));
+    cursor: ns-resize;
   }
   path.hit {
     stroke: transparent;

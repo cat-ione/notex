@@ -12,7 +12,7 @@
 //   label   — typing an arrow label (transient)
 
 import { tick } from 'svelte';
-import { arrowGeo, defaultBend, type ArrowGeo, type Outline } from './arrows';
+import { arrowGeo, bendThrough, defaultBend, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { docToLatex } from './export';
 import * as F from './files';
@@ -492,7 +492,34 @@ export class Editor {
     this.setMode('text');
   }
 
+  /** Dragging a handle of the selected arrow. */
+  private handleDrag: { id: Id; part: 'from' | 'to' | 'bend' } | null = null;
+
+  beginHandleDrag(id: Id, part: 'from' | 'to' | 'bend') {
+    const a = this.doc.arrows.find((x) => x.id === id);
+    if (!a) return;
+    this.handleDrag = { id, part };
+    if (part === 'bend') this.checkpoint();
+    else this.retarget(id, part);
+  }
+
+  private dragHandle(e: MouseEvent) {
+    const hd = this.handleDrag!;
+    const a = this.doc.arrows.find((x) => x.id === hd.id);
+    if (!a || !this.page) return;
+    if (hd.part === 'bend') {
+      const fr = this.rectOfIds(a.from), tr = this.rectOfIds(a.to);
+      if (fr && tr) a.bend = bendThrough(fr, tr, { x: e.clientX, y: e.clientY });
+    } else if (this.pick) {
+      const id = (document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
+      const loc = id ? this.locFromId(id) : null;
+      if (loc) this.pick.loc = loc;
+    }
+    this.touch();
+  }
+
   mouseMove(e: MouseEvent) {
+    if (this.handleDrag) return this.dragHandle(e);
     if (!this.dragging) return;
     const h = this.hitTest(e.clientX, e.clientY);
     if (!h) return;
@@ -506,6 +533,13 @@ export class Editor {
 
   mouseUp() {
     this.dragging = false;
+    const hd = this.handleDrag;
+    this.handleDrag = null;
+    if (hd && hd.part !== 'bend' && this.pick?.edit) {
+      this.finishRetarget(this.pick.edit, this.anchorIds(this.pick.loc));
+      // dropped somewhere invalid: keep the arrow as it was
+      if (this.pick) (this.pick = null), this.selectDrawing(hd.id);
+    }
   }
 
   // ───────────────────────── layout ─────────────────────────

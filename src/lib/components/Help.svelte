@@ -19,7 +19,7 @@
       ['shift+← →', 'extend over neighbours'], ['home  end', 'first / last on the line'], ['tab', 'jump labels'], ['enter', 'confirm start, then end'],
     ]],
     ['changing a drawing  (click it, or \\drawings)', [
-      ['↑ ↓', 'bend an arrow'], ['0', 'straight'], ['t', 'arrowheads / next shape'], ['d', 'dashed'], ['b', 'box the ends'],
+      ['drag the dots', 'move an arrow\'s ends or bend it'], ['↑ ↓', 'bend an arrow'], ['0', 'straight'], ['t', 'arrowheads / next shape'], ['d', 'dashed'], ['b', 'box the ends'],
       ['c', 'colour'], ['l', 'label / note ($math$ works)'], ['s  e', 'move the start / tip (shape: e)'], ['r', 'reverse'], ['del', 'remove'],
     ]],
   ];

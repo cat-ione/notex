@@ -3,7 +3,8 @@
 
 import { center, pad, type Rect } from './geom';
 
-export type ArrowGeo = { d: string; mid: { x: number; y: number }; dir: number; from: Rect; to: Rect };
+type Pt = { x: number; y: number };
+export type ArrowGeo = { d: string; mid: Pt; dir: number; from: Rect; to: Rect; p0: Pt; p2: Pt };
 
 /** An arrow end that should touch an outline (a circled / boxed target) instead of the text. */
 export type Outline = { r: Rect; round: boolean };
@@ -33,7 +34,17 @@ export function arrowGeo(a: Rect, b: Rect, bend: number, outline: { from?: Outli
   const p2 = rayExit(pb, cb, ctrl, outline.to?.round);
   const mid = { x: 0.25 * p0.x + 0.5 * ctrl.x + 0.25 * p2.x, y: 0.25 * p0.y + 0.5 * ctrl.y + 0.25 * p2.y };
   const f = (n: number) => n.toFixed(1);
-  return { d: `M${f(p0.x)},${f(p0.y)} Q${f(ctrl.x)},${f(ctrl.y)} ${f(p2.x)},${f(p2.y)}`, mid, dir: Math.sign(dx) || 1, from: pa, to: pb };
+  return { d: `M${f(p0.x)},${f(p0.y)} Q${f(ctrl.x)},${f(ctrl.y)} ${f(p2.x)},${f(p2.y)}`, mid, dir: Math.sign(dx) || 1, from: pa, to: pb, p0, p2 };
+}
+
+/** The bend that puts the curve's middle at `p` (for dragging the bend handle). */
+export function bendThrough(a: Rect, b: Rect, p: Pt): number {
+  const ca = center(a), cb = center(b);
+  const dx = cb.x - ca.x, dy = cb.y - ca.y;
+  const len = Math.hypot(dx, dy) || 1;
+  // The curve's midpoint sits halfway between the chord's midpoint and the control point.
+  const off = (p.x - (ca.x + cb.x) / 2) * (dy / len) + (p.y - (ca.y + cb.y) / 2) * (-dx / len);
+  return Math.round(((2 * off) / len) * 100) / 100;
 }
 
 /** A pleasant default curvature: arc over the text when roughly horizontal. */
