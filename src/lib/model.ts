@@ -37,7 +37,12 @@ export type Arrow = {
   color?: string;
   /** Where its note was put by hand (see NoteAt); absent: placed automatically. */
   note?: NoteAt;
+  /** Where each end attaches on its target (see Attach); absent: wherever faces the other end. */
+  fromAt?: Attach;
+  toAt?: Attach;
 };
+/** A point on the edge of an arrow end's target box, as fractions of its width and height. */
+export type Attach = { x: number; y: number };
 
 /** A shape drawn around / under a run of text or math. */
 export type MarkKind = 'box' | 'circle' | 'underline' | 'highlight' | 'brace' | 'strike';

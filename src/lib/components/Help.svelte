@@ -24,13 +24,13 @@
     ]],
     ['changing a drawing  (click it, or \\drawings)', [
       ['drag the dots', 'move an arrow\'s ends or bend it'], ['↑ ↓', 'bend an arrow'], ['0', 'straight'], ['t', 'arrowheads / next shape'], ['d', 'dashed'], ['b', 'box the ends'],
-      ['c', 'colour'], ['l', 'label / note ($math$ works)'], ['s  e', 'move the start / tip (shape: e)'], ['r', 'reverse'], ['del', 'remove'],
+      ['c', 'colour'], ['l', 'label / note ($math$ works)'], ['s  e', 'move the start / tip (shape: e)'], ['shift+s  shift+e', 'where the start / tip attaches'], ['r', 'reverse'], ['del', 'remove'],
       ['shift+← →', 'shape: move its end (ctrl+shift: its start)'], ['alt+arrows', 'move the note (shift: by a pixel)'], ['alt+0', 'put the note back'],
       ['shift+f10', 'menu of all of these'], ['\\', 'search them by name'],
     ]],
     ['mouse', [
       ['click / right-click', 'select a drawing or note / its menu'], ['right-click the page', 'copy, paste, draw on the selection, undo'], ['double-click', 'type its note, caret where you clicked'],
-      ['drag a shape', 'move it onto another word or symbol'], ['drag an arrow', 'bend it through the mouse'],
+      ['drag a shape', 'move it onto another word or symbol'], ['drag an arrow', 'bend it through the mouse'], ['drag an end dot', 'onto a side of the target: attach there'],
       ['wheel near it', 'next shape / bend (shift: colour); keeps going till the mouse moves'], ['middle-click', 'remove it'], ['toolbar', 'over the selected drawing: one click each'],
       ['drag a note', 'move it (alt+0 puts it back)'], ["drag a shape's ends", 'cover more or less'],
       ['drag in a note', 'select (double: word, triple: all)'], ['hover', 'shows a drawing with its note'],

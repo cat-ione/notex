@@ -12,7 +12,7 @@
 //   label   — typing an arrow label (transient)
 
 import { tick } from 'svelte';
-import { arrowGeo, bendThrough, defaultBend, type ArrowGeo, type Outline } from './arrows';
+import { arrowGeo, attachAt, bendThrough, defaultBend, nextSide, sideName, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
@@ -23,7 +23,7 @@ import * as M from './math/edit';
 import { AUTO_REPLACE, BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
-import { allIds, block, ch, chars, cloneRow, cmd, isListKind, MAX_INDENT, math, sym, uid, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
+import { allIds, block, ch, chars, cloneRow, cmd, isListKind, MAX_INDENT, math, sym, uid, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
 
@@ -1045,7 +1045,7 @@ export class Editor {
     }
     if (a) {
       const fr = this.rectOfIds(a.from), tr = this.rectOfIds(a.to);
-      if (fr && tr) a.bend = bendThrough(fr, tr, { x: e.clientX, y: e.clientY });
+      if (fr && tr) a.bend = bendThrough(fr, tr, { x: e.clientX, y: e.clientY }, { from: a.fromAt, to: a.toAt });
       return this.touch();
     }
     // the shape lands on what's under the mouse, the grabbed piece there, as many pieces as before
@@ -1309,6 +1309,9 @@ export class Editor {
     this.withFrame(() => this.pickKey('Enter'));
   }
 
+  /** While an arrow end is dragged: where on the target under it it would attach. */
+  dragEnd = $state<{ at?: Attach } | null>(null);
+
   /** Dragging a handle of the selected arrow. */
   private handleDrag: { id: Id; part: 'from' | 'to' | 'bend' | 'start' | 'end'; fixed?: Loc } | null = null;
 
@@ -1349,11 +1352,14 @@ export class Editor {
     if (!a || !this.page) return;
     if (hd.part === 'bend') {
       const fr = this.rectOfIds(a.from), tr = this.rectOfIds(a.to);
-      if (fr && tr) a.bend = bendThrough(fr, tr, { x: e.clientX, y: e.clientY });
+      if (fr && tr) a.bend = bendThrough(fr, tr, { x: e.clientX, y: e.clientY }, { from: a.fromAt, to: a.toAt });
     } else if (this.pick) {
       const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
       const loc = id ? this.locFromId(id) : null;
       if (loc) this.pick.loc = loc;
+      // where on that target it would attach (shown in the preview, kept on drop)
+      const r = this.rectOfIds(this.anchorIds(this.pick.loc));
+      this.dragEnd = { at: r ? attachAt({ x: r.x - 3, y: r.y - 3, w: r.w + 6, h: r.h + 6 }, { x: e.clientX, y: e.clientY }) : undefined };
     }
     this.touch();
   }
@@ -1407,8 +1413,10 @@ export class Editor {
     this.dragBusy = false;
     const hd = this.handleDrag;
     this.handleDrag = null;
+    const drop = this.dragEnd;
+    this.dragEnd = null;
     if (hd && hd.part !== 'bend' && this.pick?.edit) {
-      this.finishRetarget(this.pick.edit, this.anchorIds(this.pick.loc));
+      this.finishRetarget(this.pick.edit, this.anchorIds(this.pick.loc), drop ?? undefined);
       // dropped somewhere invalid: keep the arrow as it was
       if (this.pick) (this.pick = null), this.selectDrawing(hd.id);
     }
@@ -1553,7 +1561,7 @@ export class Editor {
       const fa = rel(this.rectOfIds(a.from));
       const ta = rel(this.rectOfIds(a.to));
       if (!fa || !ta) continue;
-      const g = arrowGeo(fa, ta, a.bend, { from: outlines.get(idKey(a.from)), to: outlines.get(idKey(a.to)) });
+      const g = arrowGeo(fa, ta, a.bend, { from: outlines.get(idKey(a.from)), to: outlines.get(idKey(a.to)) }, { from: a.fromAt, to: a.toAt });
       if (g && a.note && a.label) {
         const ld = pinnedLeader({ x: g.mid.x - 2, y: g.mid.y - 2, w: 4, h: 4 }, this.pinnedBox(a, g));
         if (ld) g.leader = `M${ld[0].toFixed(1)},${ld[1].toFixed(1)} L${ld[2].toFixed(1)},${ld[3].toFixed(1)}`;
@@ -3489,13 +3497,27 @@ export class Editor {
     this.flash(end === 'at' ? 'choose the new target · Enter to confirm · Esc to keep it' : `move the arrow's ${end === 'from' ? 'start' : 'tip'} · Enter to confirm · Esc to keep it`);
   }
 
-  private finishRetarget(edit: { id: Id; end: 'from' | 'to' | 'at' }, ids: Id[]) {
+  /**
+   * Put a re-picked end in place. `drop`: it was dragged there, and attaches where it was
+   * let go (near the target's middle: automatically); picked with the keys, a new target
+   * starts out automatic.
+   */
+  private finishRetarget(edit: { id: Id; end: 'from' | 'to' | 'at' }, ids: Id[], drop?: { at?: Attach }) {
     const a = this.doc.arrows.find((x) => x.id === edit.id);
     const m = this.doc.marks.find((x) => x.id === edit.id);
     if (a && edit.end !== 'at') {
       if ((edit.end === 'from' ? a.to : a.from).join() === ids.join()) return this.flash('arrow needs two different endpoints');
+      const key = edit.end === 'from' ? 'fromAt' : 'toAt';
+      const same = a[edit.end].join() === ids.join();
+      const at = drop ? drop.at : same ? a[key] : undefined;
+      if (same && JSON.stringify(at) === JSON.stringify(a[key])) {
+        this.pick = null;
+        return this.selectDrawing(edit.id);
+      }
       this.checkpoint();
       a[edit.end] = ids;
+      if (at) a[key] = at;
+      else delete a[key];
     } else if (m) {
       this.checkpoint();
       m.at = ids;
@@ -3550,6 +3572,8 @@ export class Editor {
         note(a),
         { name: 'start', desc: 'move the start', keys: ['s'], run: () => this.retarget(a.id, 'from'), more: 'or drag its start dot', sep: true },
         { name: 'tip', desc: 'move the tip', keys: ['e'], run: () => this.retarget(a.id, 'to'), more: 'or drag its tip dot' },
+        { name: 'startside', desc: `start attaches: ${sideName(a.fromAt)}`, keys: ['S'], run: edit(() => { const n = nextSide(a.fromAt); if (n) a.fromAt = n; else delete a.fromAt; }), menu: false, more: 'or drag its start dot to the spot (the middle: auto)' },
+        { name: 'tipside', desc: `tip attaches: ${sideName(a.toAt)}`, keys: ['E'], run: edit(() => { const n = nextSide(a.toAt); if (n) a.toAt = n; else delete a.toAt; }), menu: false, more: 'or drag its tip dot to the spot (the middle: auto)' },
         ...placing,
         remove(() => this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1)),
         menu,
