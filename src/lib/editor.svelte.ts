@@ -1104,8 +1104,7 @@ export class Editor {
     const hd = this.handleDrag!;
     if (hd.part === 'start' || hd.part === 'end') {
       const m = this.doc.marks.find((x) => x.id === hd.id);
-      const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
-      const loc = id ? this.locFromId(id) : null;
+      const loc = hd.fixed ? this.resizeTargetAt(hd.fixed, e.clientX, e.clientY) : null;
       const span = m && loc && hd.fixed ? this.spanLoc(hd.fixed, loc) : null;
       if (m && span) {
         const ids = this.anchorIds(span);
@@ -1281,14 +1280,20 @@ export class Editor {
       }, settling ? 16 : 200);
     }
     for (const m of this.doc.marks) if (mgeos[m.id]?.outline) outlines.set(idKey(m.at), mgeos[m.id].outline!);
-    // the selected shape's ends, for its resize handles
+    // the selected shape's ends, for its resize handles: on the shape itself (a brace's
+    // ends, a circle's sides), wherever layout put it (a brace below the notes it contains)
     const sm = this.styling && mgeos[this.styling] && lines[this.styling]?.length ? this.styling : null;
     if (sm) {
-      const g = mgeos[sm], ls = lines[sm], o = g.outline?.r;
+      const g = mgeos[sm], ls = lines[sm], b = g.bounds;
+      const mk = this.doc.marks.find((x) => x.id === sm);
+      const under = mk?.kind === 'brace' || mk?.kind === 'underline';
       const first = ls[0], last = ls[ls.length - 1];
-      this.markEnds = o && ls.length === 1
-        ? { id: sm, a: { x: o.x, y: o.y + o.h / 2 }, b: { x: o.x + o.w, y: o.y + o.h / 2 } }
-        : { id: sm, a: { x: first.x - 2, y: first.y + first.h / 2 }, b: { x: last.x + last.w + 2, y: last.y + last.h / 2 } };
+      const y = (r: Rect) => (under ? r.y + r.h + 4 : r.y + r.h / 2);
+      // (a formula is one line, even when a sum's limits split its ink into rows)
+      const inMath = !!mk?.at.length && !!this.el(mk.at[0])?.closest('.math');
+      this.markEnds = ls.length === 1 || inMath
+        ? { id: sm, a: { x: b.x - 1, y: b.y + b.h / 2 }, b: { x: b.x + b.w + 1, y: b.y + b.h / 2 } }
+        : { id: sm, a: { x: first.x - 2, y: y(first) }, b: { x: last.x + last.w + 2, y: y(last) } };
     } else if (this.markEnds) this.markEnds = null;
     this.markGeos = mgeos;
     this.makeRoom(mgeos, origin, active, near);
@@ -2898,6 +2903,31 @@ export class Editor {
       }
     }
     return l;
+  }
+
+  /**
+   * Where a dragged shape end is (window point): the piece of the same formula row, or
+   * the word of the same paragraph, nearest to it (on the nearest line, then sideways),
+   * so it follows the mouse along the shape, below or beside the text.
+   */
+  private resizeTargetAt(fixed: Loc, x: number, y: number): Loc | null {
+    let cands: Loc[] = [];
+    if (fixed.k === 'word') cands = this.wordsIn(fixed.b);
+    else if (fixed.k === 'node') {
+      const row = M.rowAt((this.doc.blocks[fixed.b].items[fixed.o] as MathItem).root, fixed.path);
+      cands = groups(row).map(([i, j]) => ({ ...fixed, i, j }));
+    }
+    let best: Loc | null = null, bestD = Infinity;
+    for (const c of cands) {
+      const r = this.rectOfIds(this.anchorIds(c));
+      if (!r) continue;
+      const dy = y < r.y ? r.y - y : y > r.y + r.h ? y - (r.y + r.h) : 0;
+      const dx = x < r.x ? r.x - x : x > r.x + r.w ? x - (r.x + r.w) : 0;
+      // a display formula's pieces share one line: only sideways counts there
+      const d = (fixed.k === 'node' ? 0 : dy * 1000) + dx;
+      if (d < bestD) (bestD = d), (best = c);
+    }
+    return best;
   }
 
   /** The words of a block (as pick targets). */
