@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { byLine } from './geom';
-import { MARK_KINDS, markGeo, placeLabel } from './marks';
+import { MARK_KINDS, markGeo, placeLabel, spread } from './marks';
 
 const r = (x: number, y: number, w = 10, h = 16) => ({ x, y, w, h });
 
@@ -70,5 +70,25 @@ describe('placeLabel', () => {
     expect(dx).toBe(0);
     expect(dy).toBeGreaterThanOrEqual(16);
     expect(placeLabel(box, -1, [wall], 20).dy).toBeLessThanOrEqual(-16);
+  });
+});
+
+describe('spread', () => {
+  it('leaves boxes that fit alone', () => {
+    expect(spread([{ x: 0, w: 20 }, { x: 100, w: 20 }])).toEqual({ x: [0, 100], groups: [[0], [1]] });
+  });
+
+  it('pushes overlapping boxes apart around their average', () => {
+    const { x, groups } = spread([{ x: 50, w: 60 }, { x: 60, w: 60 }], 8);
+    expect(groups).toEqual([[0, 1]]);
+    expect(x[1] - x[0]).toBe(68);
+    expect((x[0] + x[1]) / 2).toBe(55);
+  });
+
+  it('keeps reading order and cascades merges', () => {
+    const { x, groups } = spread([{ x: 30, w: 40 }, { x: 0, w: 40 }, { x: 60, w: 40 }], 0);
+    expect(groups).toEqual([[1, 0, 2]]);
+    expect(x[1]).toBeLessThan(x[0]);
+    expect(x[0]).toBeLessThan(x[2]);
   });
 });

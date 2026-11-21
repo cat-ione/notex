@@ -16,6 +16,8 @@ export type MarkGeo = {
   outline?: { r: Rect; round: boolean };
   /** Extent of the drawn ink (without the label). */
   bounds: Rect;
+  /** A line from the shape to its note, when the note had to move away (set by layout). */
+  leader?: string;
 };
 
 const f = (n: number) => Math.round(n * 10) / 10;
@@ -114,4 +116,41 @@ export function placeLabel(box: Rect, dir: 1 | -1, obstacles: Rect[], maxDx: num
     }
   }
   return { dx: 0, dy: 0 };
+}
+
+/**
+ * Spread boxes along a row so they don't overlap, keeping each as close to its
+ * wanted centre as possible: overlapping boxes merge into a cluster centred on
+ * the average of what its members want (the classic label-spreading method).
+ * Returns the new centres and the clusters (indices) that ended up touching.
+ */
+export function spread(items: { x: number; w: number }[], gap = 8): { x: number[]; groups: number[][] } {
+  type C = { idx: number[]; start: number; width: number };
+  const order = items.map((_, i) => i).sort((a, b) => items[a].x - items[b].x);
+  const place = (idx: number[]): C => {
+    let off = 0, sum = 0;
+    for (const i of idx) {
+      sum += items[i].x - (off + items[i].w / 2);
+      off += items[i].w + gap;
+    }
+    return { idx, start: sum / idx.length, width: off - gap };
+  };
+  const cs: C[] = [];
+  for (const i of order) {
+    cs.push(place([i]));
+    while (cs.length > 1) {
+      const [a, b] = cs.slice(-2);
+      if (a.start + a.width + gap <= b.start) break;
+      cs.splice(-2, 2, place([...a.idx, ...b.idx]));
+    }
+  }
+  const x = new Array<number>(items.length);
+  for (const c of cs) {
+    let off = c.start;
+    for (const i of c.idx) {
+      x[i] = off + items[i].w / 2;
+      off += items[i].w + gap;
+    }
+  }
+  return { x, groups: cs.map((c) => c.idx) };
 }

@@ -20,6 +20,9 @@
           <path class="fill" d={g.d} in:fade={{ duration: 200 }} />
         {:else}
           <path class="line" class:dash={m.dash} d={g.d} in:draw={{ duration: 380 }} />
+          {#if g.leader}
+            <path class="leader" d={g.leader} in:fade={{ duration: 150 }} />
+          {/if}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <path class="hit" d={g.d} onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(m.id); }} />
         {/if}
@@ -68,6 +71,13 @@
   }
   .sel .fill {
     opacity: 0.38;
+  }
+  .leader {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1;
+    stroke-dasharray: 2 2;
+    opacity: 0.7;
   }
   .ghost {
     opacity: 0.25;

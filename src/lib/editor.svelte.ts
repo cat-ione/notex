@@ -13,7 +13,7 @@
 
 import { tick } from 'svelte';
 import { arrowGeo, bendThrough, defaultBend, type ArrowGeo, type Outline } from './arrows';
-import { INKS, MARK_KINDS, markGeo, placeLabel, type MarkGeo } from './marks';
+import { INKS, MARK_KINDS, markGeo, placeLabel, spread, type MarkGeo } from './marks';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
@@ -621,32 +621,69 @@ export class Editor {
   }
 
   /**
-   * Move notes off whatever they would cover on their own line (a limit of an
-   * integral, a neighbouring word, another note): slide sideways while staying
-   * over the shape, else move away from it. Other lines are not obstacles here;
-   * makeRoom pushes those apart afterwards.
+   * Lay out notes so they don't cover each other or nearby ink.
+   *
+   * Notes on the same line and side share a row: overlapping ones are spread
+   * apart around where they want to be (`spread`), and a touching group is
+   * aligned on one baseline. Each group then slides or steps away from ink on
+   * its own line, other shapes and notes already placed (`placeLabel`). A note
+   * that no longer sits under its shape gets a leader line back to it.
+   * Other lines are not obstacles here; makeRoom pushes those apart afterwards.
    */
   private placeLabels(geos: Record<Id, MarkGeo>, origin: DOMRect) {
     const page = this.page!;
+    type N = { m: Mark; g: MarkGeo; box: Rect; tip: { x: number; y: number }; below: boolean };
     const lineInk = new Map<Element, Rect[][]>();
-    const placed: Rect[] = [];
+    const rows = new Map<string, { ink: Rect[]; notes: N[] }>();
+
     for (const m of this.doc.marks) {
       const g = geos[m.id];
+      if (!g) continue;
+      g.leader = undefined;
       const target = this.rectOfIds(m.at);
       const blockEl = m.at.length ? this.el(m.at[0])?.closest('.block') : null;
-      if (!g || !m.label || !target || !blockEl) continue;
+      if (!m.label || !target || !blockEl) continue;
       if (!lineInk.has(blockEl)) lineInk.set(blockEl, lineGroups(inkRects(blockEl).map((r) => relTo(r, origin))));
       const t = relTo(target, origin);
-      // ink of the line(s) the target sits on
-      const ink = lineInk.get(blockEl)!.filter((l) => { const u = union(l)!; return u.y < t.y + t.h && t.y < u.y + u.h; }).flat();
-      const others = this.doc.marks.filter((o) => o.id !== m.id && geos[o.id]).map((o) => geos[o.id].bounds);
+      const lines = lineInk.get(blockEl)!;
+      const li = lines.findIndex((l) => { const u = union(l)!; return u.y < t.y + t.h && t.y < u.y + u.h; });
       const el = page.querySelector(`.dlabel[data-id="${m.id}"]`)?.getBoundingClientRect();
       const w = el?.width ?? m.label.length * 6.6 + 6, h = el?.height ?? 15;
+      const below = g.label.below;
       // same box LabelLayer draws: hanging from y - 12 (below) or standing on y + 3 (above)
-      const box = { x: g.label.x - w / 2, y: g.label.below ? g.label.y - 12 : g.label.y + 3 - h, w, h };
-      const { dx, dy } = placeLabel(box, g.label.below ? 1 : -1, [...ink, ...others, ...placed], w / 2);
-      g.label = { ...g.label, x: g.label.x + dx, y: g.label.y + dy };
-      placed.push({ ...box, x: box.x + dx, y: box.y + dy });
+      const top = below ? g.label.y - 12 : g.label.y + 3 - h;
+      const tip = { x: g.label.x, y: below ? top - 1 : top + h + 1 };
+      const key = `${this.doc.blocks.findIndex((b) => b.id === (blockEl as HTMLElement).dataset.nx)}:${li}:${below}`;
+      if (!rows.has(key)) rows.set(key, { ink: li >= 0 ? lines[li] : [], notes: [] });
+      rows.get(key)!.notes.push({ m, g, box: { x: g.label.x - w / 2, y: top, w, h }, tip, below });
+    }
+
+    const placed: Rect[] = [];
+    const pageW = page.clientWidth;
+    for (const { ink, notes } of rows.values()) {
+      const { x, groups } = spread(notes.map((n) => ({ x: n.tip.x, w: n.box.w })), 10);
+      for (const idx of groups) {
+        const ns = idx.map((i) => notes[i]);
+        const below = ns[0].below;
+        // one baseline per group: clear of every member's shape
+        const y = below ? Math.max(...ns.map((n) => n.box.y)) : Math.min(...ns.map((n) => n.box.y + n.box.h));
+        const boxes = idx.map((i, k) => ({ ...ns[k].box, x: x[i] - ns[k].box.w / 2, y: below ? y : y - ns[k].box.h }));
+        // keep the group on the page
+        const u = union(boxes)!;
+        const shift = u.w > pageW ? 0 : Math.max(-u.x, Math.min(0, pageW - (u.x + u.w)));
+        const mine = new Set(ns.map((n) => n.m.id));
+        const others = this.doc.marks.filter((o) => !mine.has(o.id) && geos[o.id]).map((o) => geos[o.id].bounds);
+        const { dx, dy } = placeLabel({ ...u, x: u.x + shift }, below ? 1 : -1, [...ink, ...others, ...placed], 24);
+        ns.forEach((n, k) => {
+          const b = { ...boxes[k], x: boxes[k].x + shift + dx, y: boxes[k].y + dy };
+          placed.push(b);
+          n.g.label = { ...n.g.label, x: b.x + b.w / 2, y: below ? b.y + 12 : b.y + b.h - 3 };
+          // leader back to the shape when the note no longer sits right at it
+          const ex = Math.max(b.x + 4, Math.min(b.x + b.w - 4, n.tip.x));
+          const ey = below ? b.y : b.y + b.h;
+          if (Math.abs(ex - n.tip.x) > 1 || Math.abs(ey - n.tip.y) > 3) n.g.leader = `M${n.tip.x.toFixed(1)},${n.tip.y.toFixed(1)} L${ex.toFixed(1)},${ey.toFixed(1)}`;
+        });
+      }
     }
   }
 
