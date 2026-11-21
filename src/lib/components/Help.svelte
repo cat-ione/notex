@@ -11,7 +11,7 @@
       ['( [ {', 'brackets that grow'], ['"', 'words inside math'], ['alpha  ;a', 'greek letters'],
       ['sqrt sum int lim', 'roots and big operators'], ['-> => <= oo xx', 'arrows, ≤, ∞, ×'],
       ['\\name', 'any LaTeX command'], ['space / tab', 'leave box / next box'],
-      ['& enter', 'matrix: new column / row'], ['$  →  esc', 'back to text'],
+      ['& enter', 'matrix: new column / row'], ['shift+← → / ctrl+a', 'select (grows out of boxes)'], ['/  (  \\cmd', 'wrap the selection'], ['$  →  esc', 'back to text'],
     ]],
     ['drawing arrows  (\\arrow)', [
       ['← → ↑ ↓  or click', 'choose a word or symbol'], ['shift+↑ / shift+↓', 'whole expression / inside it'],

@@ -74,7 +74,7 @@
             {#if it.t === 'c'}
               <span class="ch" class:sel={ed.isSelected(b, o)} data-nx={it.id}>{it.ch}</span>
             {:else}
-              <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} selected={ed.isSelected(b, o)} />
+              <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} selected={ed.isSelected(b, o)} />
             {/if}
           {/each}<span class="eol" data-eol={blk.id}>&#8203;</span>
         </div>

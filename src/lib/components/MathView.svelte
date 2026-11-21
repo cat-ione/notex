@@ -1,13 +1,13 @@
 <script lang="ts">
   import katex from 'katex';
   import type { MathItem } from '$lib/model';
-  import { toLatex, type MCursor } from '$lib/math/latex';
+  import { toLatex, type MCursor, type MSelRange } from '$lib/math/latex';
 
-  let { item, cursor = null, selected = false }: { item: MathItem; cursor?: MCursor | null; selected?: boolean } = $props();
+  let { item, cursor = null, sel = null, selected = false }: { item: MathItem; cursor?: MCursor | null; sel?: MSelRange | null; selected?: boolean } = $props();
 
   const html = $derived.by(() => {
     try {
-      return katex.renderToString(toLatex(item.root, true, cursor), {
+      return katex.renderToString(toLatex(item.root, true, cursor, sel), {
         displayMode: item.display,
         throwOnError: false,
         trust: true,
@@ -50,6 +50,10 @@
   .math :global(.nx-empty) {
     color: var(--muted);
     opacity: 0.7;
+  }
+  .math :global(.nx-sel) {
+    background: var(--text-sel);
+    border-radius: 2px;
   }
   .math :global(.nx-active-row) {
     background: var(--active-row);

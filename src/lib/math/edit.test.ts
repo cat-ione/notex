@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { MRow } from '../model';
 import * as M from './edit';
 import { toLatex, type MCursor } from './latex';
+import { cmd } from '../model';
 
 /** Type a string into an empty formula. `‹` = backspace, `←`/`→` = left/right, `␣` = space, `⇥` = tab. */
 function typed(keys: string) {
@@ -86,5 +87,33 @@ describe('rendering', () => {
     const walk = (row: MRow): string[] => row.flatMap((n) => [n.id, ...(n.k === 'cmd' ? n.slots.flatMap(walk) : [])]);
     for (const id of walk(root)) expect(html).toContain(`data-nx="${id}"`);
     expect(html).toContain('nx-caret');
+  });
+});
+
+describe('selection ranges', () => {
+  it('never splits a base from its scripts', () => {
+    const { root } = typed('a+x^2_1');
+    // nodes: a + x subsup  → selecting just `x` widens to include its scripts
+    expect(M.alignRange(root, 2, 3)).toEqual([2, 4]);
+    expect(M.alignRange(root, 3, 4)).toEqual([2, 4]);
+  });
+
+  it('wraps a selection into a fraction numerator and moves to the denominator', () => {
+    const { root, cur } = typed('a+b');
+    M.wrapRange(root, cur, 0, 3, cmd('frac', [[], []]));
+    expect(toLatex(root)).toBe('\\frac{a+b}{}');
+    expect(cur).toEqual({ path: [{ i: 0, s: 1 }], off: 0 });
+  });
+
+  it('wraps a selection in brackets and continues after them', () => {
+    const { root, cur } = typed('a+b');
+    M.wrapRange(root, cur, 0, 3, cmd('paren', [[]]));
+    expect(toLatex(root)).toBe('(a+b)');
+    expect(cur).toEqual({ path: [], off: 1 });
+  });
+
+  it('marks the selection in rendered output', () => {
+    const { root } = typed('a+b');
+    expect(toLatex(root, true, null, { path: [], s: 1, e: 3 })).toMatch(/htmlClass\{nx-sel\}\{.*\+.*b.*\}$/);
   });
 });

@@ -34,7 +34,7 @@ Ctrl+C/X/V (math survives copy/paste), Ctrl+Z/Y, Ctrl+←/→ by word. On top of
 | | |
 |--------|------|
 | text   | `$` math (`$$` centered block) · `\` or Ctrl+K commands · `# ` `## ` `- ` block shortcuts |
-| math   | `/` fraction from previous operand · `^ _` · `( [ {` · `"` text · `;a` greek · `sum int lim sqrt` · `-> => <= oo xx` · `\name` any command · space leaves a box · Tab next box · `&`/Enter grow matrix · `$`, → or Esc back to text · click anywhere inside a formula |
+| math   | `/` fraction from previous operand · `^ _` · `( [ {` · `"` text · `;a` greek · `sum int lim sqrt` · `-> => <= oo xx` · `\name` any command · space leaves a box · Tab next box · `&`/Enter grow matrix · `$`, → or Esc back to text · click anywhere inside a formula · Shift+←/→ selects (growing out of boxes), Ctrl+A all; `/`, `(` or a `\command` wraps the selection; copy gives `$LaTeX$` |
 | `\arrow` | arrow keys or click to choose · Shift+↑/↓ whole expression / inside it · Shift+←/→ extend · Tab jump labels · Enter confirm (start, then end) |
 | arrow style | ↑/↓ bend · `0` straight · `t` heads · `d` dashed · `b` box ends · `l` label · `r` reverse · Del remove · Enter done. `\arrows` reselects one |
 
@@ -80,4 +80,3 @@ your own editor; changes load when you switch back to notex.
   arrows do, placed with the mouse or the keyboard.
 - **Arrows**: multi-segment routes, endpoint side control, math labels, LaTeX export via
   `tikzmark`.
-- Selection inside formulas (copy/cut parts of an equation).

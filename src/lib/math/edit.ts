@@ -154,6 +154,39 @@ export function applyInserter(root: MRow, cur: MCursor, ins: Inserter) {
   }
 }
 
+// ── selection ranges (within the caret's row) ──
+
+const isScriptNode = (n: MNode | undefined) => n?.k === 'cmd' && !!CMDS[n.name]?.script;
+
+/** Widen [s, e) so it never separates a base from its scripts. */
+export function alignRange(row: MRow, s: number, e: number): [number, number] {
+  while (s > 0 && isScriptNode(row[s])) s--;
+  while (e < row.length && isScriptNode(row[e])) e++;
+  return [s, e];
+}
+
+/** Remove [s, e) from the caret's row and leave the caret where it was. */
+export function takeRange(root: MRow, cur: MCursor, s: number, e: number): MRow {
+  const nodes = rowAt(root, cur.path).splice(s, e - s);
+  cur.off = s;
+  return nodes;
+}
+
+/**
+ * Put [s, e) inside a new structure's `slot`, then move the caret to the
+ * structure's first other empty slot, or after it.
+ */
+export function wrapRange(root: MRow, cur: MCursor, s: number, e: number, node: MCmd, slot = 0) {
+  let nodes = takeRange(root, cur, s, e);
+  // (a+b) selected and wrapped in a fraction: drop the now-redundant parens
+  if (node.name === 'frac' && nodes.length === 1 && nodes[0].k === 'cmd' && nodes[0].name === 'paren') nodes = nodes[0].slots[0];
+  node.slots[slot] = nodes;
+  rowAt(root, cur.path).splice(s, 0, node);
+  const empty = node.slots.findIndex((sl, i) => i !== slot && !sl.length);
+  if (empty >= 0) enter(cur, s, empty, false, root);
+  else cur.off = s + 1;
+}
+
 /** Insert a parsed row at the caret and put the caret where the parse says. */
 export function insertParsed(root: MRow, cur: MCursor, parsed: Parsed) {
   const r = rowAt(root, cur.path);

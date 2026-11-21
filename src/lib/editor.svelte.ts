@@ -18,9 +18,9 @@ import * as F from './files';
 import * as C from './config';
 import { measure, relTo, union, type Rect } from './geom';
 import * as M from './math/edit';
-import { CMDS, GREEK_LEADER, MATH_PALETTE } from './math/defs';
+import { CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
-import { toLatex, type MCursor, type Step } from './math/latex';
+import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type Arrow, type Block, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MRow } from './model';
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
@@ -240,6 +240,7 @@ export class Editor {
   setMode(m: Mode) {
     if (m !== 'hint' && m !== 'palette' && m !== 'label') this.prevMode = m;
     if ((m === 'text' || m === 'math') && m !== this.mode) this.message = '';
+    if (m !== 'palette' && (m !== 'math' || this.mode !== 'math')) this.msel = null;
     this.mode = m;
     this.touch();
   }
@@ -329,6 +330,21 @@ export class Editor {
 
   /** Handle a DOM copy/cut event. */
   copy(e: ClipboardEvent, cut: boolean) {
+    const range = this.mathSelRange;
+    if (this.mode === 'math' && range) {
+      // Part of a formula: copy it as LaTeX, which pastes back as structure.
+      const root = this.mathItem!.root;
+      const nodes = M.rowAt(root, range.path).slice(range.s, range.e);
+      e.clipboardData?.setData('text/plain', `$${toLatex(nodes)}$`);
+      e.preventDefault();
+      if (cut) {
+        this.checkpoint();
+        M.takeRange(root, this.mc, range.s, range.e);
+        this.msel = null;
+      }
+      this.touch();
+      return;
+    }
     if (this.mode !== 'text' || !this.selection) return;
     const blocks = this.selectedItems();
     const text = blocks.map((items) => itemsToText(items)).join('\n');
@@ -348,6 +364,9 @@ export class Editor {
     e.preventDefault();
     if (this.mode === 'math') {
       this.checkpoint();
+      const range = this.mathSelRange;
+      if (range) M.takeRange(this.mathItem!.root, this.mc, range.s, range.e);
+      this.msel = null;
       M.insertParsed(this.mathItem!.root, this.mc, parseLatex(text));
       this.touch();
       return;
@@ -447,6 +466,7 @@ export class Editor {
     this.label = null;
     if (h.math && !e.shiftKey) {
       this.anchor = null;
+      this.msel = null;
       this.b = h.pos.b;
       this.o = h.pos.o;
       const found = h.math.id ? findNode(h.math.item.root, h.math.id) : null;
@@ -905,6 +925,35 @@ export class Editor {
       return true;
     }
     const text = M.inTextSlot(root, cur);
+
+    // Selection inside the formula.
+    if (/^(S-(Left|Right|Up|Home|End)|C-a)$/.test(k)) {
+      this.extendMathSel(k);
+      return true;
+    }
+    const range = this.mathSelRange;
+    if (range) {
+      const { s, e } = range;
+      const wrapper = text ? null : k === '/' ? cmd('frac', [[], []]) : OPENERS[k] ? cmd(OPENERS[k], [[]]) : null;
+      if (k === '\\') return this.openPalette('math'), true; // the chosen command wraps the selection
+      this.msel = null;
+      if (wrapper) {
+        this.checkpoint();
+        M.wrapRange(root, cur, s, e, wrapper);
+        return true;
+      }
+      if (k === 'Escape') return true;
+      if (k === 'Left' || k === 'Right') {
+        cur.off = k === 'Left' ? s : e;
+        return true;
+      }
+      if (k === 'Backspace' || k === 'Delete' || k.length === 1) {
+        this.checkpoint();
+        M.takeRange(root, cur, s, e);
+        if (k.length !== 1) return true;
+      }
+    } else this.msel = null;
+
     switch (k) {
       case 'Escape': this.exitMath(true); return true;
       case 'Left': case 'A-h': if (!M.moveLeft(root, cur)) this.exitMath(false); return true;
@@ -956,6 +1005,57 @@ export class Editor {
       return true;
     }
     return false;
+  }
+
+  /** Anchor offset of a selection inside the formula (same row as the caret). */
+  msel = $state<number | null>(null);
+
+  get mathSelRange(): MSelRange | null {
+    const inMath = this.mode === 'math' || (this.mode === 'palette' && this.prevMode === 'math');
+    const item = this.mathItem;
+    if (this.msel === null || !inMath || !item || this.msel === this.mc.off) return null;
+    const row = M.rowAt(item.root, this.mc.path);
+    const [s, e] = M.alignRange(row, Math.min(this.msel, this.mc.off), Math.max(this.msel, this.mc.off));
+    return { path: this.mc.path, s, e };
+  }
+
+  private extendMathSel(k: string) {
+    const root = this.mathItem!.root;
+    const cur = this.mc;
+    if (k === 'C-a') {
+      cur.path = [];
+      this.msel = 0;
+      cur.off = root.length;
+      return;
+    }
+    if (this.msel === null) this.msel = cur.off;
+    const row = M.rowAt(root, cur.path);
+    const script = (i: number) => row[i]?.k === 'cmd' && !!CMDS[(row[i] as MCmd).name]?.script;
+    // At the edge of a box, grow to the whole enclosing structure.
+    const grow = (dir: 1 | -1) => {
+      const st = cur.path[cur.path.length - 1];
+      if (!st) return;
+      cur.path = cur.path.slice(0, -1);
+      const parent = M.rowAt(root, cur.path);
+      let [s, e] = [st.i, st.i + 1];
+      while (e < parent.length && parent[e].k === 'cmd' && CMDS[(parent[e] as MCmd).name]?.script) e++;
+      [this.msel, cur.off] = dir === 1 ? [s, e] : [e, s];
+    };
+    switch (k) {
+      case 'S-Left':
+        if (cur.off === 0) return grow(-1);
+        cur.off--;
+        while (cur.off > 0 && script(cur.off)) cur.off--;
+        return;
+      case 'S-Right':
+        if (cur.off === row.length) return grow(1);
+        cur.off++;
+        while (cur.off < row.length && script(cur.off)) cur.off++;
+        return;
+      case 'S-Up': return grow(1);
+      case 'S-Home': cur.off = 0; return;
+      case 'S-End': cur.off = row.length; return;
+    }
   }
 
   // ── palette ──
@@ -1035,6 +1135,18 @@ export class Editor {
       // Exact names win over the highlighted suggestion; user snippets win over built-ins.
       const user = this.config.snippets.math;
       const key = user[q] !== undefined || MATH_PALETTE[q] ? q : name;
+      const range = this.mathSelRange;
+      this.msel = null;
+      if (range) {
+        // With a selection, a structural command wraps it (\sqrt, \hat, \frac…); anything else replaces it.
+        const ins = key && user[key] === undefined ? MATH_PALETTE[key] : undefined;
+        const node = ins && 'node' in ins ? ins.node() : null;
+        if (node?.k === 'cmd' && node.slots.length) {
+          M.wrapRange(item.root, this.mc, range.s, range.e, node, node.name === 'root' ? 1 : ((ins as { enter?: number }).enter ?? 0));
+          return;
+        }
+        M.takeRange(item.root, this.mc, range.s, range.e);
+      }
       if (key && user[key] !== undefined) M.insertParsed(item.root, this.mc, parseLatex(user[key]));
       else if (key && MATH_PALETTE[key]) M.applyInserter(item.root, this.mc, MATH_PALETTE[key]);
       else if (q) M.insertNode(item.root, this.mc, sym('\\' + q));

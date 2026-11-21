@@ -10,8 +10,12 @@ import { BIG_OPS, CMDS } from './defs';
 export type Step = { i: number; s: number };
 export type MCursor = { path: Step[]; off: number };
 
-type Opts = { anchors: boolean; cursor: MCursor | null };
+/** A selected range [s, e) of the row at `path` (aligned to base+script groups). */
+export type MSelRange = { path: Step[]; s: number; e: number };
 
+type Opts = { anchors: boolean; cursor: MCursor | null; sel: MSelRange | null };
+
+const SEL_OPEN = '\\htmlClass{nx-sel}{';
 const CARET = '\\htmlClass{nx-caret}{}';
 const CARET_PRE_SCRIPT = '\\htmlClass{nx-caret nx-caret-script}{}';
 const EMPTY = '\\htmlClass{nx-empty}{\\square}';
@@ -21,8 +25,8 @@ const TEXT_ESC: Record<string, string> = {
   _: '\\_', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}',
 };
 
-export function toLatex(root: MRow, anchors = false, cursor: MCursor | null = null): string {
-  return row(root, [], { anchors, cursor }, false);
+export function toLatex(root: MRow, anchors = false, cursor: MCursor | null = null, sel: MSelRange | null = null): string {
+  return row(root, [], { anchors, cursor, sel }, false);
 }
 
 const pathEq = (a: Step[], b: Step[]) => a.length === b.length && a.every((x, i) => x.i === b[i].i && x.s === b[i].s);
@@ -43,6 +47,7 @@ function symLatex(v: string) {
 function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
   const hasCaret = !!o.cursor && pathEq(o.cursor.path, path);
   const off = hasCaret ? o.cursor!.off : -1;
+  const sel = o.anchors && o.sel && pathEq(o.sel.path, path) ? o.sel : null;
 
   if (r.length === 0) {
     if (!o.anchors) return '';
@@ -54,6 +59,8 @@ function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
   let i = 0;
   while (i < r.length) {
     const n = r[i];
+    if (sel && i === sel.e) out += '}';
+    if (sel && i === sel.s) out += SEL_OPEN;
     // A caret right before a script would steal the script from its base, so
     // emit it after the script and let the overlay position it at the script.
     if (i === off) out += isScript(n) && i > 0 ? '' : CARET;
@@ -87,6 +94,7 @@ function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
     i++;
   }
   if (off === r.length) out += CARET;
+  if (sel && sel.e === r.length) out += '}';
 
   return hasCaret && path.length && o.anchors ? `\\htmlClass{nx-active-row}{${out}}` : out;
 }
