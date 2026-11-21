@@ -17,18 +17,14 @@
     palette: 'enter accept · ↑↓ choose · esc cancel',
     label: 'enter save · esc cancel',
   };
-  const counts = $derived.by(() => {
+  // Counts don't need to follow every keystroke: refresh them when typing pauses.
+  let counts = $state({ words: 0, maths: 0, drawings: 0 });
+  let countTimer: ReturnType<typeof setTimeout>;
+  $effect(() => {
     ed.version;
-    let words = 0, maths = 0;
-    for (const b of ed.doc.blocks) {
-      let inWord = false;
-      for (const it of b.items) {
-        if (it.t === 'm') { maths++; inWord = false; }
-        else if (/\s/.test(it.ch)) inWord = false;
-        else if (!inWord) { words++; inWord = true; }
-      }
-    }
-    return { words, maths, drawings: ed.doc.arrows.length + ed.doc.marks.length };
+    clearTimeout(countTimer);
+    countTimer = setTimeout(() => (counts = ed.counts()), counts.words || counts.maths ? 300 : 0);
+    return () => clearTimeout(countTimer);
   });
 </script>
 

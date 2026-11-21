@@ -10,7 +10,17 @@ pnpm install
 pnpm tauri dev     # desktop app
 pnpm dev           # browser only, http://localhost:1420
 pnpm check         # type-check
+pnpm test          # unit tests
 ```
+
+With `pnpm dev` running (or a production build served with `?lab` in the URL):
+
+```sh
+node tools/perf/perf.mjs [--profile[=action]]   # editing speed on large notes
+node tools/label-lab/lab.mjs <name>             # note layout scenarios + typing check
+```
+
+Both use `playwright-core`; set `CHROME` to a Chrome/Chromium executable if it can't find one.
 
 ## How it works
 

@@ -18,7 +18,7 @@
   onMount(() => {
     ed.page = page;
     // layout experiments: window.__nx (see $lib/dev)
-    if (import.meta.env.DEV) import('$lib/dev').then((d) => d.install(ed));
+    if (import.meta.env.DEV || location.search.includes('lab')) import('$lib/dev').then((d) => d.install(ed));
     const on = <K extends keyof WindowEventMap>(type: K, f: (e: WindowEventMap[K]) => void) => {
       window.addEventListener(type, f);
       return () => window.removeEventListener(type, f);
@@ -34,7 +34,14 @@
       on('focus', () => isDesktop() && ed.loadConfig()),
     ];
     ed.loadConfig();
-    const ro = new ResizeObserver(() => ed.layout());
+    // Height changes come from content, which lays out after rendering anyway;
+    // only a change of width (window, settings) needs a fresh layout here.
+    let width = page.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (page.clientWidth === width) return;
+      width = page.clientWidth;
+      ed.layout();
+    });
     ro.observe(page);
     document.fonts?.ready.then(() => ed.layout());
     // KaTeX loads some fonts (big delimiters, scripts) only when first used, which moves glyphs
@@ -77,20 +84,23 @@
      line's top and bottom (see Editor.makeRoom).
      A word joiner, so they never add a line break opportunity.
      (Kept on one line: whitespace here would show up in the pre-wrap text.) -->
-{#snippet spacer(id: string)}{#if ed.spacers[id]}<span class="nx-sp nx-probe" data-pt={id} style="vertical-align: top">&#8288;</span><span class="nx-sp nx-probe" data-pb={id} style="vertical-align: bottom">&#8288;</span>{/if}{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
+{#snippet spacer(id: string)}<span class="nx-sp nx-probe" data-pt={id} style="vertical-align: top">&#8288;</span><span class="nx-sp nx-probe" data-pb={id} style="vertical-align: bottom">&#8288;</span>{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
 
 <div class="shell">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroller" onmousedown={(e) => ed.mouseDown(e)}>
     <div class="page" bind:this={page}>
       <MarkLayer {ed} under />
+      {#each ed.selRects as r, i (i)}
+        <div class="selrect" style="transform: translate({r.x}px, {r.y}px); width: {r.w}px; height: {r.h}px;"></div>
+      {/each}
       {#each ed.doc.blocks as blk, b (blk.id)}
         <div class="block {blk.kind}" class:current={ed.b === b} data-nx={blk.id}>
           {#each blk.items as it, o (it.id)}
             {#if it.t === 'c'}
-              <span class="ch" class:sel={ed.isSelected(b, o)} data-nx={it.id}>{it.ch}</span>{@render spacer(it.id)}
+              <span class="ch" data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {:else}
-              <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} selected={ed.isSelected(b, o)} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display}{@render spacer(it.id)}{/if}
+              <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {/if}
           {/each}<span class="eol" data-eol={blk.id}>&#8203;</span>
         </div>
@@ -248,8 +258,15 @@
     color: var(--accent);
     font-size: 0.85em;
   }
-  .ch.sel {
+  /* the text selection, drawn behind the text (see Editor.selectionRects) */
+  .selrect {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: -1;
     background: var(--text-sel);
+    border-radius: 2px;
+    pointer-events: none;
   }
   /* no transition: makeRoom measures these right after they change */
   .nx-sp {

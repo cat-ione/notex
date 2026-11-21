@@ -125,6 +125,8 @@ const cross = (a: number[], b: number[]) => {
 /** Does the segment pass through the rect (sampled, ignoring its ends)? */
 const segHitsBox = (s: number[], r: Rect) => {
   const [x1, y1, x2, y2] = s;
+  // nowhere near: skip the sampling
+  if (Math.max(x1, x2) < r.x || Math.min(x1, x2) > r.x + r.w || Math.max(y1, y2) < r.y || Math.min(y1, y2) > r.y + r.h) return false;
   for (let t = 0.1; t < 0.95; t += 0.05) {
     const x = x1 + (x2 - x1) * t, y = y1 + (y2 - y1) * t;
     if (x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h) return true;

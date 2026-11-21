@@ -18,7 +18,7 @@ import { layoutRow, measureLabel, type RowNote } from './labels';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
-import { byLine, inkRects, lineGroups, measure, relTo, union, type Rect } from './geom';
+import { byLine, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
 import * as M from './math/edit';
 import { CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
@@ -92,9 +92,12 @@ export class Editor {
 
   // Layout results (page-relative), recomputed after each render.
   caret = $state<{ r: Rect; shape: 'bar' | 'math' } | null>(null);
+  /** The text selection as rectangles, one per line (page-relative). */
+  selRects = $state.raw<Rect[]>([]);
   pickRects = $state<{ cur: Rect | null; from: Rect | null }>({ cur: null, from: null });
-  arrowGeos = $state<Record<Id, ArrowGeo>>({});
-  markGeos = $state<Record<Id, MarkGeo>>({});
+  // (raw: replaced wholesale on every layout, so deep proxies would be pure overhead)
+  arrowGeos = $state.raw<Record<Id, ArrowGeo>>({});
+  markGeos = $state.raw<Record<Id, MarkGeo>>({});
   /**
    * Room made for drawings, per item: how far (px) the invisible spacer after a
    * character / inline formula is raised (above) or lowered (below), or the
@@ -149,7 +152,139 @@ export class Editor {
   }
 
   touch() {
+    this.markDirty();
     this.version++;
+  }
+
+  // ── snapshots (shared between undo states, autosave and lookups) ──
+
+  /** The last snapshot of each live block, reused while the block is unchanged. */
+  private blockSnaps = new WeakMap<Block, Block>();
+  /** Every id inside a live block (items and math nodes), until the block is edited. */
+  private idSets = new WeakMap<Block, Set<Id>>();
+  /** Per-snapshot JSON, for autosave. */
+  private blockJSON = new WeakMap<Block, string>();
+  /** Word / formula counts of a live block, until it is edited. */
+  private blockCounts = new WeakMap<Block, { words: number; maths: number }>();
+  private persistedEdits = -1;
+
+  /**
+   * Forget the snapshots of the blocks around the caret and the selection anchor:
+   * edits only ever happen there. Called before edits (checkpoint) and after every
+   * action (touch).
+   */
+  private markDirty() {
+    const blocks = this.doc.blocks;
+    for (const b of [this.b - 1, this.b, this.b + 1, this.anchor ? this.anchor.b : -1]) {
+      const blk = blocks[b];
+      if (blk) {
+        this.blockSnaps.delete(blk);
+        this.idSets.delete(blk);
+        this.blockCounts.delete(blk);
+      }
+    }
+    if (this.frame) this.frame = { rects: new Map(), ink: new Map() };
+  }
+
+  /** A plain snapshot of a block, shared while the block doesn't change. */
+  private snapBlock(blk: Block): Block {
+    let snap = this.blockSnaps.get(blk);
+    // (a changed length always means a change, as a safety net)
+    if (!snap || snap.items.length !== blk.items.length) {
+      snap = $state.snapshot(blk) as Block;
+      this.blockSnaps.set(blk, snap);
+    }
+    return snap;
+  }
+
+  /**
+   * Fill the snapshot cache a few blocks at a time while the app is idle, so the
+   * first edit of a freshly opened long note doesn't have to copy all of it.
+   */
+  private warmSnapshots() {
+    const doc = this.doc;
+    let i = 0;
+    // idle callbacks get the whole idle period (up to ~50ms); timers as a fallback
+    const later = (f: (d?: IdleDeadline) => void) =>
+      typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout: 500 }) : setTimeout(f, 30);
+    const step = (deadline?: IdleDeadline) => {
+      if (this.doc !== doc) return;
+      const end = performance.now() + Math.max(8, deadline?.timeRemaining() ?? 8);
+      while (i < doc.blocks.length && performance.now() < end) this.snapBlock(doc.blocks[i++]);
+      if (i < doc.blocks.length) later(step);
+      else this.backupSoon();
+    };
+    later(step);
+  }
+
+  /** Write the session backup when the snapshots are warm. */
+  private backupSoon() {
+    try {
+      localStorage.setItem(STORAGE_KEY, this.docJSON(this.snapshot()));
+      localStorage.setItem('notex.file', JSON.stringify({ ...this.file, dirty: this.dirty }));
+    } catch {}
+  }
+
+  /** A plain snapshot of the document; unchanged blocks are shared with earlier snapshots. */
+  snapshot(): Doc {
+    return {
+      blocks: this.doc.blocks.map((b) => this.snapBlock(b)),
+      arrows: $state.snapshot(this.doc.arrows) as Arrow[],
+      marks: $state.snapshot(this.doc.marks) as Mark[],
+    };
+  }
+
+  private idsOf(blk: Block): Set<Id> {
+    let ids = this.idSets.get(blk);
+    // (a changed length always means a change, as a safety net)
+    if (!ids || (ids as Set<Id> & { n?: number }).n !== blk.items.length) {
+      const snap = this.snapBlock(blk);
+      ids = new Set([snap.id]);
+      const walk = (row: MRow) => {
+        for (const n of row) {
+          ids!.add(n.id);
+          if (n.k === 'cmd') n.slots.forEach(walk);
+        }
+      };
+      for (const it of snap.items) {
+        ids.add(it.id);
+        if (it.t === 'm') walk(it.root);
+      }
+      (ids as Set<Id> & { n?: number }).n = blk.items.length;
+      this.idSets.set(blk, ids);
+    }
+    return ids;
+  }
+
+  /** Words, formulas and drawings in the document (cheap: counted per unchanged block once). */
+  counts() {
+    let words = 0, maths = 0;
+    for (const blk of this.doc.blocks) {
+      let c = this.blockCounts.get(blk);
+      if (!c) {
+        c = { words: 0, maths: 0 };
+        let inWord = false;
+        for (const it of blk.items) {
+          if (it.t === 'm') (c.maths++, (inWord = false));
+          else if (/\s/.test(it.ch)) inWord = false;
+          else if (!inWord) (c.words++, (inWord = true));
+        }
+        this.blockCounts.set(blk, c);
+      }
+      words += c.words;
+      maths += c.maths;
+    }
+    return { words, maths, drawings: this.doc.arrows.length + this.doc.marks.length };
+  }
+
+  /** The document as JSON (the in-memory form), built from cached per-block JSON. */
+  private docJSON(d: Doc): string {
+    const parts = d.blocks.map((b) => {
+      let j = this.blockJSON.get(b);
+      if (j === undefined) this.blockJSON.set(b, (j = JSON.stringify(b)));
+      return j;
+    });
+    return `{"blocks":[${parts.join(',')}],"arrows":${JSON.stringify(d.arrows)},"marks":${JSON.stringify(d.marks)}}`;
   }
 
   flash(msg: string) {
@@ -160,8 +295,11 @@ export class Editor {
 
   /** Session backup (survives reloads/crashes) plus autosave to the note's file if it has one. */
   async persist() {
+    // caret moves bump the version too: only write when something was edited
+    if (this.edits === this.persistedEdits && !(this.file.path && this.dirty)) return;
+    this.persistedEdits = this.edits;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify($state.snapshot(this.doc)));
+      localStorage.setItem(STORAGE_KEY, this.docJSON(this.snapshot()));
       localStorage.setItem('notex.file', JSON.stringify({ ...this.file, dirty: this.dirty }));
     } catch {}
     if (this.file.path && this.dirty) await this.writeTo(this.file.path, true);
@@ -170,7 +308,7 @@ export class Editor {
   private async writeTo(path: string, quiet = false) {
     const edits = this.edits;
     try {
-      await F.writeNote(path, $state.snapshot(this.doc) as Doc);
+      await F.writeNote(path, this.snapshot());
       if (edits === this.edits) this.dirty = false;
       if (!quiet) this.flash(`saved ${F.baseName(path)}`);
       return true;
@@ -187,7 +325,7 @@ export class Editor {
 
   async saveNoteAs() {
     if (!F.isDesktop()) {
-      F.downloadNote(this.file.name, $state.snapshot(this.doc) as Doc);
+      F.downloadNote(this.file.name, this.snapshot());
       this.dirty = false;
       return true;
     }
@@ -213,6 +351,9 @@ export class Editor {
     this.doc = doc;
     this.file = file;
     this.dirty = false;
+    // nothing to autosave until it's edited; the session backup is written when idle
+    this.persistedEdits = this.edits;
+    this.warmSnapshots();
     this.undoStack = [];
     this.redoStack = [];
     this.b = 0;
@@ -248,7 +389,8 @@ export class Editor {
     }
     this.lastKind = kind;
     this.lastTime = now;
-    this.undoStack.push({ doc: $state.snapshot(this.doc) as Doc, b: this.b, o: this.o });
+    this.markDirty();
+    this.undoStack.push({ doc: this.snapshot(), b: this.b, o: this.o });
     if (this.undoStack.length > 500) this.undoStack.shift();
     this.redoStack = [];
   }
@@ -256,8 +398,18 @@ export class Editor {
   private restore(from: Snap[], to: Snap[], what: string) {
     const s = from.pop();
     if (!s) return this.flash(`nothing to ${what}`);
-    to.push({ doc: $state.snapshot(this.doc) as Doc, b: this.b, o: this.o });
-    this.doc = s.doc;
+    to.push({ doc: this.snapshot(), b: this.b, o: this.o });
+    // Keep the live blocks that are unchanged (same snapshot) so they don't re-render;
+    // only the blocks that differ are replaced (by copies: snapshots stay pristine).
+    const live = new Map<Block, Block>();
+    for (const blk of this.doc.blocks) {
+      const snap = this.blockSnaps.get(blk);
+      if (snap) live.set(snap, blk);
+    }
+    this.doc.blocks = s.doc.blocks.map((sb) => live.get(sb) ?? (structuredClone(sb) as Block));
+    this.doc.arrows = structuredClone(s.doc.arrows);
+    this.doc.marks = structuredClone(s.doc.marks);
+    this.doc.blocks.forEach((blk, i) => this.blockSnaps.set(blk, s.doc.blocks[i]));
     this.b = Math.min(s.b, this.doc.blocks.length - 1);
     this.o = Math.min(s.o, this.blk.items.length);
     this.anchor = null;
@@ -278,39 +430,113 @@ export class Editor {
     this.touch();
   }
 
-  private el(id: Id): Element | null {
-    if (this.frame) return this.index().get(id)?.[0] ?? null;
-    return this.page?.querySelector(`[data-nx="${id}"]`) ?? null;
+  /**
+   * The element for an id (a block, item or math node). Within a layout pass or an
+   * input handler, lookups go through per-block maps built on first use, so a long
+   * note isn't scanned for every id; `b` is the block, when the caller knows it.
+   */
+  private el(id: Id, b?: number): Element | null {
+    if (!this.page) return null;
+    if (!this.frame) return this.page.querySelector(`[data-nx="${id}"]`);
+    return this.els(id, b)[0] ?? null;
   }
 
-  /**
-   * All elements by data-nx id (and line spacers / probes by key), built once per
-   * layout pass: an attribute selector scans the whole page, and layout looks up
-   * thousands of ids.
-   */
-  private index(): Map<string, Element[]> {
+  private els(id: Id, b?: number): Element[] {
+    const bi = b ?? this.blockOf(id);
+    return bi < 0 ? [] : (this.blockMap(bi).get(id) ?? []);
+  }
+
+  private blockEl(bi: number): Element | undefined {
     const f = this.frame!;
-    if (!f.els) {
-      f.els = new Map();
-      for (const e of this.page!.querySelectorAll('[data-nx], .nx-sp')) {
-        const d = (e as HTMLElement).dataset;
-        const key = d.nx ?? (d.pt ? `pt:${d.pt}` : d.pb ? `pb:${d.pb}` : d.sp ? `sp:${d.sp}` : null);
-        if (!key) continue;
-        const list = f.els.get(key);
-        if (list) list.push(e);
-        else f.els.set(key, [e]);
+    // (children, not a ':scope > .block' query: that still walks every descendant)
+    f.blockEls ??= [...this.page!.children].filter((e) => e.classList.contains('block'));
+    return f.blockEls[bi];
+  }
+
+  /** Elements of one block by id (and its spacers / probes / end-of-line marker by key). */
+  private blockMap(bi: number): Map<string, Element[]> {
+    const f = this.frame!;
+    f.byBlock ??= new Map();
+    let m = f.byBlock.get(bi);
+    if (!m) {
+      m = new Map();
+      const root = this.blockEl(bi);
+      if (root) {
+        const add = (key: string, e: Element) => {
+          const list = m!.get(key);
+          if (list) list.push(e);
+          else m!.set(key, [e]);
+        };
+        add((root as HTMLElement).dataset.nx!, root);
+        for (const e of root.querySelectorAll('[data-nx], .nx-sp, .eol')) {
+          const d = (e as HTMLElement).dataset;
+          const key = d.nx ?? (d.pt ? `pt:${d.pt}` : d.pb ? `pb:${d.pb}` : d.sp ? `sp:${d.sp}` : d.eol ? 'eol' : null);
+          if (key) add(key, e);
+        }
+      }
+      f.byBlock.set(bi, m);
+    }
+    return m;
+  }
+
+  /** Index of the block containing an id (-1 if none), via the block snapshots. */
+  private blockOf(id: Id): number {
+    const f = this.frame!;
+    // most lookups are around the caret: try those blocks before indexing the whole note
+    if (!f.blockOf) {
+      for (const bi of [this.b, this.b - 1, this.b + 1]) {
+        const blk = this.doc.blocks[bi];
+        if (blk && this.idsOf(blk).has(id)) return bi;
       }
     }
-    return f.els;
+    if (!f.blockOf) {
+      // one pass over the (cached) block snapshots
+      f.blockOf = new Map();
+      this.doc.blocks.forEach((blk, bi) => {
+        for (const x of this.idsOf(blk)) f.blockOf!.set(x, bi);
+      });
+    }
+    return f.blockOf.get(id) ?? -1;
   }
 
-  /** A line spacer or probe ('pt:<id>', 'pb:<id>', 'sp:<id>-<side>'). */
-  private spEl(key: string): Element | null {
-    return this.frame ? (this.index().get(key)?.[0] ?? null) : (this.page?.querySelector(`[data-${key.slice(0, 2)}="${key.slice(3)}"]`) ?? null);
+  /** Run `fn` with per-block lookups (input handlers: the DOM doesn't change while they run). */
+  private withFrame<T>(fn: () => T): T {
+    if (this.frame) return fn();
+    this.frame = { rects: new Map(), ink: new Map() };
+    try {
+      return fn();
+    } finally {
+      this.frame = null;
+    }
+  }
+
+  /** A line spacer or probe of an anchor item ('pt' | 'pb' | 'sp', with `<id>` or `<id>-<side>`). */
+  private spEl(kind: 'pt' | 'pb' | 'sp', anchor: Id, side?: string): Element | null {
+    const key = `${kind}:${anchor}${side ? `-${side}` : ''}`;
+    const bi = this.blockOf(anchor);
+    return bi < 0 ? null : (this.blockMap(bi).get(key)?.[0] ?? null);
   }
 
   /** Measurements shared within one layout pass (the DOM doesn't change during it). */
-  private frame: { rects: Map<string, Rect[]>; ink: Map<Element, Rect[]>; els?: Map<string, Element[]> } | null = null;
+  private frame: {
+    rects: Map<string, Rect[]>;
+    ink: Map<Element, Rect[]>;
+    blockEls?: Element[];
+    byBlock?: Map<number, Map<string, Element[]>>;
+    blockOf?: Map<Id, number>;
+    marks?: Mark[];
+    arrows?: Arrow[];
+  } | null = null;
+
+  /** Plain copies of the drawings for this layout pass (reading through proxies in hot loops is slow). */
+  private get fMarks(): Mark[] {
+    const f = this.frame;
+    return f ? (f.marks ??= $state.snapshot(this.doc.marks) as Mark[]) : this.doc.marks;
+  }
+  private get fArrows(): Arrow[] {
+    const f = this.frame;
+    return f ? (f.arrows ??= $state.snapshot(this.doc.arrows) as Arrow[]) : this.doc.arrows;
+  }
   /** Ink of each block relative to the block, kept while the block's size and text are unchanged. */
   private inkCache = new WeakMap<Element, { sig: string; rel: Rect[] }>();
   /** Bumped when fonts load (glyphs move without the text changing). */
@@ -339,7 +565,7 @@ export class Editor {
     if (hit) return hit;
     const rs: Rect[] = [];
     for (const id of ids)
-      (this.frame ? (this.index().get(id) ?? []) : (this.page?.querySelectorAll(`[data-nx="${id}"]`) ?? [])).forEach((e) => {
+      (this.frame ? this.els(id) : (this.page?.querySelectorAll(`[data-nx="${id}"]`) ?? [])).forEach((e) => {
         const m = measure(e);
         if (m) rs.push(m);
       });
@@ -354,7 +580,9 @@ export class Editor {
   /** Viewport rect of the caret stop before item `o` of block `b` (or end of block). */
   private stopRect(b: number, o: number): DOMRect | null {
     const blk = this.doc.blocks[b];
-    const e = o < blk.items.length ? this.el(blk.items[o].id) : this.page?.querySelector(`[data-eol="${blk.id}"]`);
+    const e = this.frame
+      ? (o < blk.items.length ? this.el(blk.items[o].id, b) : (this.blockMap(b).get('eol')?.[0] ?? null))
+      : o < blk.items.length ? this.el(blk.items[o].id) : this.page?.querySelector(`[data-eol="${blk.id}"]`);
     return e?.getBoundingClientRect() ?? null;
   }
 
@@ -496,7 +724,7 @@ export class Editor {
       }
     }
     // Find the block under (or nearest to) y, then the nearest caret stop on that line.
-    const blocks = [...this.page.querySelectorAll('.block')];
+    const blocks = [...this.page.children].filter((e) => e.classList.contains('block'));
     let bi = 0, bd = Infinity;
     blocks.forEach((el, i) => {
       const r = el.getBoundingClientRect();
@@ -530,6 +758,10 @@ export class Editor {
   }
 
   mouseDown(e: MouseEvent) {
+    this.withFrame(() => this.mouseDownInner(e));
+  }
+
+  private mouseDownInner(e: MouseEvent) {
     if (e.button !== 0) return;
     e.preventDefault();
     if (this.mode === 'pick') {
@@ -594,6 +826,11 @@ export class Editor {
   }
 
   mouseMove(e: MouseEvent) {
+    if (!this.handleDrag && !this.dragging) return;
+    this.withFrame(() => this.mouseMoveInner(e));
+  }
+
+  private mouseMoveInner(e: MouseEvent) {
     if (this.handleDrag) return this.dragHandle(e);
     if (!this.dragging) return;
     const h = this.hitTest(e.clientX, e.clientY);
@@ -622,11 +859,12 @@ export class Editor {
   /** Recompute every DOM-dependent overlay. Called after renders and resizes. */
   layout() {
     if (!this.page) return;
+    const outer = this.frame;
     this.frame = { rects: new Map(), ink: new Map() };
     try {
       this.layoutFrame();
     } finally {
-      this.frame = null;
+      this.frame = outer;
     }
   }
 
@@ -643,7 +881,7 @@ export class Editor {
       const blk = this.blk;
       const r = this.stopRect(this.b, this.o);
       const prev = this.o > 0 ? blk.items[this.o - 1] : null;
-      const pr = prev?.t === 'c' ? this.el(prev.id)?.getBoundingClientRect() : null;
+      const pr = prev?.t === 'c' ? this.el(prev.id, this.b)?.getBoundingClientRect() : null;
       if (r) {
         // Prefer the previous char's line when wrapping put the next item on a new line.
         const nextIsMath = blk.items[this.o]?.t === 'm';
@@ -655,6 +893,7 @@ export class Editor {
       }
     }
     this.caret = caret;
+    this.selRects = this.selectionRects(origin);
 
     // Pick highlights
     if (this.pick) {
@@ -668,7 +907,7 @@ export class Editor {
     const mgeos: Record<Id, MarkGeo> = {};
     const outlines = new Map<string, Outline>();
     const lines: Record<Id, Rect[]> = {};
-    for (const m of this.doc.marks) {
+    for (const m of this.fMarks) {
       lines[m.id] = byLine(this.rectsOfIds(m.at)).map((r) => relTo(r, origin));
       const g = markGeo(m.kind, lines[m.id]);
       if (g) mgeos[m.id] = g;
@@ -680,7 +919,7 @@ export class Editor {
 
     // Arrows
     const geos: Record<Id, ArrowGeo> = {};
-    for (const a of this.doc.arrows) {
+    for (const a of this.fArrows) {
       const fa = rel(this.rectOfIds(a.from));
       const ta = rel(this.rectOfIds(a.to));
       if (!fa || !ta) continue;
@@ -714,10 +953,12 @@ export class Editor {
       let ls = blockLines.get(el);
       if (!ls) {
         ls = [];
+        let bottom = -Infinity;
         for (const r of this.blockInk(el).map((r) => relTo(r, origin)).sort((a, b) => a.y - b.y)) {
           const last = ls[ls.length - 1];
-          if (last && r.y < Math.max(...last.map((q) => q.y + q.h)) - 1) last.push(r);
+          if (last && r.y < bottom - 1) last.push(r);
           else ls.push([r]);
+          bottom = last && r.y < bottom - 1 ? Math.max(bottom, r.y + r.h) : r.y + r.h;
         }
         blockLines.set(el, ls);
       }
@@ -726,7 +967,7 @@ export class Editor {
 
     type Info = { m: Mark; g: MarkGeo; t: Rect; blockEl: Element; line: number; level: number };
     const infos: Info[] = [];
-    for (const m of this.doc.marks) {
+    for (const m of this.fMarks) {
       const g = geos[m.id];
       if (!g) continue;
       g.leader = undefined;
@@ -744,7 +985,12 @@ export class Editor {
       b.t.x >= a.t.x - 1 && b.t.x + b.t.w <= a.t.x + a.t.w + 1 && (b.t.w < a.t.w - 1 || pos.get(b)! < pos.get(a)!);
     // who contains whom, once (only under-marks on the same line can nest)
     const unders = infos.filter((i) => UNDER.has(i.m.kind));
-    const inner = new Map(unders.map((a) => [a, unders.filter((b) => contains(a, b))]));
+    const sameLine = new Map<string, Info[]>();
+    for (const u of unders) {
+      const k = `${infos.indexOf(u) >= 0 ? (u.blockEl as HTMLElement).dataset.nx : ''}:${u.line}`;
+      sameLine.set(k, [...(sameLine.get(k) ?? []), u]);
+    }
+    const inner = new Map(unders.map((a) => [a, sameLine.get(`${(a.blockEl as HTMLElement).dataset.nx}:${a.line}`)!.filter((b) => contains(a, b))]));
     for (let pass = 0; pass < 4; pass++)
       for (const a of unders) a.level = Math.max(0, ...inner.get(a)!.map((b) => b.level + 1));
 
@@ -811,14 +1057,14 @@ export class Editor {
     const GAP = 3;
     type Item = { anchor: Id; side: 'above' | 'below'; r: Rect };
     const items: Item[] = [];
-    for (const m of this.doc.marks) {
+    for (const m of this.fMarks) {
       const g = geos[m.id];
       const target = this.rectOfIds(m.at);
       if (!g || !target) continue;
       // anchor the room on the item at the start (above) / end (below) of the target
       const anchors = m.at.flatMap((id) => {
         const el = this.el(id);
-        if (el?.classList.contains('block')) return [...el.querySelectorAll<HTMLElement>(':scope > .ch, :scope > .math')].map((e) => e.dataset.nx!);
+        if (el?.classList.contains('block')) return [...el.children].filter((e) => e.matches('.ch, .math')).map((e) => (e as HTMLElement).dataset.nx!);
         const it = (el?.closest('.ch, .math') as HTMLElement | null)?.dataset.nx;
         return it ? [it] : [];
       });
@@ -836,13 +1082,20 @@ export class Editor {
       }
     }
 
-    // ink of the blocks involved and their neighbours
-    const blocks = new Set<Element>();
-    for (const it of items) {
-      const b = this.el(it.anchor)?.closest('.block');
-      for (const e of [b, b?.previousElementSibling, b?.nextElementSibling]) if (e?.classList.contains('block')) blocks.add(e);
-    }
-    const ink = [...blocks].flatMap((b) => this.blockInk(b));
+    // ink near each anchor: its own block and the blocks on either side
+    const near = new Map<number, Rect[]>();
+    const inkNear = (anchor: Id) => {
+      const bi = this.blockOf(anchor);
+      let r = near.get(bi);
+      if (!r) {
+        r = [bi - 1, bi, bi + 1].flatMap((i) => {
+          const e = i >= 0 ? this.blockEl(i) : undefined;
+          return e ? this.blockInk(e) : [];
+        });
+        near.set(bi, r);
+      }
+      return r;
+    };
     const across = (a: Rect, b: Rect) => a.x < b.x + b.w + 2 && b.x < a.x + a.w + 2;
     const mid = (e: Element | null) => {
       const r = e?.getBoundingClientRect();
@@ -856,7 +1109,7 @@ export class Editor {
         const r = el.getBoundingClientRect();
         return { top: r.top, bottom: r.bottom };
       }
-      const t = mid(this.spEl(`pt:${id}`)), b = mid(this.spEl(`pb:${id}`));
+      const t = mid(this.spEl('pt', id)), b = mid(this.spEl('pb', id));
       return t === null || b === null ? null : { top: t, bottom: b };
     };
 
@@ -875,6 +1128,7 @@ export class Editor {
       const e = edges(it.anchor);
       // no probes yet: create the spacer (at rest) so the line can be measured next pass
       if (!e) { unmeasured.add(`${it.anchor}:${it.side}`); continue; }
+      const ink = inkNear(it.anchor);
       if (it.side === 'below') {
         const under = ink.filter((q) => q.y >= e.bottom - 1 && across(q, r));
         add(it.anchor, 'below', under.length ? r.y + r.h + GAP - Math.min(...under.map((q) => q.y)) : -Infinity);
@@ -912,8 +1166,8 @@ export class Editor {
           out[side] = Math.min(MAX_ROOM, Math.max(0, Math.ceil(now + v)));
           continue;
         }
-        const edge = mid(this.spEl(side === 'below' ? `pb:${id}` : `pt:${id}`));
-        const at = mid(this.spEl(`sp:${id}-${side}`));
+        const edge = mid(this.spEl(side === 'below' ? 'pb' : 'pt', id));
+        const at = mid(this.spEl('sp', id, side));
         if (edge === null || at === null) { out[side] = 0; continue; } // measure next pass
         // put the spacer's point v past the line's edge; the edge follows it once it's outside
         const target = side === 'below' ? edge + v : edge - v;
@@ -934,14 +1188,58 @@ export class Editor {
       for (const [k, v] of Object.entries(next)) if (v.above !== undefined && this.spacers[k]?.above !== undefined) v.above = this.spacers[k].above;
     if (same(next, this.spacers)) return;
     if (++this.spacerPasses > 8) return; // never loop forever on odd layouts
-    this.spacers = next;
+    for (const k of Object.keys(this.spacers)) if (!(k in next)) delete this.spacers[k];
+    for (const [k, v] of Object.entries(next)) {
+      const cur = this.spacers[k];
+      if (!cur || cur.above !== v.above || cur.below !== v.below) this.spacers[k] = v;
+    }
     tick().then(() => this.layout());
+  }
+
+  /**
+   * The selection's rectangles, merged per line. Drawn as an overlay rather than
+   * a class on every character: changing a selection then costs what is selected,
+   * not the length of the note.
+   */
+  private selectionRects(origin: DOMRect): Rect[] {
+    const r = this.selection;
+    if (!r) return [];
+    const first = this.stopEl(r.s.b, r.s.o);
+    const lastBlk = this.doc.blocks[r.e.b];
+    const last = r.e.o > 0 ? this.el(lastBlk.items[r.e.o - 1].id, r.e.b) : null;
+    if (!first) return [];
+    const range = sharedRange();
+    range.setStartBefore(first);
+    if (last) range.setEndAfter(last);
+    else range.setEndBefore(this.stopEl(r.e.b, 0) ?? first);
+    const lines: Rect[] = [];
+    for (const q of range.getClientRects()) {
+      if (!q.width || !q.height) continue;
+      const line = lines.find((l) => Math.abs(l.y - q.top) < 4 || (q.top < l.y + l.h - 4 && q.bottom > l.y + 4));
+      if (line) {
+        const x1 = Math.max(line.x + line.w, q.right), y1 = Math.max(line.y + line.h, q.bottom);
+        line.x = Math.min(line.x, q.left);
+        line.y = Math.min(line.y, q.top);
+        line.w = x1 - line.x;
+        line.h = y1 - line.y;
+      } else lines.push({ x: q.left, y: q.top, w: q.width, h: q.height });
+    }
+    releaseRange();
+    return lines.map((l) => relTo(l, origin));
+  }
+
+  /** The element at caret stop (b, o): the item there, or the end-of-line marker. */
+  private stopEl(b: number, o: number): Element | null {
+    const blk = this.doc.blocks[b];
+    if (!blk) return null;
+    if (o < blk.items.length) return this.el(blk.items[o].id, b);
+    return this.frame ? (this.blockMap(b).get('eol')?.[0] ?? null) : (this.page?.querySelector(`[data-eol="${blk.id}"]`) ?? null);
   }
 
   private mathCaret(origin: DOMRect): typeof this.caret {
     const item = this.mathItem;
     if (!item) return null;
-    const mel = this.el(item.id);
+    const mel = this.el(item.id, this.b);
     const cel = mel?.querySelector('.nx-caret');
     if (!mel || !cel) return null;
     const row = M.rowAt(item.root, this.mc.path);
@@ -964,6 +1262,10 @@ export class Editor {
   // ───────────────────────── keyboard ─────────────────────────
 
   key(e: KeyboardEvent) {
+    this.withFrame(() => this.keyInner(e));
+  }
+
+  private keyInner(e: KeyboardEvent) {
     if (e.isComposing) return;
     // Text fields (settings, config editor) handle their own keys.
     if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
@@ -2223,7 +2525,9 @@ export class Editor {
 
   /** Remove arrows and marks whose targets were deleted. */
   pruneDrawings() {
-    const ids = allIds(this.doc);
+    if (!this.doc.arrows.length && !this.doc.marks.length) return;
+    const sets = this.doc.blocks.map((blk) => this.idsOf(blk));
+    const ids = { has: (id: Id) => sets.some((set) => set.has(id)) };
     const keep = this.doc.arrows.filter((a) => a.from.some((i) => ids.has(i)) && a.to.some((i) => ids.has(i)));
     if (keep.length !== this.doc.arrows.length) this.doc.arrows = keep;
     const marks = this.doc.marks.filter((m) => m.at.some((i) => ids.has(i)));

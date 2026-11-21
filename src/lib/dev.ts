@@ -137,9 +137,31 @@ export function metrics(ed: Editor) {
   return { rows, totals, room };
 }
 
+/**
+ * A large document for performance checks: `paras` paragraphs of about `chars`
+ * characters, every `mathEvery`-th paragraph with an inline formula, and a
+ * display formula every `displayEvery` paragraphs.
+ */
+export function bigDoc({ paras = 200, chars = 400, mathEvery = 3, displayEvery = 10 } = {}): Doc {
+  const words = 'the integral of a function over an interval measures the signed area under its graph and depends only on'.split(' ');
+  const blocks: Block[] = [];
+  let w = 0;
+  for (let p = 0; p < paras; p++) {
+    let text = '';
+    while (text.length < chars) text += words[w++ % words.length] + ' ';
+    const items: Item[] = chars ? [...chars_(text)] : [];
+    if (mathEvery && p % mathEvery === 0) items.splice(Math.floor(items.length / 2), 0, math(parseLatex(String.raw`\frac{a_${p}+b}{\sqrt{x^2+1}}`).row));
+    blocks.push(block(items, p % 25 === 0 ? 'h2' : 'p'));
+    if (displayEvery && p % displayEvery === 0) blocks.push(block([math(parseLatex(String.raw`\sum_{i=1}^{n} \int_0^1 f_i(x)\,dx = \lim_{h\to 0} \frac{F(x+h)-F(x)}{h}`).row, true)]));
+  }
+  return { blocks, arrows: [], marks: [] };
+}
+const chars_ = chars;
+
 export function install(ed: Editor) {
   (window as any).__nx = {
     ed,
+    loadBig: (opts?: Parameters<typeof bigDoc>[0]) => ed.load(bigDoc(opts), { path: null, name: 'big' }),
     load: (scs: Scenario[]) => ed.load(buildDoc(scs), { path: null, name: 'lab' }),
     metrics: () => metrics(ed),
     /** Top-level nodes of a formula (to pick target indices). */

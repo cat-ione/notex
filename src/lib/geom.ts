@@ -16,11 +16,25 @@ export const union = (rs: Rect[]): Rect | null => {
 const fromDOM = (r: DOMRect): Rect => ({ x: r.left, y: r.top, w: r.width, h: r.height });
 const INK = 'svg, .frac-line, .rule, .overline-line, .underline-line, .hline';
 
+/**
+ * One Range for all measuring. The browser keeps every live Range up to date on
+ * each DOM change until it is garbage collected, so creating one per measurement
+ * (thousands in a long note) makes later edits crawl. Collapse it after use.
+ */
+let shared: Range | null = null;
+export function sharedRange(): Range {
+  return (shared ??= document.createRange());
+}
+export function releaseRange() {
+  shared?.collapse(true);
+  shared?.setStart(document, 0);
+}
+
 /** The individual ink boxes inside an element (viewport coords): text runs, svgs and rules. */
 export function inkRects(el: Element): Rect[] {
   const rects: Rect[] = [];
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
-  const range = document.createRange();
+  const range = sharedRange();
   let n: Node | null = walker.currentNode;
   while (n) {
     if (n.nodeType === Node.TEXT_NODE) {
@@ -35,6 +49,7 @@ export function inkRects(el: Element): Rect[] {
     }
     n = walker.nextNode();
   }
+  releaseRange();
   return rects;
 }
 
