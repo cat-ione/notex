@@ -1084,14 +1084,25 @@ export class Editor {
   }
 
   /**
-   * The wheel over the selected drawing (its outline or note): a shape's kind, an arrow's
-   * bend; with Shift, the colour. Anywhere else the page scrolls as usual.
+   * The wheel near the selected drawing (anywhere around it, its note, what it marks, its
+   * toolbar): a shape's kind, an arrow's bend; with Shift, the colour. Once started it goes
+   * on until the mouse moves, even if the drawing changes from under it. Elsewhere the page
+   * scrolls as usual.
    */
   private wheelAcc = 0;
+  /** Where a wheel gesture on a drawing started (it holds while the mouse stays there). */
+  private wheelLock: { id: Id; x: number; y: number } | null = null;
   wheel(e: WheelEvent) {
     if (this.mode !== 'style' || !this.styling) return;
-    const id = ((e.target as Element | null)?.closest?.('[data-id]') as HTMLElement | null)?.dataset.id;
-    if (id !== this.styling) return;
+    const id = this.styling, lk = this.wheelLock;
+    const held = !!lk && lk.id === id && Math.hypot(e.clientX - lk.x, e.clientY - lk.y) < 4;
+    if (!held) {
+      const z = this.drawingZone(id), o = this.page?.getBoundingClientRect();
+      const x = e.clientX - (o?.left ?? 0), y = e.clientY - (o?.top ?? 0), M = 28;
+      const near = !!z && x > z.x - M && x < z.x + z.w + M && y > z.y - M && y < z.y + z.h + M;
+      if (!near && !(e.target as Element | null)?.closest?.('.dbar')) return;
+      this.wheelLock = { id, x: e.clientX, y: e.clientY };
+    }
     e.preventDefault();
     const d = this.drawing(id);
     if (!d) return;
@@ -1117,17 +1128,11 @@ export class Editor {
    */
   get barAt(): { x: number; y: number; below: boolean } | null {
     if (this.mode !== 'style' || !this.styling || this.menu || this.dragBusy) return null;
-    const r0 = this.drawingRect(this.styling), o = this.page?.getBoundingClientRect();
-    if (!r0 || !o) return null;
+    const o = this.page?.getBoundingClientRect();
+    const parts = this.drawingParts(this.styling);
+    if (!parts.length || !o) return null;
     // clear of the drawing, its note and what it marks (a brace sits under its text)
     const d = this.drawing(this.styling);
-    const parts = [r0];
-    const el = this.noteEl(this.styling);
-    if (el) parts.push(relTo(fromDOM(el.getBoundingClientRect()), o));
-    for (const ids of d ? ('at' in d ? [d.at] : [d.from, d.to]) : []) {
-      const t = this.rectOfIds(ids);
-      if (t) parts.push(relTo(t, o));
-    }
     const r = union(parts)!;
     // ...and of the text, notes and shapes around it, if it can be: try further out above
     // and below, and take whichever side needed less (above when it's a tie)
@@ -1150,6 +1155,29 @@ export class Editor {
     }
     best ??= fits(r.y - 8 - H) ? { y: r.y - 8, below: false, d: 0 } : { y: r.y + r.h + 8, below: true, d: 0 };
     return { x: cx, y: best.y, below: best.below };
+  }
+
+  /**
+   * The pieces of a drawing on the page (page coordinates): the drawing, its note (when it
+   * has one) and what it marks (an arrow: both ends).
+   */
+  private drawingParts(id: Id): Rect[] {
+    const r0 = this.drawingRect(id), o = this.page?.getBoundingClientRect();
+    if (!r0 || !o) return [];
+    const parts = [r0];
+    const el = this.noteEl(id);
+    parts.push(el ? relTo(fromDOM(el.getBoundingClientRect()), o) : r0);
+    const d = this.drawing(id);
+    for (const ids of d ? ('at' in d ? [d.at] : [d.from, d.to]) : []) {
+      const t = this.rectOfIds(ids);
+      if (t) parts.push(relTo(t, o));
+    }
+    return parts;
+  }
+
+  /** All of a drawing's pieces in one box (page coordinates). */
+  private drawingZone(id: Id): Rect | null {
+    return union(this.drawingParts(id));
   }
 
   /** Double-click on a note: type in it, the caret where it was clicked. */
@@ -1316,6 +1344,8 @@ export class Editor {
   }
 
   mouseMove(e: MouseEvent) {
+    const lk = this.wheelLock;
+    if (lk && Math.hypot(e.clientX - lk.x, e.clientY - lk.y) >= 4) this.wheelLock = null;
     if (!this.handleDrag && !this.dragging && !this.labelDrag && !this.noteDrag && !this.altDraw && !this.bodyDrag) return;
     this.withFrame(() => this.mouseMoveInner(e));
   }
