@@ -38,7 +38,7 @@
     ro.observe(page);
     document.fonts?.ready.then(() => ed.layout());
     // KaTeX loads some fonts (big delimiters, scripts) only when first used, which moves glyphs
-    const relayout = () => ed.layout();
+    const relayout = () => (ed.fontEpoch++, ed.layout());
     document.fonts?.addEventListener('loadingdone', relayout);
     return () => {
       document.fonts?.removeEventListener('loadingdone', relayout);

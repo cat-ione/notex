@@ -44,6 +44,8 @@ type Snap = { doc: Doc; b: number; o: number };
 
 
 const STORAGE_KEY = 'notex.doc.v1';
+/** Most room (px) a line or formula is ever pushed by, so a feedback bug can't run away. */
+const MAX_ROOM = 400;
 
 export class Editor {
   doc = $state<Doc>({ blocks: [block()], arrows: [], marks: [] });
@@ -53,6 +55,17 @@ export class Editor {
   o = $state(0);
   /** Selection anchor; the selection spans anchor..caret. */
   anchor = $state<Pos | null>(null);
+  /**
+   * Ordered selection range, or null when nothing is selected. Derived, so that
+   * while nothing is selected it stays null as the caret moves and the per-character
+   * `isSelected` checks don't all re-run on every keystroke.
+   */
+  selection = $derived.by((): { s: Pos; e: Pos } | null => {
+    const a = this.anchor;
+    if (!a || (a.b === this.b && a.o === this.o)) return null;
+    const c = { b: this.b, o: this.o };
+    return cmpPos(a, c) < 0 ? { s: a, e: c } : { s: c, e: a };
+  });
   /** Math cursor (valid in math mode; the math item is items[o]). */
   mc = $state<MCursor>({ path: [], off: 0 });
 
@@ -266,17 +279,55 @@ export class Editor {
   }
 
   private el(id: Id): Element | null {
+    if (this.frame) return this.index().get(id)?.[0] ?? null;
     return this.page?.querySelector(`[data-nx="${id}"]`) ?? null;
   }
 
+  /**
+   * All elements by data-nx id (and line spacers / probes by key), built once per
+   * layout pass: an attribute selector scans the whole page, and layout looks up
+   * thousands of ids.
+   */
+  private index(): Map<string, Element[]> {
+    const f = this.frame!;
+    if (!f.els) {
+      f.els = new Map();
+      for (const e of this.page!.querySelectorAll('[data-nx], .nx-sp')) {
+        const d = (e as HTMLElement).dataset;
+        const key = d.nx ?? (d.pt ? `pt:${d.pt}` : d.pb ? `pb:${d.pb}` : d.sp ? `sp:${d.sp}` : null);
+        if (!key) continue;
+        const list = f.els.get(key);
+        if (list) list.push(e);
+        else f.els.set(key, [e]);
+      }
+    }
+    return f.els;
+  }
+
+  /** A line spacer or probe ('pt:<id>', 'pb:<id>', 'sp:<id>-<side>'). */
+  private spEl(key: string): Element | null {
+    return this.frame ? (this.index().get(key)?.[0] ?? null) : (this.page?.querySelector(`[data-${key.slice(0, 2)}="${key.slice(3)}"]`) ?? null);
+  }
+
   /** Measurements shared within one layout pass (the DOM doesn't change during it). */
-  private frame: { rects: Map<string, Rect[]>; ink: Map<Element, Rect[]> } | null = null;
+  private frame: { rects: Map<string, Rect[]>; ink: Map<Element, Rect[]>; els?: Map<string, Element[]> } | null = null;
+  /** Ink of each block relative to the block, kept while the block's size and text are unchanged. */
+  private inkCache = new WeakMap<Element, { sig: string; rel: Rect[] }>();
+  /** Bumped when fonts load (glyphs move without the text changing). */
+  fontEpoch = 0;
 
   /** Ink boxes of a block (viewport coords), measured once per layout pass. */
   private blockInk(el: Element): Rect[] {
     let r = this.frame?.ink.get(el);
     if (!r) {
-      r = inkRects(el);
+      const box = el.getBoundingClientRect();
+      const sig = `${Math.round(box.width)}x${Math.round(box.height)}|${el.textContent?.length}|${this.fontEpoch}`;
+      const hit = this.inkCache.get(el);
+      if (hit && hit.sig === sig) r = hit.rel.map((q) => ({ ...q, x: q.x + box.left, y: q.y + box.top }));
+      else {
+        r = inkRects(el);
+        this.inkCache.set(el, { sig, rel: r.map((q) => ({ ...q, x: q.x - box.left, y: q.y - box.top })) });
+      }
       this.frame?.ink.set(el, r);
     }
     return r;
@@ -288,7 +339,7 @@ export class Editor {
     if (hit) return hit;
     const rs: Rect[] = [];
     for (const id of ids)
-      this.page?.querySelectorAll(`[data-nx="${id}"]`).forEach((e) => {
+      (this.frame ? (this.index().get(id) ?? []) : (this.page?.querySelectorAll(`[data-nx="${id}"]`) ?? [])).forEach((e) => {
         const m = measure(e);
         if (m) rs.push(m);
       });
@@ -309,13 +360,6 @@ export class Editor {
 
   // ───────────────────────── selection ─────────────────────────
 
-  /** Ordered selection range, or null when nothing is selected. */
-  get selection(): { s: Pos; e: Pos } | null {
-    const a = this.anchor;
-    if (!a || (a.b === this.b && a.o === this.o)) return null;
-    const c = { b: this.b, o: this.o };
-    return cmpPos(a, c) < 0 ? { s: a, e: c } : { s: c, e: a };
-  }
 
   isSelected(b: number, o: number): boolean {
     const r = this.selection;
@@ -694,19 +738,26 @@ export class Editor {
       infos.push({ m, g, t, blockEl, line, level: 0 });
     }
     // nesting: an under-mark containing another under-mark's range on the same line sits below it
+    const pos = new Map(infos.map((i, k) => [i, k]));
     const contains = (a: Info, b: Info) =>
       a !== b && UNDER.has(a.m.kind) && UNDER.has(b.m.kind) && a.blockEl === b.blockEl && a.line === b.line &&
-      b.t.x >= a.t.x - 1 && b.t.x + b.t.w <= a.t.x + a.t.w + 1 && (b.t.w < a.t.w - 1 || infos.indexOf(b) < infos.indexOf(a));
+      b.t.x >= a.t.x - 1 && b.t.x + b.t.w <= a.t.x + a.t.w + 1 && (b.t.w < a.t.w - 1 || pos.get(b)! < pos.get(a)!);
+    // who contains whom, once (only under-marks on the same line can nest)
+    const unders = infos.filter((i) => UNDER.has(i.m.kind));
+    const inner = new Map(unders.map((a) => [a, unders.filter((b) => contains(a, b))]));
     for (let pass = 0; pass < 4; pass++)
-      for (const a of infos) a.level = Math.max(0, ...infos.filter((b) => contains(a, b)).map((b) => b.level + 1));
+      for (const a of unders) a.level = Math.max(0, ...inner.get(a)!.map((b) => b.level + 1));
 
     const placed: Rect[] = [];
+    const noteOf = new Map<Id, Rect[]>();
     const maxLevel = Math.max(0, ...infos.map((i) => i.level));
     for (let level = 0; level <= maxLevel; level++) {
       // nested under-marks: drop below what they contain (shapes and their notes)
       for (const a of infos.filter((i) => i.level === level && level > 0)) {
-        const inner = infos.filter((b) => contains(a, b));
-        const bottom = Math.max(...inner.map((b) => b.g.bounds.y + b.g.bounds.h), ...placed.filter((r) => r.x < a.t.x + a.t.w && a.t.x < r.x + r.w && r.y > a.t.y).map((r) => r.y + r.h));
+        const inside = inner.get(a) ?? [];
+        // clear the shapes it contains and their notes (only those: other notes further
+        // down the page move when this line makes room, which would feed back)
+        const bottom = Math.max(...inside.map((b) => b.g.bounds.y + b.g.bounds.h), ...inside.flatMap((b) => noteOf.get(b.m.id) ?? []).map((r) => r.y + r.h));
         const drop = bottom + 4 - (a.t.y + a.t.h);
         if (drop > 0) {
           const g = markGeo(a.m.kind, lines[a.m.id].map((r, k, all) => (k === all.length - 1 ? { ...r, h: r.h + drop } : r)));
@@ -735,6 +786,7 @@ export class Editor {
           const { g } = row[k];
           const b = r.box;
           placed.push(b);
+          noteOf.set(row[k].m.id, [b]);
           g.label = { ...g.label, x: b.x + b.w / 2, y: below ? b.y + 12 : b.y + b.h - 3, maxW: r.maxW === Infinity ? undefined : Math.ceil(b.w) + 1 };
           const ld = r.leader;
           if (ld) g.leader = `M${ld[0].toFixed(1)},${ld[1].toFixed(1)} L${ld[2].toFixed(1)},${ld[3].toFixed(1)}`;
@@ -804,7 +856,7 @@ export class Editor {
         const r = el.getBoundingClientRect();
         return { top: r.top, bottom: r.bottom };
       }
-      const t = mid(page.querySelector(`[data-pt="${id}"]`)), b = mid(page.querySelector(`[data-pb="${id}"]`));
+      const t = mid(this.spEl(`pt:${id}`)), b = mid(this.spEl(`pb:${id}`));
       return t === null || b === null ? null : { top: t, bottom: b };
     };
 
@@ -849,18 +901,23 @@ export class Editor {
       for (const side of ['below', 'above'] as const) {
         const v = n[side];
         const now = cur[side] ?? 0;
-        if (v === undefined || !Number.isFinite(v) || (now === 0 && v <= 0)) continue;
-        if (el.classList.contains('display')) {
-          // padding moves what follows (below) or the formula itself (above) by the same amount
-          out[side] = Math.max(0, Math.ceil(now + v));
+        if (v === undefined) continue;
+        if (!Number.isFinite(v) || (now === 0 && v <= 0)) {
+          // nothing to make room for; an existing spacer stays (at rest) so its probes do too
+          if (cur[side] !== undefined) out[side] = 0;
           continue;
         }
-        const edge = mid(page.querySelector(side === 'below' ? `[data-pb="${id}"]` : `[data-pt="${id}"]`));
-        const at = mid(page.querySelector(`[data-sp="${id}-${side}"]`));
+        if (el.classList.contains('display')) {
+          // padding moves what follows (below) or the formula itself (above) by the same amount
+          out[side] = Math.min(MAX_ROOM, Math.max(0, Math.ceil(now + v)));
+          continue;
+        }
+        const edge = mid(this.spEl(side === 'below' ? `pb:${id}` : `pt:${id}`));
+        const at = mid(this.spEl(`sp:${id}-${side}`));
         if (edge === null || at === null) { out[side] = 0; continue; } // measure next pass
         // put the spacer's point v past the line's edge; the edge follows it once it's outside
         const target = side === 'below' ? edge + v : edge - v;
-        out[side] = Math.max(0, Math.ceil(side === 'below' ? now + (target - at) : now + (at - target)));
+        out[side] = Math.min(MAX_ROOM, Math.max(0, Math.ceil(side === 'below' ? now + (target - at) : now + (at - target))));
       }
       if (Object.keys(out).length) next[id] = out;
     }
