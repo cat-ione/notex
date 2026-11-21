@@ -39,7 +39,7 @@
     {@const g = ed.arrowGeos[a.id]}
     {#if g}
       {@const sel = ed.styling === a.id}
-      {@const head = sel && !a.color ? 'url(#nx-head-sel)' : marker(a.color)}
+      {@const head = marker(a.color)}
       <g data-id={a.id} class="arrow" class:sel class:hover={ed.hovered === a.id} class:inked={!!a.color} class:ghost={ed.pick?.edit?.id === a.id} style="--ink: {inkVar(a.color)}">
         {#if a.boxed}
           <rect class="box" x={g.from.x} y={g.from.y} width={g.from.w} height={g.from.h} rx="4" in:fade={{ duration: 150 }} />
@@ -109,13 +109,10 @@
   path.dash {
     stroke-dasharray: 5 4;
   }
+  /* selected: its own colour, thicker and glowing (as a selected shape) */
   .sel path {
-    stroke: var(--accent);
     stroke-width: 2;
-  }
-  .sel.inked path {
-    stroke: var(--ink);
-    filter: drop-shadow(0 0 3px var(--ink));
+    filter: drop-shadow(0 0 3px var(--ink, var(--arrow)));
   }
   .clickable .hover:not(.sel) path:not(.hit) {
     stroke-width: 2;
@@ -125,6 +122,7 @@
     stroke-width: 1;
     stroke-dasharray: 2 2;
     opacity: 0.7;
+    filter: none;
   }
   .ghost {
     opacity: 0.25;
@@ -163,7 +161,7 @@
     stroke-dasharray: 3 2;
   }
   .sel .box {
-    stroke: var(--accent);
+    stroke-width: 1.4;
   }
   .preview {
     stroke: var(--accent);
