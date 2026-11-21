@@ -13,8 +13,8 @@
 
 import { tick } from 'svelte';
 import { arrowGeo, bendThrough, defaultBend, type ArrowGeo, type Outline } from './arrows';
-import { INKS, MARK_KINDS, markGeo, placeLabel, type MarkGeo } from './marks';
-import { layoutRow, leaderFor, measureLabel, type RowNote } from './labels';
+import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
+import { layoutRow, measureLabel, type RowNote } from './labels';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
@@ -633,7 +633,7 @@ export class Editor {
   private placeLabels(geos: Record<Id, MarkGeo>, lines: Record<Id, Rect[]>, origin: DOMRect) {
     const page = this.page!;
     const cs = getComputedStyle(page);
-    const left = parseFloat(cs.paddingLeft), right = page.clientWidth - parseFloat(cs.paddingRight);
+    const left = parseFloat(cs.paddingLeft) || 0, right = page.clientWidth - (parseFloat(cs.paddingRight) || 0);
     const UNDER = new Set<MarkKind>(['brace', 'underline']);
 
     // Ink of each block grouped into lines (rects overlapping vertically, transitively),
@@ -697,20 +697,19 @@ export class Editor {
         const notes: RowNote[] = row.map(({ m, g }) => {
           // the note's box as LabelLayer draws it: hanging from y - 12 (below) or standing on y + 3 (above)
           const edge = below ? g.label.y - 12 : g.label.y + 3;
-          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, span: [g.bounds.x, g.bounds.x + g.bounds.w] as [number, number], size: (maxW: number) => measureLabel(m.label, maxW) };
+          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, size: (maxW: number) => measureLabel(m.label, maxW) };
         });
-        const res = layoutRow(notes, { below, left, right });
-        // move the whole row off ink on its line, other shapes and earlier notes
+        // keep off ink on this line, other shapes and notes already placed
         const mine = new Set(row.map((i) => i.m.id));
         const ink = row[0].line >= 0 ? inkLines(row[0].blockEl)[row[0].line] : [];
         const others = infos.filter((i) => !mine.has(i.m.id)).map((i) => i.g.bounds);
-        const { dx, dy } = placeLabel(union(res.map((r) => r.box))!, below ? 1 : -1, [...ink, ...others, ...placed], 16);
+        const res = layoutRow(notes, { below, left, right, obstacles: [...ink, ...others, ...placed] });
         res.forEach((r, k) => {
           const { g } = row[k];
-          const b = { ...r.box, x: r.box.x + dx, y: r.box.y + dy };
+          const b = r.box;
           placed.push(b);
           g.label = { ...g.label, x: b.x + b.w / 2, y: below ? b.y + 12 : b.y + b.h - 3, maxW: r.maxW === Infinity ? undefined : Math.ceil(b.w) + 1 };
-          const ld = leaderFor(notes[k], b, below);
+          const ld = r.leader;
           if (ld) g.leader = `M${ld[0].toFixed(1)},${ld[1].toFixed(1)} L${ld[2].toFixed(1)},${ld[3].toFixed(1)}`;
         });
       }

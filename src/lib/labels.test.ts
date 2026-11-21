@@ -7,7 +7,6 @@ function note(id: string, x: number, text: string, edge = 20): RowNote {
     id,
     tip: { x, y: edge - 1 },
     edge,
-    span: [x - 8, x + 8],
     size: (maxW) => {
       if (maxW === Infinity) return { w: text.length * 6 + 6, h: 14 };
       const lines: number[] = [0];

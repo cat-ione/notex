@@ -60,9 +60,12 @@ function path(kind: MarkKind, r: Rect): Omit<MarkGeo, 'bounds'> {
     }
     case 'circle': {
       // Smallest-ish ellipse through the padded rect's corners.
-      const hw = r.w / 2 + 2, hh = r.h / 2 + 2;
-      const rx = hw + Math.max(6, Math.min(16, hw * 0.25));
-      const ry = hh / Math.sqrt(1 - (hw * hw) / (rx * rx));
+      // Neighbouring symbols are closer than neighbouring lines, so reach out
+      // only a little sideways and more up and down (capped: a hand-drawn
+      // circle may clip a corner of the ink box, which is rarely inked).
+      const hw = r.w / 2 + 1.5, hh = r.h / 2 + 1.5;
+      const rx = hw + Math.max(3.5, Math.min(10, hw * 0.2));
+      const ry = Math.min(hh / Math.sqrt(1 - (hw * hw) / (rx * rx)), hh * 1.45 + 3);
       return {
         d: `M${f(cx - rx)},${f(cy)} A${f(rx)},${f(ry)} 0 1 1 ${f(cx + rx)},${f(cy)} A${f(rx)},${f(ry)} 0 1 1 ${f(cx - rx)},${f(cy)}`,
         filled: false,
@@ -97,44 +100,25 @@ export const INKS = ['', 'red', 'green', 'blue', 'purple'] as const;
 export type Ink = (typeof INKS)[number];
 export const inkVar = (c: string | undefined) => (c ? `var(--ink-${c})` : 'var(--arrow)');
 
-const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-
-/**
- * Find a spot for a note box that doesn't cover any obstacle: first slide it
- * sideways (at most `maxDx`, so it stays attached to its shape), then move it
- * away from the shape (`dir` 1 = down, -1 = up) a step at a time and slide again.
- * Returns the box's offset, or none if nothing nearby is free.
- */
-export function placeLabel(box: Rect, dir: 1 | -1, obstacles: Rect[], maxDx: number, gap = 2): { dx: number; dy: number } {
-  const step = 4;
-  const dxs = [0];
-  for (let d = step; d <= maxDx; d += step) dxs.push(d, -d);
-  for (let n = 0; n <= 8; n++) {
-    const dy = dir * n * 5;
-    for (const dx of dxs) {
-      const r = { x: box.x + dx - gap, y: box.y + dy - gap, w: box.w + 2 * gap, h: box.h + 2 * gap };
-      if (!obstacles.some((o) => overlaps(o, r))) return { dx, dy };
-    }
-  }
-  return { dx: 0, dy: 0 };
-}
-
 /**
  * Spread boxes along a row so they don't overlap, keeping each as close to its
  * wanted centre as possible: overlapping boxes merge into a cluster centred on
  * the average of what its members want (the classic label-spreading method).
  * Returns the new centres and the clusters (indices) that ended up touching.
  */
-export function spread(items: { x: number; w: number }[], gap = 8): { x: number[]; groups: number[][] } {
+export function spread(items: { x: number; w: number; wt?: number }[], gap = 8): { x: number[]; groups: number[][] } {
   type C = { idx: number[]; start: number; width: number };
   const order = items.map((_, i) => i).sort((a, b) => items[a].x - items[b].x);
+  // weighted average: a box with a larger weight `wt` moves less
   const place = (idx: number[]): C => {
-    let off = 0, sum = 0;
+    let off = 0, sum = 0, ws = 0;
     for (const i of idx) {
-      sum += items[i].x - (off + items[i].w / 2);
+      const w = items[i].wt ?? 1;
+      sum += w * (items[i].x - (off + items[i].w / 2));
+      ws += w;
       off += items[i].w + gap;
     }
-    return { idx, start: sum / idx.length, width: off - gap };
+    return { idx, start: sum / ws, width: off - gap };
   };
   const cs: C[] = [];
   for (const i of order) {

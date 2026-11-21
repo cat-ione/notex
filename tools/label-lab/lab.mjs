@@ -13,7 +13,7 @@ const tag = process.argv[2] ?? 'run';
 const dir = new URL(`./out/${tag}`, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 mkdirSync(dir, { recursive: true });
 const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : { channel: 'chrome' });
-const page = await browser.newPage({ deviceScaleFactor: 1 });
+const page = await browser.newPage({ deviceScaleFactor: Number(process.env.SCALE ?? 1) });
 await page.setViewportSize({ width: 1000, height: 900 });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
 await page.goto(process.env.URL ?? 'http://127.0.0.1:1420/');
@@ -39,7 +39,7 @@ for (let n = 0; n < scenarios.length; n++) {
 
 // contact sheets: 6 per sheet
 const files = scenarios.map((_, n) => `${String(n).padStart(2, '0')}.png`);
-for (let s = 0; s * 6 < files.length; s++) {
+for (let s = 0; (process.env.SCALE ?? '1') === '1' && s * 6 < files.length; s++) {
   const imgs = files.slice(s * 6, s * 6 + 6).map((f) => `<div><img src="data:image/png;base64,${readFileSync(`${dir}/${f}`).toString('base64')}"></div>`).join('');
   await page.setContent(`<body style="margin:0;background:#222;display:grid;grid-template-columns:1fr 1fr;gap:4px">${imgs}</body>`);
   await page.setViewportSize({ width: 2000, height: 600 });

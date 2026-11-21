@@ -64,22 +64,30 @@ export type RowNote = {
   tip: { x: number; y: number };
   /** The note's edge nearest the shape when placed right at it (top edge below, bottom edge above). */
   edge: number;
-  /** Horizontal extent of the shape: a note overlapping it still reads as belonging to it. */
-  span: [number, number];
   /** Size of the note when wrapped to at most `maxW` (Infinity: one line). */
   size: (maxW: number) => { w: number; h: number };
 };
 
 export type Placed = { id: string; box: Rect; maxW: number; leader: [number, number, number, number] | null };
 
-type Opts = { below: boolean; left: number; right: number; gap?: number };
+type Opts = {
+  below: boolean;
+  left: number;
+  right: number;
+  gap?: number;
+  /** Ink on the line, other shapes and notes already placed: notes and leaders keep off these. */
+  obstacles?: Rect[];
+};
 
 /** Notes wider than this (px) wrap into a block. */
 const COMFY = 200;
 
-/** Spread boxes along a row, then keep them inside [left, right] (order is kept). */
+/**
+ * Spread boxes along a row, then keep them inside [left, right] (order is kept).
+ * Wider notes absorb more of the shift: they can move further and still sit under their shape.
+ */
 function spreadIn(items: { x: number; w: number }[], left: number, right: number, gap: number): number[] {
-  const { x } = spread(items, gap);
+  const { x } = spread(items.map((it) => ({ ...it, wt: 1 / it.w })), gap);
   const order = items.map((_, i) => i).sort((a, b) => x[a] - x[b]);
   for (let k = 0; k < order.length; k++) {
     const i = order[k], lo = k ? x[order[k - 1]] + items[order[k - 1]].w / 2 + gap + items[i].w / 2 : left + items[i].w / 2;
@@ -92,17 +100,15 @@ function spreadIn(items: { x: number; w: number }[], left: number, right: number
   return x;
 }
 
-/** How much of the shape's span the note's box overlaps, horizontally. */
-const overlap = (n: RowNote, b: Rect) => Math.min(b.x + b.w, n.span[1]) - Math.max(b.x, n.span[0]);
-
 /**
- * Leader from the tip to the facing edge of the box, or null when the note
- * still sits at its shape: overlapping a good part of it and close below/above.
+ * Leader from the tip to the facing edge of the box, or null when the note sits
+ * right at its shape: the tip comfortably within the note's width, and close.
  */
 export function leaderFor(n: RowNote, box: Rect, below: boolean): Placed['leader'] {
   const ey = below ? box.y : box.y + box.h;
-  const sits = overlap(n, box) >= Math.min(8, (n.span[1] - n.span[0]) / 2) && Math.abs(ey - n.tip.y) <= 14;
-  if (sits) return null;
+  // "comfortably": the tip within the middle 70% of the note
+  const m = Math.max(4, box.w * 0.15);
+  if (n.tip.x >= box.x + m && n.tip.x <= box.x + box.w - m && Math.abs(ey - n.tip.y) <= 14) return null;
   const inset = Math.min(10, box.w / 2);
   return [n.tip.x, n.tip.y, Math.max(box.x + inset, Math.min(box.x + box.w - inset, n.tip.x)), ey];
 }
@@ -114,46 +120,53 @@ const cross = (a: number[], b: number[]) => {
   const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / d, u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / d;
   return t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99;
 };
+/** Does the segment pass through the rect (sampled, ignoring its ends)? */
 const segHitsBox = (s: number[], r: Rect) => {
   const [x1, y1, x2, y2] = s;
-  for (let t = 0.1; t < 1; t += 0.1) {
+  for (let t = 0.1; t < 0.95; t += 0.05) {
     const x = x1 + (x2 - x1) * t, y = y1 + (y2 - y1) * t;
     if (x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h) return true;
   }
   return false;
 };
+const grow = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, w: r.w + 2 * d, h: r.h + 2 * d });
+const area = (a: Rect, b: Rect) =>
+  Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 
 /** How unnatural a layout looks (lower is better). */
 export function cost(notes: RowNote[], placed: Placed[], o: Opts): number {
   let c = 0;
-  const one = notes.map((n) => n.size(Infinity));
+  const obstacles = o.obstacles ?? [];
   placed.forEach((p, i) => {
     const n = notes[i], b = p.box;
-    // a mild pull towards being centred on the shape
-    c += Math.abs(b.x + b.w / 2 - n.tip.x) * 0.15;
-    // moved off the shape entirely: no longer reads as belonging to it
-    c += Math.max(0, -overlap(n, b)) * 0.8;
+    // distance from being centred on the shape, relative to the note's size
+    const d = (b.x + b.w / 2 - n.tip.x) / (b.w / 2 + 6);
+    c += d * d * 12;
     if (p.leader) {
       const dx = Math.abs(p.leader[2] - p.leader[0]), dy = Math.abs(p.leader[3] - p.leader[1]);
       // leaders are a cost, and flat ones look like stray underlines
-      c += 6 + Math.hypot(dx, dy) * 0.25 + Math.max(0, dx * 0.7 - dy) * 1.2;
+      c += 8 + Math.hypot(dx, dy) * 0.25 + Math.max(0, dx * 0.7 - dy) * 1.2;
+      for (const r of obstacles) if (segHitsBox(p.leader, grow(r, -1))) c += 40;
     }
     // extra lines from wrapping, and distance from the shape (vertical space used)
-    c += Math.max(0, Math.round(b.h / one[i].h) - 1) * 10;
-    c += Math.abs((o.below ? b.y : b.y + b.h) - n.edge) * 0.6;
+    c += Math.max(0, Math.round(b.h / n.size(Infinity).h) - 1) * 16;
+    c += Math.abs((o.below ? b.y : b.y + b.h) - n.edge) * 0.5;
     c += (Math.max(0, o.left - b.x) + Math.max(0, b.x + b.w - o.right)) * 20;
+    // covering ink, shapes or other notes
+    const inner = grow(b, -1);
+    for (const r of obstacles) c += area(inner, r) * 4;
   });
   const ls = placed.map((p) => p.leader).filter((l): l is NonNullable<typeof l> => !!l);
   for (let a = 0; a < ls.length; a++) for (let b = a + 1; b < ls.length; b++) if (cross(ls[a], ls[b])) c += 300;
-  const inset = (r: Rect): Rect => ({ x: r.x + 2, y: r.y + 2, w: r.w - 4, h: r.h - 4 });
-  for (const p of placed) for (const q of placed) if (p !== q && p.leader && segHitsBox(p.leader, inset(q.box))) c += 300;
+  // a leader through (or grazing) another note
+  for (const p of placed) for (const q of placed) if (p !== q && p.leader && segHitsBox(p.leader, grow(q.box, 3))) c += 300;
   return c;
 }
 
 /**
- * Lay out the notes of one line and side. Tries: one row at natural width;
- * one row with crowded long notes wrapped; two alternating rows (wrapped);
- * each with a little extra drop when notes moved sideways. Returns the cheapest.
+ * Lay out the notes of one line and side. Candidates: one row or two
+ * alternating rows; notes at natural width, wrapped greedily, or all wrapped to
+ * two or three lines; each slid and dropped by a little. Returns the cheapest.
  */
 export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
   const gap = o.gap ?? 16;
@@ -162,13 +175,13 @@ export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
   const order = notes.map((_, i) => i).sort((a, b) => notes[a].tip.x - notes[b].tip.x);
   const ns = order.map((i) => notes[i]);
   const dir = o.below ? 1 : -1;
+  const one = ns.map((x) => x.size(Infinity));
   // Notes near each other share a baseline, clear of all their shapes; notes far
   // apart (more than NEAR px between them at natural size) keep their own.
   const NEAR = 40;
   const group: number[] = [];
   ns.forEach((x, i) => {
-    const w = x.size(Infinity).w, pw = i ? ns[i - 1].size(Infinity).w : 0;
-    const near = i > 0 && x.tip.x - w / 2 - (ns[i - 1].tip.x + pw / 2) < NEAR;
+    const near = i > 0 && x.tip.x - one[i].w / 2 - (ns[i - 1].tip.x + one[i - 1].w / 2) < NEAR;
     group.push(i === 0 ? 0 : near ? group[i - 1] : group[i - 1] + 1);
   });
   const base = group.map((g) => {
@@ -176,7 +189,7 @@ export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
     return o.below ? Math.max(...es) : Math.min(...es);
   });
 
-  const build = (maxW: number[], rowOf: number[], drop: number): Placed[] => {
+  const build = (maxW: number[], rowOf: number[], dy = 0, dx = 0): Placed[] => {
     const sizes = ns.map((x, i) => x.size(maxW[i]));
     const rows = [...new Set(rowOf)].sort();
     const out: Placed[] = new Array(n);
@@ -188,8 +201,8 @@ export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
       const used = new Map<number, number>();
       idx.forEach((i, k) => {
         const s = sizes[i];
-        const edge = base[i] + dir * (drop + (offset.get(group[i]) ?? 0));
-        const box = { x: xs[k] - s.w / 2, y: o.below ? edge : edge - s.h, w: s.w, h: s.h };
+        const edge = base[i] + dir * (dy + (offset.get(group[i]) ?? 0));
+        const box = { x: xs[k] - s.w / 2 + dx, y: o.below ? edge : edge - s.h, w: s.w, h: s.h };
         out[i] = { id: ns[i].id, box, maxW: maxW[i], leader: leaderFor(ns[i], box, o.below) };
         used.set(group[i], Math.max(used.get(group[i]) ?? 0, s.h));
       });
@@ -199,23 +212,27 @@ export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
   };
 
   // notes wider than is comfortable to read under a formula wrap into a block
-  const comfy = ns.map((x) => (x.size(Infinity).w > COMFY ? COMFY : Infinity));
+  const comfy = ns.map((_, i) => (one[i].w > COMFY ? COMFY : Infinity));
+  const lines = (maxW: number[], i: number) => Math.round(ns[i].size(maxW[i]).h / one[i].h);
+  // the narrowest width that wraps note i onto at most k lines
+  const widthFor = (i: number, k: number) => {
+    for (let w = Math.max(40, Math.ceil(one[i].w / k)); w < one[i].w; w += 4) if (Math.round(ns[i].size(w).h / one[i].h) <= k) return w;
+    return comfy[i];
+  };
+  const wrapTo = (k: number) => ns.map((_, i) => (one[i].w > 60 ? widthFor(i, k) : comfy[i]));
 
-  // wrapping: shrink the widest crowded notes, one step at a time
   // wrapping, greedily: wrap whichever note (one more line) lowers the cost most, until nothing helps
-  const wrapped = (rowOf: number[], drop: number) => {
+  const greedy = (rowOf: number[]) => {
     let maxW = [...comfy];
-    let best = cost(ns, build(maxW, rowOf, drop), o);
+    let best = cost(ns, build(maxW, rowOf), o);
     for (let step = 0; step < 2 * n; step++) {
       let pick: number[] | null = null;
       for (let i = 0; i < n; i++) {
-        const one = ns[i].size(Infinity);
-        const cur = ns[i].size(maxW[i]);
-        const lines = Math.round(cur.h / one.h);
-        if (cur.w <= 60 || lines >= 3) continue;
+        const l = lines(maxW, i);
+        if (ns[i].size(maxW[i]).w <= 60 || l >= 3) continue;
         const next = [...maxW];
-        next[i] = Math.max(56, Math.ceil(one.w / (lines + 1)) + 14);
-        const c = cost(ns, build(next, rowOf, drop), o);
+        next[i] = widthFor(i, l + 1);
+        const c = cost(ns, build(next, rowOf), o);
         if (c < best - 0.5) (best = c), (pick = next);
       }
       if (!pick) break;
@@ -224,18 +241,22 @@ export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
     return maxW;
   };
 
-  const one = ns.map(() => 0);
+  const single = ns.map(() => 0);
   const alt = ns.map((_, i) => i % 2);
-  const options: Placed[][] = [];
-  for (const rowOf of n > 2 ? [one, alt] : [one]) {
-    for (const drop of [0, 12, 24, 40]) {
-      options.push(build(comfy, rowOf, drop));
-      options.push(build(wrapped(rowOf, drop), rowOf, drop));
-    }
-  }
-  const best = options.reduce((a, b) => (cost(ns, b, o) < cost(ns, a, o) ? b : a));
+  const DX = [0, -4, 4, -8, 8, -12, 12, -16, 16, -24, 24];
+  const DY = [0, 4, 8, 12, 16, 24, 32, 44];
+  let best: Placed[] | null = null, bestCost = Infinity;
+  for (const rowOf of n > 2 ? [single, alt] : [single])
+    for (const maxW of [comfy, greedy(rowOf), wrapTo(2), wrapTo(3)])
+      for (const dy of DY)
+        for (const dx of DX) {
+          const p = build(maxW, rowOf, dy, dx);
+          const c = cost(ns, p, o) + Math.abs(dx) * 0.3;
+          // (the first candidate stands in if every cost is NaN, e.g. on a detached page)
+          if (best === null || c < bestCost) (bestCost = c), (best = p);
+        }
   // back to the caller's order
   const res: Placed[] = new Array(n);
-  order.forEach((orig, k) => (res[orig] = best[k]));
+  order.forEach((orig, k) => (res[orig] = best![k]));
   return res;
 }
