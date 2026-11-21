@@ -1303,7 +1303,6 @@ export class Editor {
     // let go where it started: no arrow (a shape around the one thing is fine)
     if (!ad.shape && this.anchorIds(pk.loc).join() === this.anchorIds(ad.start).join()) {
       this.endDrawing();
-      this.flash('alt+drag from one thing to another draws an arrow · alt+shift+drag draws a shape');
       return;
     }
     this.withFrame(() => this.pickKey('Enter'));
@@ -1336,7 +1335,7 @@ export class Editor {
     const m = this.doc.marks.find((x) => x.id === id);
     if (!m) return;
     const l = this.locForIds(m.at);
-    if (l.k !== 'word' && l.k !== 'node') return this.flash('this shape can be changed with e (choose what it marks)');
+    if (l.k !== 'word' && l.k !== 'node') return this.flash('this one can only be moved: drag it, or e');
     this.checkpoint();
     this.dragBusy = true;
     this.handleDrag = { id, part: end, fixed: this.edgeUnit(l, end === 'end' ? 'start' : 'end') };
@@ -2899,13 +2898,13 @@ export class Editor {
       { name: 'h2', desc: 'heading 2', run: setKind('h2') },
       { name: 'h3', desc: 'heading 3', run: setKind('h3') },
       { name: 'p', desc: 'paragraph', run: setKind('p') },
-      { name: 'li', desc: 'list item  - ␣', run: setKind('li') },
-      { name: 'ol', desc: 'numbered list item  1. ␣', run: setKind('ol') },
-      { name: 'bold', desc: 'bold  ctrl+b · **word**', run: () => this.toggleStyle('b') },
-      { name: 'italic', desc: 'italic  ctrl+i · *word*', run: () => this.toggleStyle('i') },
+      { name: 'li', desc: 'list item', run: setKind('li') },
+      { name: 'ol', desc: 'numbered list item', run: setKind('ol') },
+      { name: 'bold', desc: 'bold  ctrl+b', run: () => this.toggleStyle('b') },
+      { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i') },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
-      { name: 'config', desc: 'edit the config file (snippets, themes, css)', run: () => this.editConfig() },
+      { name: 'config', desc: 'edit the config file', run: () => this.editConfig() },
       { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
       { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
       { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },
@@ -3130,12 +3129,12 @@ export class Editor {
       const next = l0.find((l) => cmpLoc(l, sel) > 0 && !this.anchorIds(l).some((i) => ids.includes(i)));
       this.pick = { phase: 'to', from: sel, loc: next ?? l0[0] ?? sel, purpose: 'arrow' };
       this.setMode('pick');
-      this.flash('arrow starts at the selection — choose where it points');
+      this.flash('choose where it points');
       return;
     }
     this.pick = { phase: 'from', loc: this.pickStart(), purpose: 'arrow' };
     this.setMode('pick');
-    this.flash('choose where the arrow starts: arrow keys or click · Enter to confirm');
+    this.flash('choose where the arrow starts');
   }
 
   /** Draw a shape around the selection, or choose what to draw it around. */
@@ -3146,7 +3145,7 @@ export class Editor {
     if (sel) return this.addMark(kind, this.anchorIds(sel));
     this.pick = { phase: 'from', loc: this.pickStart(), purpose: kind };
     this.setMode('pick');
-    this.flash(`choose what to ${MARK_VERB[kind]} · Enter to confirm`);
+    this.flash(`choose what to ${MARK_VERB[kind]}`);
   }
 
   private addMark(kind: MarkKind, at: Id[]) {
@@ -3157,7 +3156,6 @@ export class Editor {
     this.doc.marks.push(m);
     this.pick = null;
     this.selectDrawing(m.id);
-    this.flash(`${kind} drawn — t changes the shape, c the colour, l adds a note`);
   }
 
   /** Enter style mode for an arrow or mark. */
@@ -3386,7 +3384,7 @@ export class Editor {
         const g = d < 0 ? gs.findLast(([, j]) => j < l.i) : gs.find(([i]) => i > l.i && i <= l.j);
         if (g) next = { ...l, i: g[0] };
       }
-    } else return this.flash('change what this shape marks with e');
+    } else return this.flash('this one can only be moved: drag it, or e');
     if (!next) return;
     this.checkpoint('style');
     m.at = this.anchorIds(next);
@@ -3463,7 +3461,6 @@ export class Editor {
     this.pick = null;
     this.styling = a.id;
     this.setMode('style');
-    this.flash('arrow drawn — ↑↓ to bend it, Enter when done');
   }
 
   /** The best Loc for a set of anchor ids (so re-picking starts where the drawing is). */
@@ -3501,7 +3498,7 @@ export class Editor {
       this.pick = { phase: 'to', loc: this.locForIds(a[end]), from: this.locForIds(other), purpose: 'arrow', edit: { id, end } };
     } else return;
     this.setMode('pick');
-    this.flash(end === 'at' ? 'choose the new target · Enter to confirm · Esc to keep it' : `move the arrow's ${end === 'from' ? 'start' : 'tip'} · Enter to confirm · Esc to keep it`);
+    this.flash(end === 'at' ? 'choose the new target' : `move the arrow's ${end === 'from' ? 'start' : 'tip'}`);
   }
 
   /**
@@ -3543,7 +3540,7 @@ export class Editor {
     const m = this.doc.marks.find((x) => x.id === id);
     const edit = (f: () => void) => () => { this.checkpoint('style'); f(); };
     const note = (d: Arrow | Mark): DrawingAction =>
-      ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note ($math$ works)', keys: ['l', 'i', '"'], run: () => this.editNote(), more: 'or double-click it' });
+      ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note', keys: ['l', 'i', '"'], run: () => this.editNote(), more: 'or double-click it' });
     const remove = (f: () => void): DrawingAction =>
       ({ name: 'delete', desc: 'remove it', keys: ['x', 'Delete', 'Backspace'], run: () => { this.checkpoint(); f(); this.endDrawing(); }, more: 'or middle-click it', sep: true });
     // a note can be moved by hand: Alt+arrows (Shift: by a pixel), Alt+0 puts it back
@@ -3561,7 +3558,7 @@ export class Editor {
               d.note = { dx: o.dx + (dir === 'Left' ? -step : dir === 'Right' ? step : 0), dy: o.dy + (dir === 'Up' ? -step : dir === 'Down' ? step : 0) };
             },
           },
-          ...(d.note ? [{ name: 'autonote', desc: 'put the note back', keys: ['A-0'], run: () => { this.checkpoint(); delete d.note; }, more: 'it was moved by hand: drag it to move it again' }] : []),
+          ...(d.note ? [{ name: 'autonote', desc: 'put the note back', keys: ['A-0'], run: () => { this.checkpoint(); delete d.note; } }] : []),
         ]
       : [];
     const menu: DrawingAction = { name: 'menu', desc: 'this menu', keys: ['S-F10', 'ContextMenu'], run: () => this.openDrawingMenu(id), menu: false };
@@ -3571,14 +3568,14 @@ export class Editor {
         { name: 'bend', desc: 'bend one way', keys: ['Up', 'k'], run: edit(() => (a.bend = round(a.bend + 0.1 * dir()))), menu: false },
         { name: 'unbend', desc: 'bend the other way', keys: ['Down', 'j'], run: edit(() => (a.bend = round(a.bend - 0.1 * dir()))), menu: false },
         {
-          name: 'along', desc: 'move its middle along it', keys: ['Left', 'Right'], menu: false, more: 'or drag its middle dot (or its line) anywhere',
+          name: 'along', desc: 'move its middle along it', keys: ['Left', 'Right'], menu: false, more: 'or drag its middle',
           run: (k) => edit(() => {
             const s = round((a.skew ?? 0) + (k === 'Right' ? 0.1 : -0.1) * dir());
             if (Math.abs(s) < 0.03) delete a.skew;
             else a.skew = s;
           })(),
         },
-        { name: 'straight', desc: 'straighten', keys: ['0', '='], run: edit(() => { a.bend = 0; delete a.skew; }), more: 'bend it: drag its line, or the wheel near it' },
+        { name: 'straight', desc: 'straighten', keys: ['0', '='], run: edit(() => { a.bend = 0; delete a.skew; }) },
         { name: 'heads', desc: `arrowheads (${a.head === 'end' ? 'tip' : a.head})`, keys: ['t'], run: edit(() => (a.head = a.head === 'end' ? 'both' : a.head === 'both' ? 'none' : 'end')) },
         { name: 'reverse', desc: 'reverse', keys: ['r'], run: edit(() => { [a.from, a.to] = [a.to, a.from]; [a.fromAt, a.toAt] = [a.toAt, a.fromAt]; a.bend = -a.bend; if (a.skew) a.skew = -a.skew; if (!a.fromAt) delete a.fromAt; if (!a.toAt) delete a.toAt; }) },
         { name: 'dash', desc: a.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (a.dash = !a.dash)) },
@@ -3587,8 +3584,8 @@ export class Editor {
         note(a),
         { name: 'start', desc: 'move the start', keys: ['s'], run: () => this.retarget(a.id, 'from'), more: 'or drag its start dot', sep: true },
         { name: 'tip', desc: 'move the tip', keys: ['e'], run: () => this.retarget(a.id, 'to'), more: 'or drag its tip dot' },
-        { name: 'startside', desc: `start attaches: ${sideName(a.fromAt)}`, keys: ['S'], run: edit(() => { const n = nextSide(a.fromAt); if (n) a.fromAt = n; else delete a.fromAt; }), menu: false, more: 'or drag its start dot to the spot (the middle: auto)' },
-        { name: 'tipside', desc: `tip attaches: ${sideName(a.toAt)}`, keys: ['E'], run: edit(() => { const n = nextSide(a.toAt); if (n) a.toAt = n; else delete a.toAt; }), menu: false, more: 'or drag its tip dot to the spot (the middle: auto)' },
+        { name: 'startside', desc: `start attaches: ${sideName(a.fromAt)}`, keys: ['S'], run: edit(() => { const n = nextSide(a.fromAt); if (n) a.fromAt = n; else delete a.fromAt; }), menu: false, more: 'or drag its start dot there' },
+        { name: 'tipside', desc: `tip attaches: ${sideName(a.toAt)}`, keys: ['E'], run: edit(() => { const n = nextSide(a.toAt); if (n) a.toAt = n; else delete a.toAt; }), menu: false, more: 'or drag its tip dot there' },
         ...placing,
         remove(() => this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1)),
         menu,
@@ -3602,7 +3599,7 @@ export class Editor {
         { name: 'dash', desc: m.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (m.dash = !m.dash)) },
         { name: 'colour', desc: `colour (${m.color || 'default'})`, keys: ['c'], run: edit(() => (m.color = nextInk(m.color))), more: 'or shift+wheel near it' },
         note(m),
-        { name: 'target', desc: 'choose what it marks', keys: ['e', 'm'], run: () => this.retarget(m.id, 'at'), more: 'or drag the shape onto it; drag its ends to cover more or less', sep: true },
+        { name: 'target', desc: 'choose what it marks', keys: ['e', 'm'], run: () => this.retarget(m.id, 'at'), more: 'or drag the shape onto it', sep: true },
         {
           name: 'resize', desc: 'cover more / less', keys: ['S-Right', 'S-Left', 'C-S-Left', 'C-S-Right'], keyOnly: true,
           run: (k) => k && this.resizeMark(m, k.startsWith('C-') ? 'start' : 'end', /Right$/.test(k) ? 1 : -1),
@@ -3800,7 +3797,7 @@ export class Editor {
     const clip = (cmd: 'copy' | 'cut') => () => document.execCommand(cmd);
     return [
       { name: 'cut', desc: 'cut', keys: ['C-x'], run: clip('cut'), off: !sel },
-      { name: 'copy', desc: 'copy', keys: ['C-c'], run: clip('copy'), off: !sel, more: 'math is copied as LaTeX' },
+      { name: 'copy', desc: 'copy', keys: ['C-c'], run: clip('copy'), off: !sel },
       { name: 'paste', desc: 'paste', keys: ['C-v'], run: () => void this.pasteFromClipboard() },
       { name: 'all', desc: this.mode === 'math' ? 'select the formula' : 'select everything', keys: ['C-a'], run: () => this.runKey('C-a') },
       { name: 'arrow', desc: sel ? 'arrow from the selection' : 'draw an arrow', keys: ['\\arrow'], run: () => this.startArrow(), more: 'or alt+drag from one thing to another', sep: true },
@@ -4291,7 +4288,7 @@ const MARK_DESC: Record<MarkKind, string> = {
   circle: 'circle something',
   underline: 'underline something',
   highlight: 'highlight something',
-  brace: 'brace under something, with a note',
+  brace: 'brace under something',
   strike: 'strike something out',
 };
 const MARK_VERB: Record<MarkKind, string> = {

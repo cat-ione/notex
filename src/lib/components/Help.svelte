@@ -3,16 +3,14 @@
     ['writing', [
       ['$', 'start math ($$ for a centered block)'], ['\\  or  ctrl+k', 'commands'],
       ['# ␣   ## ␣   - ␣', 'heading, subheading, list'], ['1. ␣   tab  shift+tab', 'numbered list, nest / un-nest'],
-      ['ctrl+b  ctrl+i', 'bold, italic (or **word**, *word*)'], ['x^2  a_n', 'in text: turns into math by itself'],
-      ['click / shift+arrows', 'place caret / select'], ['ctrl+f  F3', 'find, next match'],
-      ['ctrl+c  x  v', 'copy, cut, paste (math included)'], ['ctrl+z  ctrl+y', 'undo, redo'],
-      ['ctrl+← →', 'jump by word'], ['ctrl+s  o  n', 'save, open, new note'], ['ctrl+,', 'settings, snippets, themes'], ['F1', 'this help'],
+      ['ctrl+b  ctrl+i', 'bold, italic (or **word**, *word*)'], ['x^2  a_n', 'in text: becomes math'],
+      ['ctrl+f  F3', 'find, next match'], ['ctrl+s  o  n', 'save, open, new note'], ['ctrl+,', 'settings, snippets, themes'], ['F1', 'this help'],
     ]],
     ['math', [
       ['/', 'fraction from what you just typed'], ['^  _', 'one thing up / down: x^2, x^10, e^-x'], ['^(…)  _(…)', 'more than one: e^(-x^2/2), int_0^(2pi)'],
       ['( [ {', 'brackets that grow'], ['"', 'words inside math'], ['alpha  ;a', 'greek letters'],
       ['sqrt sum int lim', 'roots and big operators'], ['pi  max  sgn', 'greek and functions, by name'], ['-> => <= oo xx', 'arrows, ≤, ∞, ×'],
-      ['\\name', 'any LaTeX command'], ['space / tab', 'leave box (not brackets) / next box'],
+      ['\\name', 'any LaTeX command'], ['space / tab', 'leave box / next box'],
       ['& enter', 'matrix: new column / row'], ['shift+← → / ctrl+a', 'select (grows out of boxes)'], ['/  (  \\cmd', 'wrap the selection'], ['$  →  esc', 'back to text'],
     ]],
     ['drawing  (\\arrow  \\circle  \\box …)', [
@@ -24,16 +22,15 @@
     ]],
     ['changing a drawing  (click it, or \\drawings)', [
       ['drag the dots', 'move an arrow\'s ends, or its middle anywhere'], ['↑ ↓  ← →', 'move an arrow\'s middle across / along it'], ['0', 'straight'], ['t', 'arrowheads / next shape'], ['d', 'dashed'], ['b', 'box the ends'],
-      ['c', 'colour'], ['l', 'label / note ($math$ works)'], ['s  e', 'move the start / tip (shape: e)'], ['shift+s  shift+e', 'where the start / tip attaches'], ['r', 'reverse'], ['del', 'remove'],
+      ['c', 'colour'], ['l', 'note'], ['s  e', 'move the start / tip (shape: e)'], ['shift+s  shift+e', 'where the start / tip attaches'], ['r', 'reverse'], ['del', 'remove'],
       ['shift+← →', 'shape: move its end (ctrl+shift: its start)'], ['alt+arrows', 'move the note (shift: by a pixel)'], ['alt+0', 'put the note back'],
       ['shift+f10', 'menu of all of these'], ['\\', 'search them by name'],
     ]],
     ['mouse', [
       ['click / right-click', 'select a drawing or note / its menu'], ['right-click the page', 'copy, paste, draw on the selection, undo'], ['double-click', 'type its note, caret where you clicked'],
       ['drag a shape', 'move it onto another word or symbol'], ['drag an arrow', 'bend it through the mouse'], ['drag an end dot', 'onto a side of the target: attach there'],
-      ['wheel near it', 'next shape / bend (shift: colour); keeps going till the mouse moves'], ['middle-click', 'remove it'], ['toolbar', 'over the selected drawing: one click each'],
+      ['wheel near it', 'next shape / bend (shift: colour)'], ['middle-click', 'remove it'],
       ['drag a note', 'move it (alt+0 puts it back)'], ["drag a shape's ends", 'cover more or less'],
-      ['drag in a note', 'select (double: word, triple: all)'], ['hover', 'shows a drawing with its note'],
     ]],
   ];
 </script>

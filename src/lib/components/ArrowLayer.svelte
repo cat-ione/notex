@@ -76,7 +76,7 @@
               onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.beginHandleDrag(a.id, part); }}
               data-tip={part === 'bend' ? 'drag to move the middle anywhere' : `drag to move the ${part === 'from' ? 'start' : 'tip'}`}
               data-tip-key={part === 'bend' ? '↑ ↓ ← →' : part === 'from' ? 's / shift+s' : 'e / shift+e'}
-              data-tip-more={part === 'bend' ? '' : 'let go on a side of the target to attach there, in its middle for automatic'}
+              data-tip-more={part === 'bend' ? '' : 'let go on a side to attach there'}
               in:fade={{ duration: 120 }}
             />
           {/each}
