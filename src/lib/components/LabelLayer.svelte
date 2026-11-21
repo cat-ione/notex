@@ -8,34 +8,27 @@
   // contain $math$.
   let { ed }: { ed: Editor } = $props();
 
-  type L = { id: string; text: string; x: number; y: number; below: boolean; maxW?: number; color?: string; sel: boolean; ghost: boolean };
+  type L = { id: string; text: string; caret?: number; x: number; y: number; below: boolean; maxW?: number; color?: string; sel: boolean; ghost: boolean };
   const labels = $derived.by(() => {
     const out: L[] = [];
     const ghost = ed.pick?.edit?.id;
-    // While a label is being typed, show the draft in place with its caret (after a
-    // $math$ part when the caret is inside one, so the math still renders)
-    const draft = (id: string, text: string) => {
-      if (ed.mode !== 'label' || !ed.label || ed.styling !== id) return text;
-      const t = ed.label.text;
-      let at = ed.label.at;
-      if ((t.slice(0, at).match(/\$/g)?.length ?? 0) % 2) {
-        const close = t.indexOf('$', at);
-        at = close < 0 ? t.length : close + 1;
-      }
-      return t.slice(0, at) + '▏' + t.slice(at);
-    };
+    // While a label is being typed, show the draft in place with its caret (the editor
+    // lays the note out for the draft too)
+    const editing = (id: string) => ed.mode === 'label' && !!ed.label && ed.styling === id;
+    const text = (id: string, saved: string) => (editing(id) ? ed.label!.text : saved);
+    const caret = (id: string) => (editing(id) ? ed.label!.at : undefined);
     for (const a of ed.doc.arrows) {
       const g = ed.arrowGeos[a.id];
-      const text = draft(a.id, a.label);
-      if (g && text) out.push({ id: a.id, text, x: g.mid.x, y: g.mid.y - 4, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
+      const t = text(a.id, a.label);
+      if (g && (t || editing(a.id))) out.push({ id: a.id, text: t, caret: caret(a.id), x: g.mid.x, y: g.mid.y - 4, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
     }
     for (const m of ed.doc.marks) {
       const g = ed.markGeos[m.id];
-      const text = draft(m.id, m.label);
-      if (!g || !text) continue;
+      const t = text(m.id, m.label);
+      if (!g || !(t || editing(m.id))) continue;
       // label.y is a text baseline: shift to the box's top (below) or bottom (above) edge
       const y = g.label.below ? g.label.y - 12 : g.label.y + 3;
-      out.push({ id: m.id, text, x: g.label.x, y, below: g.label.below, maxW: g.label.maxW, color: m.color, sel: ed.styling === m.id, ghost: ghost === m.id });
+      out.push({ id: m.id, text: t, caret: caret(m.id), x: g.label.x, y, below: g.label.below, maxW: g.label.maxW, color: m.color, sel: ed.styling === m.id, ghost: ghost === m.id });
     }
     return out;
   });
@@ -53,7 +46,7 @@
     style="left: {l.x}px; top: {l.y}px; --ink: {inkVar(l.color)};{l.maxW ? ` max-width: ${l.maxW}px;` : ''}"
     in:fade={{ duration: 200 }}
   >
-    {@html render(l.text)}
+    {@html render(l.text, l.caret)}
   </div>
 {/each}
 
@@ -90,5 +83,28 @@
   }
   :global(.dlabel) :global(.katex) {
     font-size: 1.15em;
+  }
+  /* zero width: the text around it stays where it is */
+  :global(.dlabel .lcaret) {
+    display: inline-block;
+    position: relative;
+    width: 0;
+    height: 1.15em;
+    vertical-align: text-bottom;
+  }
+  :global(.dlabel .lcaret)::after {
+    content: '';
+    position: absolute;
+    left: -0.5px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: currentColor;
+    animation: lcaret-blink 1s steps(1) infinite;
+  }
+  @keyframes -global-lcaret-blink {
+    50% {
+      opacity: 0;
+    }
   }
 </style>

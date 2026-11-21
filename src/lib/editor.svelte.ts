@@ -1036,6 +1036,8 @@ export class Editor {
         continue;
       }
       const m = $state.snapshot(pm) as Mark;
+      // a label being typed is laid out as typed
+      if (this.mode === 'label' && this.label && this.styling === m.id) m.label = this.label.text;
       act.push(m);
       active.add(m.id);
       if (bi >= 0) this.geoTops.set(m.id, { epoch: this.geoEpoch, tops: near.at(bi) });

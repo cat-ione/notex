@@ -17,16 +17,33 @@ import type { Rect } from './geom';
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 const htmlCache = new Map<string, string>();
-/** Note text as HTML: prose with `$math$` rendered by KaTeX. */
-export function renderLabel(text: string): string {
-  let html = htmlCache.get(text);
+/** A caret inside a note being typed: no width of its own, so the text doesn't move. */
+const CARET = '<span class="lcaret"></span>';
+/**
+ * Note text as HTML: prose with `$math$` rendered by KaTeX. With `caret`, a caret at
+ * that offset (after a $math$ part when the offset is inside one).
+ */
+export function renderLabel(text: string, caret?: number): string {
+  const key = caret === undefined ? text : `${caret}|${text}`;
+  let html = htmlCache.get(key);
   if (html === undefined) {
+    let at = 0, placed = false;
     html = text
       .split(/(\$[^$]+\$)/)
-      .map((p) => (/^\$[^$]+\$$/.test(p) ? katex.renderToString(p.slice(1, -1), { throwOnError: false, strict: 'ignore', output: 'html' }) : esc(p)))
+      .map((p) => {
+        const start = at;
+        at += p.length;
+        const math = /^\$[^$]+\$$/.test(p);
+        const out = math ? katex.renderToString(p.slice(1, -1), { throwOnError: false, strict: 'ignore', output: 'html' }) : esc(p);
+        if (placed || caret === undefined || caret < start || caret > at || (caret === at && at < text.length && !math)) return out;
+        placed = true;
+        if (math) return caret === start ? CARET + out : out + CARET;
+        return esc(p.slice(0, caret - start)) + CARET + esc(p.slice(caret - start));
+      })
       .join('');
+    if (caret !== undefined && !text) html = CARET;
     if (htmlCache.size > 300) htmlCache.clear();
-    htmlCache.set(text, html);
+    htmlCache.set(key, html);
   }
   return html;
 }

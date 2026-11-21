@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutRow, type RowNote } from './labels';
+import { layoutRow, renderLabel, type RowNote } from './labels';
 
 // fake text metrics: 6px per char, 14px lines, words wrap at maxW
 function note(id: string, x: number, text: string, edge = 20): RowNote {
@@ -69,5 +69,25 @@ describe('layoutRow', () => {
   it('works above the shapes too', () => {
     const ps = layoutRow([note('a', 100, 'weight', 50), note('b', 120, 'value', 50)], { ...opts, below: false });
     for (const p of ps) expect(p.box.y + p.box.h).toBeLessThanOrEqual(50);
+  });
+});
+
+describe('renderLabel caret', () => {
+  const C = '<span class="lcaret"></span>';
+  it('sits between characters without replacing any', () => {
+    expect(renderLabel('abc', 1)).toBe(`a${C}bc`);
+    expect(renderLabel('abc', 0)).toBe(`${C}abc`);
+    expect(renderLabel('abc', 3)).toBe(`abc${C}`);
+  });
+  it('shows in an empty label', () => {
+    expect(renderLabel('', 0)).toBe(C);
+  });
+  it('goes after a math part it is inside, once at a boundary', () => {
+    const html = renderLabel('a $x+y$ b', 5);
+    expect(html.split(C).length).toBe(2);
+    expect(html.indexOf(C)).toBeGreaterThan(html.lastIndexOf('katex'));
+    expect(renderLabel('a $x$', 2).indexOf(C)).toBe(2); // right before the math
+    expect(renderLabel('a $x$', 5).endsWith(C)).toBe(true);
+    for (let i = 0; i <= 'p $x$ q $y$'.length; i++) expect(renderLabel('p $x$ q $y$', i).split(C).length).toBe(2);
   });
 });
