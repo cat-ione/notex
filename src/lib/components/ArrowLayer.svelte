@@ -52,9 +52,6 @@
         />
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <path class="hit" d={g.d} onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(a.id); }} />
-        {#if a.label}
-          <text x={g.mid.x} y={g.mid.y - 6} text-anchor="middle" in:fade={{ duration: 200 }}>{a.label}</text>
-        {/if}
       </g>
     {/if}
   {/each}
@@ -111,17 +108,6 @@
   }
   .sel .box {
     stroke: var(--accent);
-  }
-  text {
-    fill: var(--ink, var(--arrow));
-    font-family: var(--mono);
-    font-size: 11px;
-    paint-order: stroke;
-    stroke: var(--bg);
-    stroke-width: 4px;
-  }
-  .sel:not(.inked) text {
-    fill: var(--accent);
   }
   .preview {
     stroke: var(--accent);

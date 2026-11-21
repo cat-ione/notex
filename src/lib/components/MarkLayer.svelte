@@ -23,9 +23,6 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <path class="hit" d={g.d} onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(m.id); }} />
         {/if}
-        {#if m.label}
-          <text x={g.label.x} y={g.label.y} text-anchor="middle" in:fade={{ duration: 200 }}>{m.label}</text>
-        {/if}
       </g>
     {/if}
   {/each}
@@ -83,13 +80,5 @@
   .clickable .hit {
     pointer-events: stroke;
     cursor: pointer;
-  }
-  text {
-    fill: var(--ink);
-    font-family: var(--mono);
-    font-size: 11px;
-    paint-order: stroke;
-    stroke: var(--bg);
-    stroke-width: 4px;
   }
 </style>

@@ -6,6 +6,7 @@
   import MathView from './MathView.svelte';
   import ArrowLayer from './ArrowLayer.svelte';
   import MarkLayer from './MarkLayer.svelte';
+  import LabelLayer from './LabelLayer.svelte';
   import StatusLine from './StatusLine.svelte';
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
@@ -84,6 +85,7 @@
 
       <MarkLayer {ed} />
       <ArrowLayer {ed} />
+      <LabelLayer {ed} />
 
       {#if ed.caret}
         <div
