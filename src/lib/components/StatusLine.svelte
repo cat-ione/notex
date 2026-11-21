@@ -5,18 +5,16 @@
   let { ed }: { ed: Editor } = $props();
 
   const LABEL: Record<string, string> = {
-    normal: 'NORMAL', insert: 'INSERT', math: 'MATH', pick: 'ARROW', style: 'STYLE',
-    hint: 'JUMP', palette: 'CMD', label: 'LABEL',
+    text: 'TEXT', math: 'MATH', pick: 'ARROW', style: 'ARROW', hint: 'JUMP', palette: 'CMD', label: 'LABEL',
   };
   const HINTS: Record<string, string> = {
-    normal: 'i insert · f arrow · ga arrows · \\ cmd · ? help',
-    insert: '$ math · \\ cmd · esc normal',
-    math: '/ frac · ^ _ scripts · ;a greek · \\ cmd · space out · $ exit',
-    pick: 'hjkl move · K/J out/in · H/L extend · f jump · ⏎ confirm',
-    style: 'j/k bend · r reverse · t heads · d dash · b box · i label · x del',
-    hint: 'type a label',
-    palette: '⏎ accept · ↑↓ choose · esc cancel',
-    label: '⏎ save · esc cancel',
+    text: '$ math · \\ commands · F1 help',
+    math: '/ fraction · ^ _ scripts · \\ commands · tab next box · $ or esc back to text',
+    pick: '←→↑↓ move · shift+↑↓ bigger / smaller · shift+←→ extend · tab jump labels · enter choose · esc cancel',
+    style: '↑↓ bend · t heads · d dashed · b boxes · l label · r reverse · del remove · enter done',
+    hint: 'type a label to jump · esc cancel',
+    palette: 'enter accept · ↑↓ choose · esc cancel',
+    label: 'enter save · esc cancel',
   };
   const counts = $derived.by(() => {
     ed.version;
@@ -34,7 +32,7 @@
 </script>
 
 <footer class="status">
-  {#key ed.mode}
+  {#key LABEL[ed.mode]}
     <span class="mode m-{ed.mode}" in:fly={{ y: 6, duration: 160 }}>{LABEL[ed.mode]}</span>
   {/key}
   {#if ed.mode === 'label' && ed.label}
@@ -72,12 +70,12 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     color: var(--bg);
-    background: var(--mode-normal);
+    background: var(--mode-text);
     transition: background-color 200ms ease;
   }
-  .m-insert { background: var(--mode-insert); }
   .m-math, .m-palette { background: var(--mode-math); }
   .m-pick, .m-style, .m-hint, .m-label { background: var(--mode-arrow); }
+  .keys { overflow: hidden; text-overflow: ellipsis; }
   .msg { color: var(--fg); }
   .input { color: var(--fg); }
   .blink { color: var(--accent); animation: blink 1s steps(1) infinite; }

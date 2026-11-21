@@ -1,7 +1,7 @@
 # notex
 
-Keyboard-first math notes. Type prose and math without leaving the home row, and draw
-arrows *between parts of equations* without touching the mouse.
+Fast math notes. Type prose and math without reaching for the mouse (though it works too),
+and draw arrows *between parts of equations*.
 
 Stack: Svelte 5 + SvelteKit (SPA) + Tauri 2, KaTeX for rendering, pnpm.
 
@@ -23,18 +23,23 @@ pnpm check         # type-check
   jump labels and arrow endpoints.
 - **Arrows** anchor to *ids*, not to positions, so they follow their endpoints as you edit.
   Geometry is recomputed from the DOM after each render (`src/lib/arrows.ts`).
-- **Editor** (`src/lib/editor.svelte.ts`): one modal state machine (normal / insert / math /
-  pick / style + transient palette / hint / label).
+- **Editor** (`src/lib/editor.svelte.ts`): ordinary text editing by default; focused modes only
+  for math, choosing arrow endpoints and styling arrows.
 
-## Keys (press `?` in the app)
+## Using it (F1 in the app)
 
-| where  | keys |
+It edits like any normal editor: click to place the caret, drag or Shift+arrows to select,
+Ctrl+C/X/V (math survives copy/paste), Ctrl+Z/Y, Ctrl+←/→ by word. On top of that:
+
+| | |
 |--------|------|
-| normal | `hjkl` `w b` `0 $ gg G` · `i a I A o O` · `x D dd dw J` · `u` / `C-r` · `⏎` edit math · `\` or `:` palette · `f` arrow · `ga` pick arrow |
-| insert | `$` inline math (`$$` display) · `\` palette · `# ` `## ` `- ` block shortcuts |
-| math   | `/` fraction from previous operand · `^ _` · `( [ {` · `"` text · `;a` greek · `sum int lim sqrt` · `-> => <= oo xx` · `\name` any command · space leaves structure · tab next slot · `&`/`⏎` grow matrix · `$` exit |
-| arrow  | `hjkl` move · `K`/`J` zoom out/in of structure · `H`/`L` extend · `f` jump labels · `⏎` confirm |
-| style  | `j/k` bend · `=` straight · `r` reverse · `t` heads · `d` dashed · `b` box ends · `i` label · `x` delete |
+| text   | `$` math (`$$` centered block) · `\` or Ctrl+K commands · `# ` `## ` `- ` block shortcuts |
+| math   | `/` fraction from previous operand · `^ _` · `( [ {` · `"` text · `;a` greek · `sum int lim sqrt` · `-> => <= oo xx` · `
+ame` any command · space leaves a box · Tab next box · `&`/Enter grow matrix · `$`, → or Esc back to text · click anywhere inside a formula |
+| `rrow` | arrow keys or click to choose · Shift+↑/↓ whole expression / inside it · Shift+←/→ extend · Tab jump labels · Enter confirm (start, then end) |
+| arrow style | ↑/↓ bend · `0` straight · `t` heads · `d` dashed · `b` box ends · `l` label · `r` reverse · Del remove · Enter done. `rrows` reselects one |
+
+Arrow picking also accepts `hjkl`/`HJKL` for people who like them.
 
 ## Roadmap / ideas
 

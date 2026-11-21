@@ -13,13 +13,23 @@
 
   onMount(() => {
     ed.page = page;
-    const onKey = (e: KeyboardEvent) => ed.key(e);
-    window.addEventListener('keydown', onKey);
+    const on = <K extends keyof WindowEventMap>(type: K, f: (e: WindowEventMap[K]) => void) => {
+      window.addEventListener(type, f);
+      return () => window.removeEventListener(type, f);
+    };
+    const offs = [
+      on('keydown', (e) => ed.key(e)),
+      on('copy', (e) => ed.copy(e, false)),
+      on('cut', (e) => ed.copy(e, true)),
+      on('paste', (e) => ed.paste(e)),
+      on('mousemove', (e) => ed.mouseMove(e)),
+      on('mouseup', () => ed.mouseUp()),
+    ];
     const ro = new ResizeObserver(() => ed.layout());
     ro.observe(page);
     document.fonts?.ready.then(() => ed.layout());
     return () => {
-      window.removeEventListener('keydown', onKey);
+      offs.forEach((off) => off());
       ro.disconnect();
     };
   });
@@ -49,15 +59,16 @@
 </script>
 
 <div class="shell">
-  <div class="scroller">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="scroller" onmousedown={(e) => ed.mouseDown(e)}>
     <div class="page" bind:this={page}>
       {#each ed.doc.blocks as blk, b (blk.id)}
         <div class="block {blk.kind}" class:current={ed.b === b} data-nx={blk.id}>
           {#each blk.items as it, o (it.id)}
             {#if it.t === 'c'}
-              <span class="ch" data-nx={it.id}>{it.ch}</span>
+              <span class="ch" class:sel={ed.isSelected(b, o)} data-nx={it.id}>{it.ch}</span>
             {:else}
-              <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} />
+              <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} selected={ed.isSelected(b, o)} />
             {/if}
           {/each}<span class="eol" data-eol={blk.id}>&#8203;</span>
         </div>
@@ -68,7 +79,6 @@
       {#if ed.caret}
         <div
           class="caret {ed.caret.shape}"
-          class:insert={ed.mode === 'insert'}
           style="transform: translate({ed.caret.r.x}px, {ed.caret.r.y}px); width: {ed.caret.r.w}px; height: {ed.caret.r.h}px;"
         ></div>
       {/if}
@@ -126,6 +136,7 @@
   }
   .scroller {
     flex: 1;
+    cursor: text;
     overflow-y: auto;
     overflow-x: hidden;
   }
@@ -202,6 +213,9 @@
     color: var(--accent);
     font-size: 0.85em;
   }
+  .ch.sel {
+    background: var(--text-sel);
+  }
   .eol {
     display: inline-block;
     width: 0;
@@ -227,12 +241,6 @@
   .caret.math {
     background: var(--accent);
     animation: blink 1.1s steps(1) infinite 0.5s;
-  }
-  .caret.block {
-    background: var(--caret-block);
-    border-bottom: 2px solid var(--caret);
-    border-radius: 3px;
-    mix-blend-mode: var(--caret-blend);
   }
   @keyframes blink {
     50% {

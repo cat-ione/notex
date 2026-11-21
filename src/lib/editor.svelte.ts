@@ -1,12 +1,13 @@
-// Editor state and modal keyboard handling.
+// Editor state and keyboard/mouse handling.
 //
-// Modes:
-//   normal  — vim-style motions over items; `\` or `:` opens the command palette
-//   insert  — typing prose; `$` starts inline math
+// Editing works like an ordinary editor: there is always a live caret, the
+// mouse places it, Shift extends a selection, Ctrl+C/X/V work. Extra modes
+// only exist for focused tasks:
+//   text    — the default: typing prose; `$` starts inline math, `\` opens commands
 //   math    — structural math editing inside one math item
-//   pick    — choosing an arrow endpoint with the keyboard
+//   pick    — choosing an arrow endpoint (arrow keys, or click)
 //   style   — adjusting the arrow just drawn / selected
-//   hint    — overlay labels; type a label to jump (transient, returns to previous mode)
+//   hint    — jump labels; type a label to jump (transient)
 //   palette — command palette (transient)
 //   label   — typing an arrow label (transient)
 
@@ -16,16 +17,18 @@ import { docToLatex } from './export';
 import { measure, relTo, union, type Rect } from './geom';
 import * as M from './math/edit';
 import { CMDS, GREEK_LEADER, MATH_PALETTE } from './math/defs';
-import type { MCursor, Step } from './math/latex';
-import { allIds, block, ch, chars, cmd, math, sym, uid, type Arrow, type Block, type BlockKind, type Doc, type Id, type MathItem, type MCmd, type MRow } from './model';
+import { toLatex, type MCursor, type Step } from './math/latex';
+import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type Arrow, type Block, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MRow } from './model';
 
-export type Mode = 'normal' | 'insert' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
+export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
 
 export type Loc =
   | { k: 'word'; b: number; s: number; e: number }
   | { k: 'item'; b: number; o: number }
   | { k: 'node'; b: number; o: number; path: Step[]; i: number; j: number }
   | { k: 'block'; b: number };
+
+export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void };
 type Hint = { label: string; rect: Rect; act: () => void };
@@ -37,10 +40,12 @@ const STORAGE_KEY = 'notex.doc.v1';
 
 export class Editor {
   doc = $state<Doc>({ blocks: [block()], arrows: [] });
-  mode = $state<Mode>('normal');
-  /** Block index and item offset of the text cursor. */
+  mode = $state<Mode>('text');
+  /** Block index and item offset of the text caret (0..items.length). */
   b = $state(0);
   o = $state(0);
+  /** Selection anchor; the selection spans anchor..caret. */
+  anchor = $state<Pos | null>(null);
   /** Math cursor (valid in math mode; the math item is items[o]). */
   mc = $state<MCursor>({ path: [], off: 0 });
 
@@ -57,13 +62,13 @@ export class Editor {
   version = $state(0);
 
   // Layout results (page-relative), recomputed after each render.
-  caret = $state<{ r: Rect; shape: 'bar' | 'block' | 'math' } | null>(null);
+  caret = $state<{ r: Rect; shape: 'bar' | 'math' } | null>(null);
   pickRects = $state<{ cur: Rect | null; from: Rect | null }>({ cur: null, from: null });
   arrowGeos = $state<Record<Id, ArrowGeo>>({});
 
   page: HTMLElement | null = null;
 
-  private prevMode: Mode = 'normal';
+  private prevMode: Mode = 'text';
   private pending = '';
   private goalX: number | null = null;
   private undoStack: Snap[] = [];
@@ -71,6 +76,9 @@ export class Editor {
   private lastKind = '';
   private lastTime = 0;
   private msgTimer: ReturnType<typeof setTimeout> | undefined;
+  private dragging = false;
+  /** Last internal copy, so pasting it back keeps math intact. */
+  private clip: { text: string; blocks: Item[][] } | null = null;
 
   constructor() {
     try {
@@ -101,7 +109,7 @@ export class Editor {
   flash(msg: string) {
     this.message = msg;
     clearTimeout(this.msgTimer);
-    this.msgTimer = setTimeout(() => (this.message = ''), 2500);
+    this.msgTimer = setTimeout(() => (this.message = ''), 3500);
   }
 
   save() {
@@ -129,10 +137,10 @@ export class Editor {
     to.push({ doc: $state.snapshot(this.doc) as Doc, b: this.b, o: this.o });
     this.doc = s.doc;
     this.b = Math.min(s.b, this.doc.blocks.length - 1);
-    this.o = s.o;
+    this.o = Math.min(s.o, this.blk.items.length);
+    this.anchor = null;
     this.lastKind = '';
-    this.setMode('normal');
-    this.clampNormal();
+    this.setMode('text');
     this.touch();
   }
   undo = () => this.restore(this.undoStack, this.redoStack, 'undo');
@@ -140,13 +148,9 @@ export class Editor {
 
   setMode(m: Mode) {
     if (m !== 'hint' && m !== 'palette' && m !== 'label') this.prevMode = m;
+    if ((m === 'text' || m === 'math') && m !== this.mode) this.message = '';
     this.mode = m;
     this.touch();
-  }
-
-  private clampNormal() {
-    const len = this.blk.items.length;
-    this.o = Math.max(0, Math.min(this.o, Math.max(0, len - 1)));
   }
 
   private el(id: Id): Element | null {
@@ -171,6 +175,221 @@ export class Editor {
     return e?.getBoundingClientRect() ?? null;
   }
 
+  // ───────────────────────── selection ─────────────────────────
+
+  /** Ordered selection range, or null when nothing is selected. */
+  get selection(): { s: Pos; e: Pos } | null {
+    const a = this.anchor;
+    if (!a || (a.b === this.b && a.o === this.o)) return null;
+    const c = { b: this.b, o: this.o };
+    return cmpPos(a, c) < 0 ? { s: a, e: c } : { s: c, e: a };
+  }
+
+  isSelected(b: number, o: number): boolean {
+    const r = this.selection;
+    if (!r) return false;
+    const p = { b, o };
+    return cmpPos(p, r.s) >= 0 && cmpPos(p, r.e) < 0;
+  }
+
+  /** Move the caret, extending the selection when `extend` is set. */
+  private moveTo(p: Pos, extend: boolean) {
+    if (extend) this.anchor ??= { b: this.b, o: this.o };
+    else this.anchor = null;
+    this.b = p.b;
+    this.o = p.o;
+  }
+
+  private selectedItems(): Item[][] {
+    const r = this.selection;
+    if (!r) return [];
+    const out: Item[][] = [];
+    for (let b = r.s.b; b <= r.e.b; b++) {
+      const items = this.doc.blocks[b].items;
+      out.push(items.slice(b === r.s.b ? r.s.o : 0, b === r.e.b ? r.e.o : items.length));
+    }
+    return out;
+  }
+
+  /** Delete the selection (if any). Returns whether something was deleted. */
+  private deleteSelection(): boolean {
+    const r = this.selection;
+    this.anchor = null;
+    if (!r) return false;
+    const first = this.doc.blocks[r.s.b];
+    const last = this.doc.blocks[r.e.b];
+    const tail = last.items.slice(r.e.o);
+    first.items.splice(r.s.o, Infinity, ...tail);
+    if (r.e.b > r.s.b) this.doc.blocks.splice(r.s.b + 1, r.e.b - r.s.b);
+    this.b = r.s.b;
+    this.o = r.s.o;
+    return true;
+  }
+
+  selectAll() {
+    const last = this.doc.blocks.length - 1;
+    this.anchor = { b: 0, o: 0 };
+    this.b = last;
+    this.o = this.doc.blocks[last].items.length;
+    this.setMode('text');
+  }
+
+  // ───────────────────────── clipboard ─────────────────────────
+
+  /** Handle a DOM copy/cut event. */
+  copy(e: ClipboardEvent, cut: boolean) {
+    if (this.mode !== 'text' || !this.selection) return;
+    const blocks = this.selectedItems();
+    const text = blocks.map((items) => itemsToText(items)).join('\n');
+    e.clipboardData?.setData('text/plain', text);
+    e.preventDefault();
+    this.clip = { text, blocks: $state.snapshot(blocks) as Item[][] };
+    if (cut) {
+      this.checkpoint();
+      this.deleteSelection();
+    }
+    this.touch();
+  }
+
+  /** Handle a DOM paste event. */
+  paste(e: ClipboardEvent) {
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    e.preventDefault();
+    if (this.mode === 'math') {
+      // Plain characters into math; structure-aware LaTeX paste can come later.
+      this.checkpoint();
+      const item = this.mathItem!;
+      for (const c of text.replace(/\s+/g, ' ')) M.insertNode(item.root, this.mc, sym(c));
+      this.touch();
+      return;
+    }
+    if (this.mode !== 'text') return;
+    this.checkpoint();
+    this.deleteSelection();
+    const blocks: Item[][] =
+      this.clip && this.clip.text === text
+        ? this.clip.blocks.map((items) => items.map(cloneItem))
+        : text.replace(/\r\n?/g, '\n').split('\n').map((line) => chars(line));
+    const blk = this.blk;
+    const tail = blk.items.splice(this.o);
+    blk.items.push(...blocks[0]);
+    if (blocks.length === 1) {
+      this.o += blocks[0].length;
+      blk.items.push(...tail);
+    } else {
+      const rest = blocks.slice(1).map((items) => block(items));
+      const last = rest[rest.length - 1];
+      this.o = last.items.length;
+      last.items.push(...tail);
+      this.doc.blocks.splice(this.b + 1, 0, ...rest);
+      this.b += rest.length;
+    }
+    this.touch();
+  }
+
+  // ───────────────────────── mouse ─────────────────────────
+
+  /** Caret position nearest to a viewport point, or a math target if the point is on math. */
+  private hitTest(x: number, y: number): { pos: Pos; math?: { item: MathItem; id: Id | null; after: boolean } } | null {
+    if (!this.page) return null;
+    const hit = document.elementFromPoint(x, y);
+    const mel = hit?.closest('.math');
+    if (mel && this.page.contains(mel)) {
+      const pos = this.findItem(mel.getAttribute('data-nx')!);
+      if (pos) {
+        const node = hit!.closest('[data-nx]');
+        const id = node && node !== mel ? node.getAttribute('data-nx') : null;
+        const r = node?.getBoundingClientRect();
+        return { pos, math: { item: this.doc.blocks[pos.b].items[pos.o] as MathItem, id, after: !r || x > r.left + r.width / 2 } };
+      }
+    }
+    // Find the block under (or nearest to) y, then the nearest caret stop on that line.
+    const blocks = [...this.page.querySelectorAll('.block')];
+    let bi = 0, bd = Infinity;
+    blocks.forEach((el, i) => {
+      const r = el.getBoundingClientRect();
+      const d = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      if (d < bd) (bd = d), (bi = i);
+    });
+    const items = this.doc.blocks[bi]?.items;
+    if (!items) return null;
+    let best = { o: items.length, d: Infinity };
+    for (let o = 0; o <= items.length; o++) {
+      const r = this.stopRect(bi, o);
+      if (!r) continue;
+      const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      const d = dy * 1000 + Math.abs(r.left - x);
+      if (d < best.d) best = { o, d };
+      // the right edge of the last item on a line is also a stop
+      if (o < items.length) {
+        const d2 = dy * 1000 + Math.abs(r.right - x);
+        if (d2 < best.d) best = { o: o + 1, d: d2 };
+      }
+    }
+    return { pos: { b: bi, o: best.o } };
+  }
+
+  private findItem(id: Id): Pos | null {
+    for (let b = 0; b < this.doc.blocks.length; b++) {
+      const o = this.doc.blocks[b].items.findIndex((i) => i.id === id);
+      if (o >= 0) return { b, o };
+    }
+    return null;
+  }
+
+  mouseDown(e: MouseEvent) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    if (this.mode === 'pick') {
+      const id = (document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
+      const loc = id ? this.locFromId(id) : null;
+      if (loc) {
+        this.pick!.loc = loc;
+        this.pickKey('Enter');
+      }
+      this.touch();
+      return;
+    }
+    const h = this.hitTest(e.clientX, e.clientY);
+    if (!h) return;
+    if (this.mode === 'palette') this.closePalette();
+    this.styling = null;
+    this.hints = null;
+    this.label = null;
+    if (h.math && !e.shiftKey) {
+      this.anchor = null;
+      this.b = h.pos.b;
+      this.o = h.pos.o;
+      const found = h.math.id ? findNode(h.math.item.root, h.math.id) : null;
+      this.mc = found
+        ? { path: found.path, off: found.i + (h.math.after ? 1 : 0) }
+        : { path: [], off: h.math.after ? h.math.item.root.length : 0 };
+      this.setMode('math');
+      return;
+    }
+    this.moveTo(h.pos, e.shiftKey);
+    if (!e.shiftKey) this.anchor = { ...h.pos };
+    this.dragging = true;
+    this.goalX = null;
+    this.setMode('text');
+  }
+
+  mouseMove(e: MouseEvent) {
+    if (!this.dragging) return;
+    const h = this.hitTest(e.clientX, e.clientY);
+    if (!h) return;
+    // Dragging over math selects the whole item.
+    const forward = !this.anchor || cmpPos(h.pos, this.anchor) >= 0;
+    const p = h.math ? { b: h.pos.b, o: h.pos.o + (forward ? 1 : 0) } : h.pos;
+    this.b = p.b;
+    this.o = p.o;
+    this.touch();
+  }
+
+  mouseUp() {
+    this.dragging = false;
+  }
+
   // ───────────────────────── layout ─────────────────────────
 
   /** Recompute every DOM-dependent overlay. Called after renders and resizes. */
@@ -180,31 +399,22 @@ export class Editor {
     const rel = (r: Rect | null) => (r ? relTo(r, origin) : null);
 
     // Caret
+    const base = this.mode === 'palette' || this.mode === 'hint' || this.mode === 'label' ? this.prevMode : this.mode;
     let caret: typeof this.caret = null;
-    if (this.mode === 'math' || (this.mode === 'palette' && this.prevMode === 'math')) {
-      caret = this.mathCaret(origin);
-    } else if (this.mode === 'normal' || this.mode === 'insert' || this.prevMode === 'insert' || this.prevMode === 'normal') {
+    if (base === 'math') caret = this.mathCaret(origin);
+    else if (base === 'text') {
       const blk = this.blk;
-      const insert = this.mode === 'insert' || this.prevMode === 'insert';
-      if (!insert && blk.items.length) {
-        const it = blk.items[this.o];
-        const r = it ? (it.t === 'm' ? measure(this.el(it.id)!) : this.el(it.id)?.getBoundingClientRect()) : null;
-        if (r) {
-          const rr = 'left' in r ? { x: r.left, y: r.top, w: Math.max(r.width, 8), h: r.height } : r;
-          caret = { r: relTo(rr, origin), shape: 'block' };
-        }
-      } else {
-        const r = this.stopRect(this.b, this.o);
-        const prev = this.o > 0 ? blk.items[this.o - 1] : null;
-        const pr = prev?.t === 'c' ? this.el(prev.id)?.getBoundingClientRect() : null;
-        if (r) {
-          // Prefer the previous char's line when wrapping put the next item on a new line.
-          const useprev = pr && (blk.items[this.o]?.t !== 'c' || Math.abs(pr.top - r.top) > 4);
-          const x = useprev ? pr!.right : r.left;
-          const y = useprev ? pr!.top : r.top;
-          const h = useprev ? pr!.height : blk.items[this.o]?.t === 'm' ? 22 : r.height;
-          caret = { r: relTo({ x, y: y + (blk.items[this.o]?.t === 'm' && !useprev ? r.height / 2 - h / 2 : 0), w: 2, h }, origin), shape: 'bar' };
-        }
+      const r = this.stopRect(this.b, this.o);
+      const prev = this.o > 0 ? blk.items[this.o - 1] : null;
+      const pr = prev?.t === 'c' ? this.el(prev.id)?.getBoundingClientRect() : null;
+      if (r) {
+        // Prefer the previous char's line when wrapping put the next item on a new line.
+        const nextIsMath = blk.items[this.o]?.t === 'm';
+        const useprev = pr && (blk.items[this.o]?.t !== 'c' || Math.abs(pr.top - r.top) > 4);
+        const x = useprev ? pr!.right : r.left;
+        const h = useprev ? pr!.height : nextIsMath ? 22 : r.height;
+        const y = useprev ? pr!.top : nextIsMath ? r.top + r.height / 2 - h / 2 : r.top;
+        caret = { r: relTo({ x, y, w: 2, h }, origin), shape: 'bar' };
       }
     }
     this.caret = caret;
@@ -229,7 +439,7 @@ export class Editor {
     this.arrowGeos = geos;
 
     // Keep the caret in view
-    this.page.querySelector('.nx-caret')?.scrollIntoView({ block: 'nearest' });
+    this.page.querySelector('.caret')?.scrollIntoView({ block: 'nearest' });
   }
 
   private mathCaret(origin: DOMRect): typeof this.caret {
@@ -261,10 +471,21 @@ export class Editor {
     if (e.isComposing) return;
     const k = keyName(e);
     if (!k) return;
+    // Let the browser fire copy/cut/paste events; those are handled separately.
+    if (/^C-[cxv]$/.test(k)) return;
+    if (k === 'F1' || k === 'C-/') {
+      this.showHelp = !this.showHelp;
+      e.preventDefault();
+      return;
+    }
+    if (this.showHelp && k === 'Escape') {
+      this.showHelp = false;
+      e.preventDefault();
+      return;
+    }
     let handled = true;
     switch (this.mode) {
-      case 'normal': handled = this.normalKey(k); break;
-      case 'insert': handled = this.insertKey(k); break;
+      case 'text': handled = this.textKey(k); break;
       case 'math': handled = this.mathKey(k); break;
       case 'pick': handled = this.pickKey(k); break;
       case 'style': handled = this.styleKey(k); break;
@@ -277,142 +498,38 @@ export class Editor {
     this.touch();
   }
 
-  // ── normal ──
+  // ── text ──
 
-  private normalKey(k: string): boolean {
-    const p = this.pending;
-    this.pending = '';
-    const blk = this.blk;
-    const len = blk.items.length;
-    if (p === 'g') {
-      if (k === 'g') { this.b = 0; this.o = 0; this.goalX = null; }
-      else if (k === 'a') this.selectArrowByHint();
-      return true;
-    }
-    if (p === 'd') {
-      if (k === 'd') this.deleteBlock();
-      else if (k === 'w') this.deleteWord();
-      return true;
-    }
-    if (k !== 'j' && k !== 'k' && k !== 'Down' && k !== 'Up') this.goalX = null;
-    switch (k) {
-      case 'h': case 'Left': this.o = Math.max(0, this.o - 1); break;
-      case 'l': case 'Right': this.o = Math.min(Math.max(0, len - 1), this.o + 1); break;
-      case 'j': case 'Down': this.vertical(1, false); break;
-      case 'k': case 'Up': this.vertical(-1, false); break;
-      case 'w': this.wordMotion(1); break;
-      case 'b': this.wordMotion(-1); break;
-      case '0': case 'Home': case '^': this.o = 0; break;
-      case '$': case 'End': this.o = Math.max(0, len - 1); break;
-      case 'G': this.b = this.doc.blocks.length - 1; this.o = 0; break;
-      case 'g': case 'd': this.pending = k; break;
-      case '{': this.b = Math.max(0, this.b - 1); this.o = 0; break;
-      case '}': this.b = Math.min(this.doc.blocks.length - 1, this.b + 1); this.o = 0; break;
-      case 'i': this.setMode('insert'); break;
-      case 'a': this.o = Math.min(len, this.o + 1); this.setMode('insert'); break;
-      case 'I': this.o = 0; this.setMode('insert'); break;
-      case 'A': this.o = len; this.setMode('insert'); break;
-      case 'o': case 'O': {
-        this.checkpoint();
-        const nb = block([], blk.kind === 'li' ? 'li' : 'p');
-        this.b = k === 'o' ? this.b + 1 : this.b;
-        this.doc.blocks.splice(this.b, 0, nb);
-        this.o = 0;
-        this.setMode('insert');
-        break;
-      }
-      case 'x': case 'Delete':
-        if (len) {
-          this.checkpoint();
-          blk.items.splice(this.o, 1);
-          this.clampNormal();
-        }
-        break;
-      case 'D':
-        this.checkpoint();
-        blk.items.splice(this.o);
-        this.clampNormal();
-        break;
-      case 'J':
-        if (this.b < this.doc.blocks.length - 1) {
-          this.checkpoint();
-          const nxt = this.doc.blocks.splice(this.b + 1, 1)[0];
-          this.o = blk.items.length;
-          if (len && nxt.items.length) blk.items.push(ch(' '));
-          blk.items.push(...nxt.items);
-        }
-        break;
-      case 'Enter': case 'c':
-        if (this.mathItem) this.enterMath(true);
-        else if (k === 'Enter') { this.b = Math.min(this.doc.blocks.length - 1, this.b + 1); this.o = 0; }
-        break;
-      case 'u': this.undo(); break;
-      case 'C-r': this.redo(); break;
-      case '\\': case ':': this.openPalette('text'); break;
-      case 'f': this.startArrow(); break;
-      case '?': this.showHelp = !this.showHelp; break;
-      case 'Escape': this.showHelp = false; break;
-      default: return false;
-    }
-    return true;
-  }
-
-  private deleteBlock() {
-    this.checkpoint();
-    if (this.doc.blocks.length === 1) this.doc.blocks[0] = block();
-    else this.doc.blocks.splice(this.b, 1);
-    this.b = Math.min(this.b, this.doc.blocks.length - 1);
-    this.o = 0;
-  }
-
-  private deleteWord() {
-    const items = this.blk.items;
-    let e = this.o;
-    while (e < items.length && !isSpace(items[e])) e++;
-    while (e < items.length && isSpace(items[e])) e++;
-    if (e === this.o) e = this.o + 1;
-    this.checkpoint();
-    items.splice(this.o, e - this.o);
-    this.clampNormal();
-  }
-
-  private wordMotion(dir: 1 | -1) {
+  private wordPos(dir: 1 | -1): Pos {
     let { b, o } = this;
-    const at = (b: number, o: number) => this.doc.blocks[b]?.items[o];
-    const step = () => {
-      o += dir;
-      if (o < 0) { if (b === 0) { o = 0; return false; } b--; o = Math.max(0, this.doc.blocks[b].items.length - 1); return 'jump'; }
-      if (o >= this.doc.blocks[b].items.length) { if (b === this.doc.blocks.length - 1) { o -= 1; return false; } b++; o = 0; return 'jump'; }
-      return true;
-    };
+    const items = this.doc.blocks[b].items;
+    const word = (it: Item | undefined) => !!it && it.t === 'c' && !isSpace(it);
     if (dir === 1) {
-      // skip rest of current word, then whitespace
-      const startMath = at(b, o)?.t === 'm';
-      if (!startMath) while (at(b, o) && !isSpace(at(b, o)!) && at(b, o)!.t !== 'm') { const r = step(); if (r !== true) break; }
-      else step();
-      while (at(b, o) && isSpace(at(b, o)!)) { if (step() === false) break; }
+      if (o >= items.length) return b < this.doc.blocks.length - 1 ? { b: b + 1, o: 0 } : { b, o };
+      if (items[o].t === 'm') o++;
+      else while (o < items.length && word(items[o])) o++;
+      while (o < items.length && isSpace(items[o])) o++;
     } else {
-      step();
-      while (at(b, o) && isSpace(at(b, o)!)) { if (step() === false) break; }
-      if (at(b, o)?.t !== 'm') while (o > 0 && at(b, o - 1) && !isSpace(at(b, o - 1)!) && at(b, o - 1)!.t !== 'm') o--;
+      if (o === 0) return b > 0 ? { b: b - 1, o: this.doc.blocks[b - 1].items.length } : { b, o };
+      while (o > 0 && isSpace(items[o - 1])) o--;
+      if (o > 0 && items[o - 1].t === 'm') o--;
+      else while (o > 0 && word(items[o - 1])) o--;
     }
-    this.b = b;
-    this.o = Math.max(0, Math.min(o, Math.max(0, this.doc.blocks[b].items.length - 1)));
+    return { b, o };
   }
 
-  /** Move by visual line, keeping a goal column. */
-  private vertical(dir: 1 | -1, insert: boolean) {
-    const cur = this.stopRect(this.b, Math.min(this.o, this.blk.items.length)) ;
-    if (!cur) return;
-    const curMid = cur.top + cur.height / 2;
-    if (this.goalX === null) this.goalX = insert ? cur.left : cur.left + cur.width / 2;
+  /** Position one visual line up/down, keeping a goal column. */
+  private verticalPos(dir: 1 | -1): Pos {
+    const nb = this.doc.blocks.length;
+    const edge = dir === 1 ? { b: nb - 1, o: this.doc.blocks[nb - 1].items.length } : { b: 0, o: 0 };
+    const cur = this.stopRect(this.b, Math.min(this.o, this.blk.items.length));
+    if (!cur) return edge;
+    if (this.goalX === null) this.goalX = cur.left;
     const gx = this.goalX;
     let line: { top: number; bottom: number } | null = null;
     let best: { b: number; o: number; d: number } | null = null;
-    const nb = this.doc.blocks.length;
-    for (let b = this.b; b >= 0 && b < nb; b += dir) {
-      const items = this.doc.blocks[b].items;
-      const n = items.length + (insert || items.length === 0 ? 1 : 0);
+    outer: for (let b = this.b; b >= 0 && b < nb; b += dir) {
+      const n = this.doc.blocks[b].items.length + 1;
       const order = dir === 1 ? [...Array(n).keys()] : [...Array(n).keys()].reverse();
       for (const o of order) {
         if (b === this.b && (dir === 1 ? o <= this.o : o >= this.o)) continue;
@@ -424,48 +541,114 @@ export class Editor {
           else continue;
         }
         if (mid < line.top - 1 || mid > line.bottom + 1) {
-          if (dir === 1 ? r.top > line.bottom : r.bottom < line.top) { b = -2; break; }
+          if (dir === 1 ? r.top > line.bottom : r.bottom < line.top) break outer;
           continue;
         }
-        const x = insert ? r.left : r.left + r.width / 2;
-        const d = Math.abs(x - gx);
+        const d = Math.abs(r.left - gx);
         if (!best || d < best.d) best = { b, o, d };
       }
-      if (b === -2) break;
     }
-    void curMid;
-    if (best) {
-      this.b = best.b;
-      this.o = best.o;
-      if (!insert) this.clampNormal();
-    }
+    return best ? { b: best.b, o: best.o } : edge;
   }
 
-  // ── insert ──
-
-  private insertKey(k: string): boolean {
+  private textKey(k: string): boolean {
     const blk = this.blk;
-    if (k !== 'Up' && k !== 'Down') this.goalX = null;
-    switch (k) {
-      case 'Escape':
-        this.setMode('normal');
-        this.o = Math.max(0, this.o - 1);
-        this.clampNormal();
+    const shift = k.startsWith('S-') || k.startsWith('C-S-');
+    const bare = k.replace(/^(C-)?S-/, '$1');
+    if (bare !== 'Up' && bare !== 'Down' && bare !== 'PageUp' && bare !== 'PageDown') this.goalX = null;
+
+    switch (bare) {
+      case 'Left': {
+        const sel = this.selection;
+        if (sel && !shift) return this.moveTo(sel.s, false), true;
+        if (!shift && this.o > 0 && blk.items[this.o - 1].t === 'm') {
+          this.o--;
+          this.enterMath(true);
+          return true;
+        }
+        const p = this.o > 0 ? { b: this.b, o: this.o - 1 } : this.b > 0 ? { b: this.b - 1, o: this.doc.blocks[this.b - 1].items.length } : null;
+        if (p) this.moveTo(p, shift);
         return true;
-      case 'Enter': {
+      }
+      case 'Right': {
+        const sel = this.selection;
+        if (sel && !shift) return this.moveTo(sel.e, false), true;
+        if (!shift && blk.items[this.o]?.t === 'm') {
+          this.enterMath(false);
+          return true;
+        }
+        const p = this.o < blk.items.length ? { b: this.b, o: this.o + 1 } : this.b < this.doc.blocks.length - 1 ? { b: this.b + 1, o: 0 } : null;
+        if (p) this.moveTo(p, shift);
+        return true;
+      }
+      case 'C-Left': this.moveTo(this.wordPos(-1), shift); return true;
+      case 'C-Right': this.moveTo(this.wordPos(1), shift); return true;
+      case 'Up': this.moveTo(this.verticalPos(-1), shift); return true;
+      case 'Down': this.moveTo(this.verticalPos(1), shift); return true;
+      case 'PageUp': case 'PageDown': {
+        const start = { b: this.b, o: this.o };
+        for (let i = 0; i < 12; i++) {
+          const p = this.verticalPos(bare === 'PageUp' ? -1 : 1);
+          this.b = p.b;
+          this.o = p.o;
+        }
+        const end = { b: this.b, o: this.o };
+        this.b = start.b;
+        this.o = start.o;
+        this.moveTo(end, shift);
+        return true;
+      }
+      case 'Home': this.moveTo({ b: this.b, o: 0 }, shift); return true;
+      case 'End': this.moveTo({ b: this.b, o: blk.items.length }, shift); return true;
+      case 'C-Home': this.moveTo({ b: 0, o: 0 }, shift); return true;
+      case 'C-End': {
+        const l = this.doc.blocks.length - 1;
+        this.moveTo({ b: l, o: this.doc.blocks[l].items.length }, shift);
+        return true;
+      }
+    }
+
+    switch (k) {
+      case 'Escape': this.anchor = null; return true;
+      case 'C-a': this.selectAll(); return true;
+      case 'C-z': this.undo(); return true;
+      case 'C-y': case 'C-S-z': this.redo(); return true;
+      case 'C-k': this.anchor = null; this.openPalette('text'); return true;
+      case 'C-m': this.deleteSelection(); this.insertMath(false); return true;
+      case 'Enter': case 'S-Enter': {
         this.checkpoint();
-        if (blk.kind === 'li' && blk.items.length === 0) { blk.kind = 'p'; return true; }
-        const rest = blk.items.splice(this.o);
-        const nb = block(rest, blk.kind === 'li' ? 'li' : 'p');
-        this.doc.blocks.splice(this.b + 1, 0, nb);
+        this.deleteSelection();
+        const b = this.blk;
+        if (b.kind === 'li' && b.items.length === 0) {
+          b.kind = 'p';
+          return true;
+        }
+        const rest = b.items.splice(this.o);
+        this.doc.blocks.splice(this.b + 1, 0, block(rest, b.kind === 'li' ? 'li' : 'p'));
         this.b++;
         this.o = 0;
         return true;
       }
-      case 'Backspace': {
+      case 'Backspace': case 'C-Backspace': {
+        if (this.selection) {
+          this.checkpoint();
+          this.deleteSelection();
+          return true;
+        }
+        if (k === 'C-Backspace' && this.o > 0) {
+          const p = this.wordPos(-1);
+          this.checkpoint();
+          blk.items.splice(p.o, this.o - p.o);
+          this.o = p.o;
+          return true;
+        }
         if (this.o > 0) {
           const prev = blk.items[this.o - 1];
-          if (prev.t === 'm') { this.o--; this.enterMath(true); return true; }
+          if (prev.t === 'm') {
+            this.o--;
+            this.enterMath(true);
+            return true;
+          }
           this.checkpoint('type');
           blk.items.splice(this.o - 1, 1);
           this.o--;
@@ -482,35 +665,35 @@ export class Editor {
         }
         return true;
       }
-      case 'Delete':
-        if (this.o < blk.items.length) { this.checkpoint(); blk.items.splice(this.o, 1); }
-        else if (this.b < this.doc.blocks.length - 1) {
+      case 'Delete': case 'C-Delete':
+        if (this.selection) {
+          this.checkpoint();
+          this.deleteSelection();
+          return true;
+        }
+        if (this.o < blk.items.length) {
+          this.checkpoint('type');
+          const end = k === 'C-Delete' ? this.wordPos(1).o : this.o + 1;
+          blk.items.splice(this.o, Math.max(1, end - this.o));
+        } else if (this.b < this.doc.blocks.length - 1) {
           this.checkpoint();
           blk.items.push(...this.doc.blocks.splice(this.b + 1, 1)[0].items);
         }
         return true;
-      case 'Left':
-        if (this.o > 0 && blk.items[this.o - 1].t === 'm') { this.o--; this.enterMath(true); }
-        else if (this.o > 0) this.o--;
-        else if (this.b > 0) { this.b--; this.o = this.blk.items.length; }
+      case 'Tab': return true;
+      case '$':
+        this.deleteSelection();
+        this.insertMath(false);
         return true;
-      case 'Right':
-        if (blk.items[this.o]?.t === 'm') this.enterMath(false);
-        else if (this.o < blk.items.length) this.o++;
-        else if (this.b < this.doc.blocks.length - 1) { this.b++; this.o = 0; }
+      case '\\':
+        this.anchor = null;
+        this.openPalette('text');
         return true;
-      case 'Up': this.vertical(-1, true); return true;
-      case 'Down': this.vertical(1, true); return true;
-      case 'Home': this.o = 0; return true;
-      case 'End': this.o = blk.items.length; return true;
-      case 'C-z': this.undo(); return true;
-      case 'C-y': case 'C-S-z': this.redo(); return true;
-      case '$': this.insertMath(false); return true;
-      case '\\': this.openPalette('text'); return true;
     }
     if (k.length === 1) {
       this.checkpoint('type');
-      blk.items.splice(this.o, 0, ch(k));
+      this.deleteSelection();
+      this.blk.items.splice(this.o, 0, ch(k));
       this.o++;
       if (k === ' ') this.markdownShortcut();
       return true;
@@ -531,6 +714,7 @@ export class Editor {
 
   insertMath(display: boolean) {
     this.checkpoint();
+    this.anchor = null;
     const m = math([], display);
     if (display) {
       // Display math gets its own block.
@@ -551,14 +735,15 @@ export class Editor {
   private enterMath(atEnd: boolean) {
     const m = this.mathItem;
     if (!m) return;
+    this.anchor = null;
     this.mc = { path: [], off: atEnd ? m.root.length : 0 };
     this.setMode('math');
   }
 
-  /** Leave math into insert mode, before or after the item. */
+  /** Leave math into text, before or after the item. */
   private exitMath(after: boolean) {
     this.o += after ? 1 : 0;
-    this.setMode('insert');
+    this.setMode('text');
   }
 
   // ── math ──
@@ -579,7 +764,7 @@ export class Editor {
     }
     const text = M.inTextSlot(root, cur);
     switch (k) {
-      case 'Escape': this.setMode('normal'); return true;
+      case 'Escape': this.exitMath(true); return true;
       case 'Left': case 'A-h': if (!M.moveLeft(root, cur)) this.exitMath(false); return true;
       case 'Right': case 'A-l': if (!M.moveRight(root, cur)) this.exitMath(true); return true;
       case 'Up': case 'A-k': M.moveVert(root, cur, 'up'); return true;
@@ -593,7 +778,7 @@ export class Editor {
       case 'Backspace':
         this.checkpoint('type');
         if (!M.backspace(root, cur)) {
-          if (!root.length) { this.blk.items.splice(this.o, 1); this.setMode('insert'); }
+          if (!root.length) { this.blk.items.splice(this.o, 1); this.setMode('text'); }
           else this.exitMath(false);
         }
         return true;
@@ -721,7 +906,7 @@ export class Editor {
     return [
       { name: 'arrow', desc: 'draw an arrow between two things', run: () => this.startArrow() },
       { name: 'arrows', desc: 'select an existing arrow', run: () => this.selectArrowByHint() },
-      { name: 'math', desc: 'inline math', run: () => { if (this.prevMode === 'normal' && this.blk.items.length) this.o++; this.insertMath(false); } },
+      { name: 'math', desc: 'inline math', run: () => this.insertMath(false) },
       { name: 'display', desc: 'display math block', run: () => this.insertMath(true) },
       { name: 'h1', desc: 'heading 1', run: setKind('h1') },
       { name: 'h2', desc: 'heading 2', run: setKind('h2') },
@@ -729,8 +914,8 @@ export class Editor {
       { name: 'p', desc: 'paragraph', run: setKind('p') },
       { name: 'li', desc: 'list item', run: setKind('li') },
       { name: 'theme', desc: `cycle theme (${this.theme})`, run: () => this.cycleTheme() },
-      { name: 'export', desc: 'copy document as LaTeX', run: () => this.copy(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
-      { name: 'json', desc: 'copy document as JSON', run: () => this.copy(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
+      { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
+      { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
       { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },
       { name: 'new', desc: 'clear the document (undoable)', run: () => { this.checkpoint(); this.doc = { blocks: [block()], arrows: [] }; this.b = 0; this.o = 0; } },
       { name: 'welcome', desc: 'load the welcome note', run: () => { this.checkpoint(); this.doc = welcomeDoc(); this.b = 0; this.o = 0; } },
@@ -744,7 +929,7 @@ export class Editor {
     this.flash(`theme: ${this.theme}`);
   }
 
-  private async copy(s: string, what: string) {
+  private async copyText(s: string, what: string) {
     try {
       await navigator.clipboard.writeText(s);
       this.flash(`copied ${what} to clipboard`);
@@ -821,7 +1006,7 @@ export class Editor {
   startArrow() {
     this.pick = { phase: 'from', loc: this.locFromCursor() };
     this.setMode('pick');
-    this.flash('pick start: hjkl move · K/J out/in · H/L extend · f hints · enter confirm');
+    this.flash('choose where the arrow starts: arrow keys or click · Enter to confirm');
   }
 
   private sameLoc(a: Loc, b: Loc) {
@@ -850,25 +1035,45 @@ export class Editor {
     switch (k) {
       case 'Escape':
         this.pick = null;
-        this.setMode('normal');
+        this.setMode('text');
         return true;
-      case 'h': case 'Left': case 'b': move(-1); return true;
-      case 'l': case 'Right': case 'w': move(1); return true;
-      case 'j': case 'Down': this.pickVertical(1); return true;
-      case 'k': case 'Up': this.pickVertical(-1); return true;
-      case 'K': pk.loc = this.parentLoc(l); return true;
-      case 'J': pk.loc = this.childLoc(l); return true;
-      case 'H': case 'L': pk.loc = this.extendLoc(l, k === 'L' ? 1 : -1); return true;
-      case 'f': this.hintTargets(); return true;
+      case 'Left': case 'h': move(-1); return true;
+      case 'Right': case 'l': move(1); return true;
+      case 'Down': case 'j': this.pickVertical(1); return true;
+      case 'Up': case 'k': this.pickVertical(-1); return true;
+      case 'S-Up': case 'A-Up': case 'K': pk.loc = this.parentLoc(l); return true;
+      case 'S-Down': case 'A-Down': case 'J': pk.loc = this.childLoc(l); return true;
+      case 'S-Left': case 'H': pk.loc = this.extendLoc(l, -1); return true;
+      case 'S-Right': case 'L': pk.loc = this.extendLoc(l, 1); return true;
+      case 'Tab': case 'f': this.hintTargets(); return true;
       case 'Enter': case ' ':
         if (pk.phase === 'from') {
           const next = l0[idx + 1] ?? l;
           this.pick = { phase: 'to', from: l, loc: idx >= 0 ? next : l };
-          this.flash('pick end');
+          this.flash('now choose where it points');
         } else this.finishArrow();
         return true;
     }
     return true;
+  }
+
+  /** Target for a clicked element id: a word, or the math node (grouped with its scripts). */
+  private locFromId(id: Id): Loc | null {
+    const direct = this.level0().find((l) => this.anchorIds(l).includes(id));
+    if (direct) return direct;
+    for (let b = 0; b < this.doc.blocks.length; b++) {
+      const items = this.doc.blocks[b].items;
+      for (let o = 0; o < items.length; o++) {
+        const it = items[o];
+        if (it.t !== 'm') continue;
+        if (it.id === id) return { k: 'item', b, o };
+        const f = findNode(it.root, id);
+        if (!f) continue;
+        const g = groups(M.rowAt(it.root, f.path)).find(([i, j]) => f.i >= i && f.i <= j)!;
+        return { k: 'node', b, o, path: f.path, i: g[0], j: g[1] };
+      }
+    }
+    return null;
   }
 
   private parentLoc(l: Loc): Loc {
@@ -967,29 +1172,29 @@ export class Editor {
     this.pick = null;
     this.styling = a.id;
     this.setMode('style');
-    this.flash('style: j/k bend · = straight · r reverse · t heads · d dash · b box · i label · x delete · enter done');
+    this.flash('arrow drawn — ↑↓ to bend it, Enter when done');
   }
 
   private styleKey(k: string): boolean {
     const a = this.doc.arrows.find((x) => x.id === this.styling);
-    if (!a) { this.setMode('normal'); return true; }
+    if (!a) { this.setMode('text'); return true; }
     const dir = this.arrowGeos[a.id]?.dir ?? 1;
     const edit = (f: () => void) => { this.checkpoint('style'); f(); };
     switch (k) {
-      case 'Escape': case 'Enter': this.styling = null; this.setMode('normal'); return true;
-      case 'k': edit(() => (a.bend = round(a.bend + 0.1 * dir))); return true;
-      case 'j': edit(() => (a.bend = round(a.bend - 0.1 * dir))); return true;
-      case '=': edit(() => (a.bend = 0)); return true;
+      case 'Escape': case 'Enter': this.styling = null; this.setMode('text'); return true;
+      case 'Up': case 'k': edit(() => (a.bend = round(a.bend + 0.1 * dir))); return true;
+      case 'Down': case 'j': edit(() => (a.bend = round(a.bend - 0.1 * dir))); return true;
+      case '0': case '=': edit(() => (a.bend = 0)); return true;
       case 'r': edit(() => { [a.from, a.to] = [a.to, a.from]; a.bend = -a.bend; }); return true;
       case 't': edit(() => (a.head = a.head === 'end' ? 'both' : a.head === 'both' ? 'none' : 'end')); return true;
       case 'd': edit(() => (a.dash = !a.dash)); return true;
       case 'b': edit(() => (a.boxed = !a.boxed)); return true;
-      case 'i': case '"': this.label = { text: a.label }; this.setMode('label'); return true;
-      case 'x': case 'Delete':
+      case 'l': case 'i': case '"': this.label = { text: a.label }; this.setMode('label'); return true;
+      case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();
         this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1);
         this.styling = null;
-        this.setMode('normal');
+        this.setMode('text');
         return true;
     }
     return true;
@@ -1042,7 +1247,7 @@ export class Editor {
         return { rect: { x: m.x + origin.left - 6, y: m.y + origin.top - 8, w: 12, h: 16 }, act: () => { this.styling = a.id; this.mode = 'style'; this.prevMode = 'style'; } };
       });
     if (!ts.length) return this.flash('no arrows');
-    this.prevMode = 'normal';
+    this.prevMode = 'text';
     this.showHints(ts);
   }
 
@@ -1078,6 +1283,27 @@ export class Editor {
 // ───────────────────────── utilities ─────────────────────────
 
 const isSpace = (it: { t: string; ch?: string }) => it.t === 'c' && /\s/.test(it.ch!);
+const cmpPos = (a: Pos, b: Pos) => a.b - b.b || a.o - b.o;
+
+const cloneItem = (it: Item): Item => (it.t === 'c' ? { ...it, id: uid() } : { ...it, id: uid(), root: cloneRow(it.root) });
+
+function itemsToText(items: Item[]): string {
+  return items.map((it) => (it.t === 'c' ? it.ch : it.display ? `$$${toLatex(it.root)}$$` : `$${toLatex(it.root)}$`)).join('');
+}
+
+/** Locate a node by id: the path to its row and its index there. */
+export function findNode(row: MRow, id: Id, path: Step[] = []): { path: Step[]; i: number } | null {
+  for (let i = 0; i < row.length; i++) {
+    const n = row[i];
+    if (n.id === id) return { path, i };
+    if (n.k === 'cmd')
+      for (let s = 0; s < n.slots.length; s++) {
+        const f = findNode(n.slots[s], id, [...path, { i, s }]);
+        if (f) return f;
+      }
+  }
+  return null;
+}
 const round = (n: number) => Math.round(n * 100) / 100;
 
 /** Group each node with the scripts that follow it. */
@@ -1159,13 +1385,14 @@ function welcomeDoc(): Doc {
   const doc: Doc = {
     blocks: [
       P('notex', 'h1'),
-      P('keyboard-first math notes. press ? for keys, \\ or : for commands.'),
+      P('math notes you can type as fast as you think. press F1 any time for the key reference.'),
       b1,
       b2,
       P('try it', 'h2'),
-      P('in normal mode press i to type. $ starts math: try x^2 / y, ;a for alpha, sum, ->, oo.', 'li'),
-      P('press f to draw an arrow: hjkl moves the selection, K/J zoom out/in, f shows jump labels.', 'li'),
-      P('after drawing, j/k bend the arrow, t toggles heads, d dashes it, i adds a label.', 'li'),
+      P('type $ to start math. inside, try x^2, a/b, sqrt, sum, ->, alpha, or ;a. press $ again (or →) to get back to text.', 'li'),
+      P('type \\ to open commands. \\arrow draws an arrow: pick the start with the arrow keys or a click, then the end.', 'li'),
+      P('while choosing, Shift+↑ grabs the bigger expression, Shift+↓ goes inside it, Tab shows jump labels.', 'li'),
+      P('after drawing, ↑↓ bend the arrow; t, d, b and l change heads, dashes, boxes and the label.', 'li'),
     ],
     arrows: [],
   };

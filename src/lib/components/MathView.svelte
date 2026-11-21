@@ -34,6 +34,9 @@
     text-align: center;
     margin: 0.4em 0;
   }
+  .math.selected {
+    background: var(--text-sel);
+  }
   .math.editing {
     background: var(--math-edit-bg);
     box-shadow: 0 0 0 1px var(--math-edit-ring);

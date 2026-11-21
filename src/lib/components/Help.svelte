@@ -1,24 +1,25 @@
 <script lang="ts">
   const sections: [string, [string, string][]][] = [
-    ['normal', [
-      ['h j k l', 'move (j/k by visual line)'], ['w b', 'word'], ['0 $ gg G', 'line / doc ends'],
-      ['i a I A o O', 'insert'], ['⏎ / c', 'edit math under cursor'], ['x D dd dw J', 'delete / join'],
-      ['u  C-r', 'undo / redo'], ['\\  :', 'command palette'], ['f', 'draw arrow'], ['ga', 'select arrow'],
-    ]],
-    ['insert', [
-      ['$', 'inline math ($$ for display)'], ['\\', 'command palette (\\\\ literal)'],
-      ['# ## - ␣', 'markdown block shortcuts'], ['esc', 'normal mode'],
+    ['writing', [
+      ['$', 'start math ($$ for a centered block)'], ['\\  or  ctrl+k', 'commands'],
+      ['# ␣   ## ␣   - ␣', 'heading, subheading, list'], ['click / shift+arrows', 'place caret / select'],
+      ['ctrl+c  x  v', 'copy, cut, paste (math included)'], ['ctrl+z  ctrl+y', 'undo, redo'],
+      ['ctrl+← →', 'jump by word'], ['F1', 'this help'],
     ]],
     ['math', [
-      ['/', 'fraction from previous operand'], ['^ _', 'super / subscript'], ['( [ {', 'auto-sized delimiters'],
-      ['"', 'text'], [';a ;b ;G …', 'greek'], ['sum int lim', 'auto big operators'],
-      ['-> => <= oo xx', 'auto symbols'], ['\\name', 'any command (falls back to raw LaTeX)'],
-      ['space / tab', 'leave structure / next slot'], ['& ⏎', 'matrix: next column / row'], ['$  esc', 'exit to text / normal'],
+      ['/', 'fraction from what you just typed'], ['^  _', 'superscript, subscript'],
+      ['( [ {', 'brackets that grow'], ['"', 'words inside math'], ['alpha  ;a', 'greek letters'],
+      ['sqrt sum int lim', 'roots and big operators'], ['-> => <= oo xx', 'arrows, ≤, ∞, ×'],
+      ['\\name', 'any LaTeX command'], ['space / tab', 'leave box / next box'],
+      ['& enter', 'matrix: new column / row'], ['$  →  esc', 'back to text'],
     ]],
-    ['arrow', [
-      ['h l  j k', 'move target'], ['K J', 'zoom out / into structure'], ['H L', 'extend selection'],
-      ['f', 'jump labels'], ['⏎', 'confirm endpoint'],
-      ['j k =', 'style: bend / straighten'], ['r t d b', 'reverse, heads, dashed, box'], ['i x', 'label, delete'],
+    ['drawing arrows  (\\arrow)', [
+      ['← → ↑ ↓  or click', 'choose a word or symbol'], ['shift+↑ / shift+↓', 'whole expression / inside it'],
+      ['shift+← →', 'extend over neighbours'], ['tab', 'jump labels'], ['enter', 'confirm start, then end'],
+    ]],
+    ['styling arrows  (\\arrows to reselect)', [
+      ['↑ ↓', 'bend'], ['0', 'straight'], ['t', 'arrowheads'], ['d', 'dashed'], ['b', 'box the ends'],
+      ['l', 'label'], ['r', 'reverse'], ['del', 'remove'],
     ]],
   ];
 </script>
@@ -35,7 +36,7 @@
       </section>
     {/each}
   </div>
-  <div class="foot">press ? or esc to close</div>
+  <div class="foot">press F1 or esc to close</div>
 </div>
 
 <style>
@@ -47,7 +48,7 @@
     border-radius: 8px;
     padding: 18px 22px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
-    max-width: min(880px, 92vw);
+    max-width: min(900px, 92vw);
     max-height: 86vh;
     overflow: auto;
     animation: pop 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
@@ -60,7 +61,7 @@
   .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; }
   h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
   .row { display: flex; gap: 12px; padding: 1px 0; }
-  kbd { min-width: 110px; color: var(--accent); font-family: inherit; }
+  kbd { min-width: 150px; color: var(--accent); font-family: inherit; }
   span { color: var(--fg); }
   .foot { margin-top: 14px; color: var(--muted); }
 </style>
