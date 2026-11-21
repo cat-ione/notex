@@ -1046,6 +1046,10 @@ export class Editor {
       case 'S-Left': case 'H': pk.loc = this.extendLoc(l, -1); return true;
       case 'S-Right': case 'L': pk.loc = this.extendLoc(l, 1); return true;
       case 'Tab': case 'f': this.hintTargets(); return true;
+      case 'Home': case '0': this.pickLineEdge(-1); return true;
+      case 'End': case '$': this.pickLineEdge(1); return true;
+      case 'C-Home': if (l0.length) pk.loc = l0[0]; return true;
+      case 'C-End': if (l0.length) pk.loc = l0[l0.length - 1]; return true;
       case 'Enter': case ' ':
         if (pk.phase === 'from') {
           const next = l0[idx + 1] ?? l;
@@ -1138,6 +1142,20 @@ export class Editor {
       return w && !blocked ? { ...l, s: w.s } : l;
     }
     return l;
+  }
+
+  /** Jump to the first / last target on the current visual line. */
+  private pickLineEdge(dir: 1 | -1) {
+    const pk = this.pick!;
+    const cur = this.rectOfIds(this.anchorIds(pk.loc));
+    if (!cur) return;
+    const mid = cur.y + cur.h / 2;
+    const onLine = this.level0()
+      .map((l) => ({ l, r: this.rectOfIds(this.anchorIds(l)) }))
+      .filter((c): c is { l: Loc; r: Rect } => !!c.r && c.r.y <= mid && c.r.y + c.r.h >= mid);
+    if (!onLine.length) return;
+    onLine.sort((a, b) => (a.r.x - b.r.x) * dir);
+    pk.loc = onLine[onLine.length - 1].l;
   }
 
   private pickVertical(dir: 1 | -1) {

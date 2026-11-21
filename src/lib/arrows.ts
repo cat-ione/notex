@@ -33,6 +33,8 @@ export function arrowGeo(a: Rect, b: Rect, bend: number): ArrowGeo | null {
 export function defaultBend(a: Rect, b: Rect) {
   const dx = center(b).x - center(a).x, dy = center(b).y - center(a).y;
   const horizontal = Math.abs(dy) < Math.max(a.h, b.h);
-  const mag = horizontal ? 0.35 : 0.2;
+  // Cap the arc's height so long arrows don't loop far above the text.
+  const len = Math.hypot(dx, dy) || 1;
+  const mag = Math.min(horizontal ? 0.35 : 0.2, (horizontal ? 36 : 28) / len);
   return dx >= 0 ? mag : -mag;
 }

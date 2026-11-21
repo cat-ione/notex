@@ -15,7 +15,7 @@
     ]],
     ['drawing arrows  (\\arrow)', [
       ['← → ↑ ↓  or click', 'choose a word or symbol'], ['shift+↑ / shift+↓', 'whole expression / inside it'],
-      ['shift+← →', 'extend over neighbours'], ['tab', 'jump labels'], ['enter', 'confirm start, then end'],
+      ['shift+← →', 'extend over neighbours'], ['home  end', 'first / last on the line'], ['tab', 'jump labels'], ['enter', 'confirm start, then end'],
     ]],
     ['styling arrows  (\\arrows to reselect)', [
       ['↑ ↓', 'bend'], ['0', 'straight'], ['t', 'arrowheads'], ['d', 'dashed'], ['b', 'box the ends'],
