@@ -91,6 +91,10 @@
   <div class="scroller" onmousedown={(e) => ed.mouseDown(e)} onscroll={() => ed.scrolled()}>
     <div class="page" bind:this={page}>
       <MarkLayer {ed} under />
+      {#if ed.mathFrame}
+        {@const r = ed.mathFrame}
+        <div class="mathframe" style="transform: translate({r.x}px, {r.y}px); width: {r.w}px; height: {r.h}px;"></div>
+      {/if}
       {#each ed.selRects as r, i (i)}
         <div class="selrect" style="transform: translate({r.x}px, {r.y}px); width: {r.w}px; height: {r.h}px;"></div>
       {/each}
@@ -271,6 +275,18 @@
     z-index: -1;
     background: var(--text-sel);
     border-radius: 2px;
+    pointer-events: none;
+  }
+  /* the formula being edited (drawn here rather than on the formula: its own box is
+     only as tall as the line, not its fractions and limits) */
+  .mathframe {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: -1;
+    background: var(--math-edit-bg);
+    box-shadow: 0 0 0 1px var(--math-edit-ring);
+    border-radius: 4px;
     pointer-events: none;
   }
   /* no transition: makeRoom measures these right after they change */

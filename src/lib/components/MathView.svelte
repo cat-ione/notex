@@ -50,10 +50,7 @@
   .math.selected {
     background: var(--text-sel);
   }
-  .math.editing {
-    background: var(--math-edit-bg);
-    box-shadow: 0 0 0 1px var(--math-edit-ring);
-  }
+  /* (the frame of the formula being edited is drawn by the editor: see .mathframe) */
   .math :global(.katex) {
     font-size: 1.12em;
   }

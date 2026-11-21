@@ -94,6 +94,8 @@ export class Editor {
   caret = $state<{ r: Rect; shape: 'bar' | 'math' } | null>(null);
   /** The text selection as rectangles, one per line (page-relative). */
   selRects = $state.raw<Rect[]>([]);
+  /** The frame around the formula being edited (page coordinates). */
+  mathFrame = $state.raw<Rect | null>(null);
   pickRects = $state<{ cur: Rect | null; from: Rect | null }>({ cur: null, from: null });
   // (raw: replaced wholesale on every layout, so deep proxies would be pure overhead)
   arrowGeos = $state.raw<Record<Id, ArrowGeo>>({});
@@ -995,6 +997,7 @@ export class Editor {
     }
     this.caret = caret;
     this.selRects = [...this.selectionRects(origin), ...this.mathSelRects(origin)];
+    this.mathFrame = this.inFormula ? this.mathFrameRect(origin) : null;
 
     // Pick highlights
     if (this.pick) {
@@ -1507,6 +1510,22 @@ export class Editor {
     if (!sel) return [];
     const box = union([fromDOM(sel.getBoundingClientRect()), ...inkRects(sel)].filter((r) => r.w || r.h));
     return box ? [relTo({ x: box.x - 1, y: box.y - 1, w: box.w + 2, h: box.h + 2 }, origin)] : [];
+  }
+
+  /**
+   * The frame around the formula being edited: everything it draws (limits, fractions
+   * and scripts reach past its line box) with some room, so a selection inside fits.
+   */
+  private mathFrameRect(origin: DOMRect): Rect | null {
+    const item = this.mathItem;
+    const mel = item ? this.el(item.id, this.b) : null;
+    if (!mel) return null;
+    const line = fromDOM(mel.getBoundingClientRect());
+    const box = union([line, ...inkRects(mel)].filter((r) => r.w || r.h))!;
+    const PX = 3, PY = 3;
+    // a display formula's frame spans its line, as its block does
+    const x0 = item!.display ? line.x : box.x - PX, x1 = item!.display ? line.x + line.w : box.x + box.w + PX;
+    return relTo({ x: x0, y: box.y - PY, w: x1 - x0, h: box.h + 2 * PY }, origin);
   }
 
   /** The element at caret stop (b, o): the item there, or the end-of-line marker. */
