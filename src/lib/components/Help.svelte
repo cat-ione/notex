@@ -18,10 +18,18 @@
       ['select, then \\cmd', 'draw on the selection right away'],
       ['← → ↑ ↓  or click', 'choose a word or symbol'], ['shift+↑ / shift+↓', 'whole expression / inside it'],
       ['shift+← →', 'extend over neighbours'], ['home  end', 'first / last on the line'], ['tab', 'jump labels'], ['enter', 'confirm start, then end'],
+      ['alt+drag', 'arrow from one thing to another'], ['alt+shift+drag', 'shape around a range (the last kind)'],
     ]],
     ['changing a drawing  (click it, or \\drawings)', [
       ['drag the dots', 'move an arrow\'s ends or bend it'], ['↑ ↓', 'bend an arrow'], ['0', 'straight'], ['t', 'arrowheads / next shape'], ['d', 'dashed'], ['b', 'box the ends'],
       ['c', 'colour'], ['l', 'label / note ($math$ works)'], ['s  e', 'move the start / tip (shape: e)'], ['r', 'reverse'], ['del', 'remove'],
+      ['shift+← →', 'shape: move its end (ctrl+shift: its start)'], ['alt+arrows', 'move the note (shift: by a pixel)'], ['alt+0', 'put the note back'],
+      ['shift+f10', 'menu of all of these'], ['\\', 'search them by name'],
+    ]],
+    ['mouse', [
+      ['click / right-click', 'select a drawing or note / its menu'], ['double-click', 'type its note, caret where you clicked'],
+      ['drag a note', 'move it (alt+0 puts it back)'], ["drag a shape's ends", 'cover more or less'],
+      ['drag in a note', 'select (double: word, triple: all)'], ['hover', 'shows a drawing with its note'],
     ]],
   ];
 </script>

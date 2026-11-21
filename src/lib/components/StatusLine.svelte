@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
-  import type { Editor } from '$lib/editor.svelte';
+  import { keyLabel, type Editor } from '$lib/editor.svelte';
 
   let { ed }: { ed: Editor } = $props();
 
@@ -11,12 +11,16 @@
     text: '$ math · \\ commands · F1 help',
     math: '/ fraction · ^ _ scripts · \\ commands · tab next box · $ or esc back to text',
     pick: '←→↑↓ move · shift+↑↓ bigger / smaller · shift+←→ extend · tab jump labels · enter choose · esc cancel',
-    style: '↑↓ bend · t heads · d dashed · b boxes · c colour · l label · s/e move start/tip · r reverse · del remove · enter done',
-    mark: '←→ or t shape · d dashed · c colour · l note · e move · del remove · enter done',
     hint: 'type a label to jump · esc cancel',
     palette: 'enter accept · ↑↓ choose · esc cancel',
-    label: 'type on the page · $…$ math · ←→ ctrl+←→ home end move · shift selects · enter save · esc cancel',
+    label: 'type on the page (click, drag to select) · $…$ math · ←→ ctrl+←→ home end move · shift selects · enter save · esc cancel',
   };
+  // a drawing's keys, from the same table as its menu
+  const styleHint = $derived(
+    ed.mode === 'style' && ed.styling
+      ? [...ed.drawingActions(ed.styling).filter((a) => !a.keyOnly && a.name !== 'menu').map((a) => `${keyLabel(a.keys[0])} ${a.name}`), 'enter done', 'right-click or shift+f10 for more'].join(' · ')
+      : '',
+  );
   // Counts don't need to follow every keystroke: refresh them when typing pauses.
   let counts = $state({ words: 0, maths: 0, drawings: 0 });
   let countTimer: ReturnType<typeof setTimeout>;
@@ -35,7 +39,7 @@
   {#if ed.message}
     <span class="msg" in:fly={{ x: -8, duration: 160 }}>{ed.message}</span>
   {:else}
-    <span class="keys">{HINTS[ed.mode === 'style' && ed.stylingMark ? 'mark' : ed.mode]}</span>
+    <span class="keys">{ed.mode === 'style' ? styleHint : HINTS[ed.mode]}</span>
   {/if}
   <span class="spacer"></span>
   <span class="file" title={ed.file.path ?? 'not saved to a file yet'}>
