@@ -15,7 +15,7 @@
     {@const g = ed.markGeos[m.id]}
     {#if g && g.filled === under}
       {@const sel = ed.styling === m.id}
-      <g class="mark {m.kind}" class:sel class:ghost={ed.pick?.edit?.id === m.id} style="--ink: {inkVar(m.color)}">
+      <g data-id={m.id} class="mark {m.kind}" class:sel class:ghost={ed.pick?.edit?.id === m.id} style="--ink: {inkVar(m.color)}">
         {#if g.filled}
           <path class="fill" d={g.d} in:fade={{ duration: 200 }} />
         {:else}
@@ -24,7 +24,12 @@
             <path class="leader" d={g.leader} in:fade={{ duration: 150 }} />
           {/if}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <path class="hit" d={g.d} onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(m.id); }} />
+          <path
+            class="hit"
+            d={g.d}
+            onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(m.id); }}
+            oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(m.id, e.clientX, e.clientY); }}
+          />
         {/if}
       </g>
     {/if}

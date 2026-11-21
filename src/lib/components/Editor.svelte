@@ -7,6 +7,7 @@
   import ArrowLayer from './ArrowLayer.svelte';
   import MarkLayer from './MarkLayer.svelte';
   import LabelLayer from './LabelLayer.svelte';
+  import DrawingMenu from './DrawingMenu.svelte';
   import StatusLine from './StatusLine.svelte';
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
@@ -87,6 +88,7 @@
 {#snippet spacer(id: string)}<span class="nx-sp nx-probe" data-pt={id} style="vertical-align: top">&#8288;</span><span class="nx-sp nx-probe" data-pb={id} style="vertical-align: bottom">&#8288;</span>{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
 
 <div class="shell">
+  <DrawingMenu {ed} />
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroller" onmousedown={(e) => ed.mouseDown(e)} onscroll={() => ed.scrolled()}>
     <div class="page" bind:this={page}>
@@ -140,11 +142,12 @@
         {/each}
       {/if}
 
-      {#if ed.palette && ed.caret}
-        {@const up = (ed.page?.getBoundingClientRect().top ?? 0) + ed.caret.r.y + ed.caret.r.h + 300 > window.innerHeight - 30}
+      {#if ed.palette && ed.paletteAnchor}
+        {@const at = ed.paletteAnchor}
+        {@const up = (ed.page?.getBoundingClientRect().top ?? 0) + at.y + at.h + 300 > window.innerHeight - 30}
         <div
           class="palette"
-          style="left: {ed.caret.r.x}px; top: {up ? ed.caret.r.y - 6 : ed.caret.r.y + ed.caret.r.h + 6}px; {up ? 'transform: translateY(-100%);' : ''}"
+          style="left: {at.x}px; top: {up ? at.y - 6 : at.y + at.h + 6}px; {up ? 'transform: translateY(-100%);' : ''}"
           transition:fly={{ y: up ? 6 : -6, duration: 140, easing: cubicOut }}
         >
           <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {ed.palette.ctx === 'draw' ? '' : '\\'}{ed.palette.query}<span class="blink">▏</span></div>

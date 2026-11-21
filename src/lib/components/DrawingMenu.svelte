@@ -1,0 +1,83 @@
+<script lang="ts">
+  import { fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+  import { keyLabel, type Editor } from '$lib/editor.svelte';
+
+  // Right-click menu for a drawing: its actions, each with the key that does the same
+  // in style mode (Shift+F10 opens it from the keyboard).
+  let { ed }: { ed: Editor } = $props();
+
+  let el = $state<HTMLDivElement>();
+  // kept inside the window
+  const pos = $derived.by(() => {
+    const m = ed.menu;
+    if (!m) return { x: 0, y: 0 };
+    const w = el?.offsetWidth ?? 240, h = el?.offsetHeight ?? 300;
+    return { x: Math.max(4, Math.min(m.x, window.innerWidth - w - 4)), y: Math.max(4, Math.min(m.y, window.innerHeight - h - 4)) };
+  });
+</script>
+
+{#if ed.menu}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="dmenu"
+    bind:this={el}
+    style="left: {pos.x}px; top: {pos.y}px;"
+    onmousedown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+    oncontextmenu={(e) => e.preventDefault()}
+    transition:fly={{ y: -4, duration: 120, easing: cubicOut }}
+  >
+    {#each ed.menuItems as a, i (a.name)}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div
+        class="opt"
+        class:sel={i === ed.menu.sel}
+        class:danger={a.name === 'delete'}
+        onmouseenter={() => ed.menu && (ed.menu.sel = i)}
+        onclick={() => ed.runMenu(i)}
+      >
+        <span class="name">{a.desc}</span><span class="key">{keyLabel(a.keys[0])}</span>
+      </div>
+    {/each}
+  </div>
+{/if}
+
+<style>
+  .dmenu {
+    position: fixed;
+    z-index: 30;
+    min-width: 220px;
+    padding: 4px 0;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+    user-select: none;
+  }
+  .opt {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 2px 10px;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .opt .key {
+    color: var(--muted);
+  }
+  .opt.sel {
+    background: var(--sel-bg);
+  }
+  .opt.sel .name {
+    color: var(--accent);
+  }
+  .opt.sel .name::before {
+    content: '› ';
+  }
+  .opt.danger.sel .name {
+    color: var(--ink-red, var(--accent));
+  }
+</style>

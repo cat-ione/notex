@@ -38,7 +38,7 @@
     {#if g}
       {@const sel = ed.styling === a.id}
       {@const head = sel && !a.color ? 'url(#nx-head-sel)' : marker(a.color)}
-      <g class="arrow" class:sel class:inked={!!a.color} class:ghost={ed.pick?.edit?.id === a.id} style="--ink: {inkVar(a.color)}">
+      <g data-id={a.id} class="arrow" class:sel class:inked={!!a.color} class:ghost={ed.pick?.edit?.id === a.id} style="--ink: {inkVar(a.color)}">
         {#if a.boxed}
           <rect class="box" x={g.from.x} y={g.from.y} width={g.from.w} height={g.from.h} rx="4" in:fade={{ duration: 150 }} />
           <rect class="box" x={g.to.x} y={g.to.y} width={g.to.w} height={g.to.h} rx="4" in:fade={{ duration: 150 }} />
@@ -51,7 +51,12 @@
           in:draw={{ duration: 420 }}
         />
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <path class="hit" d={g.d} onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(a.id); }} />
+        <path
+          class="hit"
+          d={g.d}
+          onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(a.id); }}
+          oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(a.id, e.clientX, e.clientY); }}
+        />
         {#if sel && ed.mode === 'style'}
           {#each [['from', g.p0], ['to', g.p2], ['bend', g.mid]] as const as [part, p] (part)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->

@@ -824,6 +824,11 @@ export class Editor {
   }
 
   private mouseDownInner(e: MouseEvent) {
+    if (this.menu) {
+      this.menu = null;
+      e.preventDefault();
+      return;
+    }
     if (e.button !== 0) return;
     e.preventDefault();
     if (this.mode === 'pick') {
@@ -1662,7 +1667,8 @@ export class Editor {
       return;
     }
     let handled = true;
-    switch (this.mode) {
+    if (this.menu) handled = this.menuKey(k);
+    else switch (this.mode) {
       case 'text': handled = this.textKey(k); break;
       case 'math': handled = this.mathKey(k); break;
       case 'pick': handled = this.pickKey(k); break;
@@ -2522,6 +2528,7 @@ export class Editor {
     this.hints = null;
     this.palette = null;
     this.label = null;
+    this.menu = null;
     this.message = '';
     this.styling = id;
     this.setMode('style');
@@ -2781,6 +2788,7 @@ export class Editor {
       ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note ($math$ works)', keys: ['l', 'i', '"'], run: () => this.editNote() });
     const remove = (f: () => void): DrawingAction =>
       ({ name: 'delete', desc: 'remove it', keys: ['x', 'Delete', 'Backspace'], run: () => { this.checkpoint(); f(); this.endDrawing(); } });
+    const menu: DrawingAction = { name: 'menu', desc: 'this menu', keys: ['S-F10', 'ContextMenu'], run: () => this.openDrawingMenu(id), menu: false };
     if (a) {
       const dir = () => this.arrowGeos[a.id]?.dir ?? 1;
       return [
@@ -2796,6 +2804,7 @@ export class Editor {
         { name: 'start', desc: 'move the start', keys: ['s'], run: () => this.retarget(a.id, 'from') },
         { name: 'tip', desc: 'move the tip', keys: ['e'], run: () => this.retarget(a.id, 'to') },
         remove(() => this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1)),
+        menu,
       ];
     }
     if (m) {
@@ -2808,6 +2817,7 @@ export class Editor {
         note(m),
         { name: 'target', desc: 'choose what it marks', keys: ['e', 'm'], run: () => this.retarget(m.id, 'at') },
         remove(() => this.doc.marks.splice(this.doc.marks.indexOf(m), 1)),
+        menu,
       ];
     }
     return [];
@@ -2827,6 +2837,77 @@ export class Editor {
     return true;
   }
 
+  /** A drawing's box on the page (page coordinates): a shape's bounds, an arrow's middle. */
+  drawingRect(id: Id): Rect | null {
+    const g = this.markGeos[id];
+    if (g) return g.bounds;
+    const a = this.arrowGeos[id];
+    return a ? { x: a.mid.x - 6, y: a.mid.y - 6, w: 12, h: 12 } : null;
+  }
+
+  /** Where the palette opens (page coordinates): at the caret, or under the selected drawing. */
+  get paletteAnchor(): Rect | null {
+    if (this.caret) return this.caret.r;
+    return this.styling ? this.drawingRect(this.styling) : null;
+  }
+
+  // ── right-click menu ──
+
+  /** The open drawing menu, at a window position. */
+  menu = $state<{ id: Id; x: number; y: number; sel: number } | null>(null);
+
+  get menuItems(): DrawingAction[] {
+    return this.menu ? this.drawingActions(this.menu.id).filter((a) => a.menu !== false) : [];
+  }
+
+  /** Select a drawing and open its menu at (x, y), or under the drawing (from the keyboard). */
+  openDrawingMenu(id: Id, x?: number, y?: number) {
+    this.withFrame(() => {
+      if (this.mode === 'label') this.commitLabel();
+      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      if (x === undefined || y === undefined) {
+        const r = this.drawingRect(id), o = this.page?.getBoundingClientRect();
+        if (!r || !o) return;
+        x = o.left + r.x;
+        y = o.top + r.y + r.h + 4;
+      }
+      this.menu = { id, x, y, sel: 0 };
+      this.touch();
+    });
+  }
+
+  closeMenu() {
+    this.menu = null;
+  }
+
+  /** Run a menu entry (it closes first: the action may open something else). */
+  runMenu(i: number) {
+    const a = this.menuItems[i];
+    this.menu = null;
+    this.withFrame(() => {
+      a?.run();
+      this.touch();
+    });
+  }
+
+  private menuKey(k: string): boolean {
+    const mn = this.menu!;
+    const items = this.menuItems;
+    switch (k) {
+      case 'Escape': this.menu = null; return true;
+      case 'Down': case 'j': case 'Tab': case 'C-n': mn.sel = (mn.sel + 1) % items.length; return true;
+      case 'Up': case 'k': case 'S-Tab': case 'C-p': mn.sel = (mn.sel - 1 + items.length) % items.length; return true;
+      case 'Home': mn.sel = 0; return true;
+      case 'End': mn.sel = items.length - 1; return true;
+      case 'Enter': case ' ': this.runMenu(mn.sel); return true;
+    }
+    // an entry's own key runs it straight away
+    const i = items.findIndex((a) => a.keys.includes(k));
+    if (i >= 0) this.runMenu(i);
+    else this.menu = null;
+    return true;
+  }
+
   /** Start typing the selected drawing's note. */
   private editNote(at?: number) {
     const d = this.doc.arrows.find((x) => x.id === this.styling) ?? this.stylingMark;
@@ -2837,14 +2918,9 @@ export class Editor {
 
   private labelKey(k: string): boolean {
     const lb = this.label!;
-    const a = this.doc.arrows.find((x) => x.id === this.styling) ?? this.stylingMark;
     switch (k) {
       case 'Escape': this.label = null; this.mode = 'style'; return true;
-      case 'Enter':
-        if (a) { this.checkpoint(); a.label = lb.text.trim(); }
-        this.label = null;
-        this.mode = 'style';
-        return true;
+      case 'Enter': this.commitLabel(); return true;
     }
     // a single-line text field: caret moves, deletes and typing at the caret
     const t = lb.text;
@@ -2894,6 +2970,15 @@ export class Editor {
     }
     if (k.length === 1) this.labelInsert(k);
     return true;
+  }
+
+  /** Keep the note being typed (trimmed) and go back to the drawing. */
+  private commitLabel() {
+    const lb = this.label;
+    const a = this.doc.arrows.find((x) => x.id === this.styling) ?? this.stylingMark;
+    if (lb && a && a.label !== lb.text.trim()) { this.checkpoint(); a.label = lb.text.trim(); }
+    this.label = null;
+    this.mode = 'style';
   }
 
   /** The drawing whose label is being typed. */
