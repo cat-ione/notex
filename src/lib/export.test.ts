@@ -64,3 +64,13 @@ describe('LaTeX export', () => {
     expect(tex).toMatch(/\(nx\d\) -- \(nx\d\)/);
   });
 });
+
+describe('lists', () => {
+  it('nest itemize / enumerate by indent', () => {
+    const li = (s: string, kind: 'li' | 'ol', indent = 0) => Object.assign(block(chars(s), kind), indent ? { indent } : {});
+    const doc: Doc = { blocks: [li('a', 'ol'), li('b', 'ol', 1), li('c', 'li', 2), li('d', 'ol'), block(chars('end'))], arrows: [], marks: [] };
+    expect(docToLatex(doc)).toBe(
+      ['\\begin{enumerate}', '  \\item a', '  \\begin{enumerate}', '    \\item b', '    \\begin{itemize}', '      \\item c', '    \\end{itemize}', '  \\end{enumerate}', '  \\item d', '\\end{enumerate}', 'end', ''].join('\n'),
+    );
+  });
+});

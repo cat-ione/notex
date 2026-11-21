@@ -16,8 +16,12 @@ export type Char = { t: 'c'; id: Id; ch: string };
 export type MathItem = { t: 'm'; id: Id; root: MRow; display: boolean };
 export type Item = Char | MathItem;
 
-export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li';
-export type Block = { id: Id; kind: BlockKind; items: Item[] };
+export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol';
+/** `indent`: how deep a list item is nested (0, absent, at the top). */
+export type Block = { id: Id; kind: BlockKind; items: Item[]; indent?: number };
+export const isListKind = (k: BlockKind) => k === 'li' || k === 'ol';
+/** Deepest a list item can be nested. */
+export const MAX_INDENT = 4;
 
 export type ArrowHead = 'end' | 'both' | 'none';
 export type Arrow = {

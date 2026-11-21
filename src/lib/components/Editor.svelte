@@ -88,6 +88,25 @@
 
   const editingMath = (b: number, o: number) => ed.inFormula && ed.b === b && ed.o === o;
   const SIGIL = { math: 'ƒ', text: '❯', draw: '✎', style: '✎' };
+
+  // numbered list items: each counts on from the one before at its depth (a bullet at that
+  // depth, or anything that isn't a list, starts again; going back out keeps the outer count)
+  const listNums = $derived.by(() => {
+    const out: (number | undefined)[] = [];
+    const count: number[] = [];
+    for (const blk of ed.doc.blocks) {
+      if (blk.kind !== 'li' && blk.kind !== 'ol') {
+        count.length = 0;
+        out.push(undefined);
+        continue;
+      }
+      const d = blk.indent ?? 0;
+      count.length = d + 1;
+      count[d] = blk.kind === 'ol' ? (count[d] ?? 0) + 1 : 0;
+      out.push(blk.kind === 'ol' ? count[d] : undefined);
+    }
+    return out;
+  });
 </script>
 
 <!-- Invisible line spacers that make room for drawings, and probes marking the
@@ -111,7 +130,7 @@
         <div class="selrect" style="transform: translate({r.x}px, {r.y}px); width: {r.w}px; height: {r.h}px;"></div>
       {/each}
       {#each ed.doc.blocks as blk, b (blk.id)}
-        <div class="block {blk.kind}" class:current={ed.b === b} data-nx={blk.id}>
+        <div class="block {blk.kind}" class:current={ed.b === b} data-nx={blk.id} data-depth={blk.indent || undefined} data-n={listNums[b]} style:--indent={blk.indent || undefined}>
           {#each blk.items as it, o (it.id)}
             {#if it.t === 'c'}
               <span class="ch" data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
@@ -270,16 +289,37 @@
     color: var(--heading);
   }
   .block.h1::before, .block.h2::before, .block.h3::before { top: 0.4em; bottom: 0.4em; }
-  .block.li {
-    padding-left: 1.4em;
+  .block.li,
+  .block.ol {
+    padding-left: calc(1.4em + var(--indent, 0) * 1.4em);
   }
   .block.li::after {
     content: '▸';
     position: absolute;
-    left: 0.2em;
+    left: calc(0.2em + var(--indent, 0) * 1.4em);
     top: 0;
     color: var(--accent);
     font-size: 0.85em;
+  }
+  .block.li[data-depth='1']::after,
+  .block.li[data-depth='3']::after {
+    content: '◦';
+  }
+  .block.li[data-depth='2']::after,
+  .block.li[data-depth='4']::after {
+    content: '▹';
+  }
+  /* numbered: the number (counted in Editor: listNums), right-aligned against the text */
+  .block.ol::after {
+    content: attr(data-n) '.';
+    position: absolute;
+    left: calc(var(--indent, 0) * 1.4em - 0.6em);
+    width: 1.8em;
+    top: 0;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 0.85em;
+    color: var(--accent);
   }
   /* the text selection, drawn behind the text (see Editor.selectionRects) */
   .selrect {

@@ -74,3 +74,11 @@ describe('note format', () => {
     expect(serialize(doc).length).toBeLessThan(JSON.stringify(doc).length / 2);
   });
 });
+
+describe('lists in the file', () => {
+  it('keep their kind and nesting', () => {
+    const a = block(chars('one'), 'ol'), b = Object.assign(block(chars('two'), 'li'), { indent: 2 });
+    const back = deserialize(serialize({ blocks: [a, b], arrows: [], marks: [] }));
+    expect(back.blocks.map((x) => [x.kind, x.indent ?? 0])).toEqual([['ol', 0], ['li', 2]]);
+  });
+});

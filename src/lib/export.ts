@@ -200,20 +200,29 @@ export function docToLatex(doc: Doc): string {
       .join('');
 
   const out: string[] = [];
-  let inList = false;
+  // open lists, outermost first (a nested item opens one inside the item before it)
+  const lists: ('itemize' | 'enumerate')[] = [];
+  const pad = (n: number) => '  '.repeat(n);
   doc.blocks.forEach((blk, b) => {
-    if (blk.kind === 'li' && !inList) out.push('\\begin{itemize}'), (inList = true);
-    if (blk.kind !== 'li' && inList) out.push('\\end{itemize}'), (inList = false);
+    const list = blk.kind === 'li' || blk.kind === 'ol';
+    const depth = list ? (blk.indent ?? 0) + 1 : 0;
+    const env = blk.kind === 'ol' ? 'enumerate' : 'itemize';
+    while (lists.length > depth || (depth && lists.length === depth && lists[depth - 1] !== env)) out.push(`${pad(lists.length - 1)}\\end{${lists.pop()}}`);
+    while (lists.length < depth) {
+      const e = lists.length === depth - 1 ? env : 'itemize';
+      out.push(`${pad(lists.length)}\\begin{${e}}`);
+      lists.push(e);
+    }
     const body = inline(blk.items, b);
     if (blk.kind === 'h1') out.push(`\\section*{${body}}`);
     else if (blk.kind === 'h2') out.push(`\\subsection*{${body}}`);
     else if (blk.kind === 'h3') out.push(`\\subsubsection*{${body}}`);
-    else if (blk.kind === 'li') out.push(`  \\item ${body}`);
+    else if (list) out.push(`${pad(depth)}\\item ${body}`);
     else out.push(body + (overlays.has(b) ? '' : '\n'));
     const ov = overlays.get(b);
     if (ov) out.push('\\begin{tikzpicture}[remember picture, overlay]', ...ov.map((c) => '  ' + c), '\\end{tikzpicture}' + (blk.kind === 'p' ? '\n' : ''));
   });
-  if (inList) out.push('\\end{itemize}');
+  while (lists.length) out.push(`${pad(lists.length - 1)}\\end{${lists.pop()}}`);
 
   const head: string[] = [];
   if (need.size) head.push('% preamble:', ...[...need].map((p) => `%   ${PKG[p]}`));

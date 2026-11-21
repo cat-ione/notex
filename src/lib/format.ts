@@ -15,7 +15,7 @@
 import { block, ch, type Arrow, type Mark, type Block, type BlockKind, type Doc, type Id, type Item, type MRow } from './model';
 
 type Content = string | { m: MRow; id: Id; d?: 1 };
-type FileBlock = { kind: BlockKind; content: Content[] };
+type FileBlock = { kind: BlockKind; content: Content[]; indent?: number };
 type FileArrow = Omit<Arrow, 'id'>;
 type FileMark = Omit<Mark, 'id'>;
 export type NoteFile = { format: 'notex'; version: 1; blocks: FileBlock[]; arrows: FileArrow[]; marks?: FileMark[] };
@@ -36,7 +36,7 @@ export function encode(doc: Doc): NoteFile {
       }
     });
     if (run) content.push(run);
-    return { kind: b.kind, content };
+    return b.indent ? { kind: b.kind, content, indent: b.indent } : { kind: b.kind, content };
   });
   const mapIds = (ids: Id[]) => ids.map((id) => where.get(id) ?? id);
   const arrows = doc.arrows.map(({ id: _id, ...a }) => ({ ...a, from: mapIds(a.from), to: mapIds(a.to) }));
@@ -53,7 +53,9 @@ export function decode(file: NoteFile): Doc {
       if (typeof c === 'string') for (const s of c) items.push(ch(s));
       else items.push({ t: 'm', id: c.id, root: c.m, display: !!c.d });
     }
-    return block(items, fb.kind);
+    const blk = block(items, fb.kind);
+    if (fb.indent) blk.indent = fb.indent;
+    return blk;
   });
   const resolve = (ref: string): Id => {
     const cm = /^c(\d+)\.(\d+)$/.exec(ref);

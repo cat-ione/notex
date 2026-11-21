@@ -23,7 +23,7 @@ import * as M from './math/edit';
 import { AUTO_REPLACE, BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
-import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
+import { allIds, block, ch, chars, cloneRow, cmd, isListKind, MAX_INDENT, math, sym, uid, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
 
@@ -2273,12 +2273,17 @@ export class Editor {
         this.checkpoint();
         this.deleteSelection();
         const b = this.blk;
-        if (b.kind === 'li' && b.items.length === 0) {
-          b.kind = 'p';
+        const list = isListKind(b.kind);
+        // Enter on an empty item: out a level, then out of the list
+        if (list && b.items.length === 0) {
+          if (b.indent) b.indent--;
+          else b.kind = 'p';
           return true;
         }
         const rest = b.items.splice(this.o);
-        this.doc.blocks.splice(this.b + 1, 0, block(rest, b.kind === 'li' ? 'li' : 'p'));
+        const nb = block(rest, list ? b.kind : 'p');
+        if (list && b.indent) nb.indent = b.indent;
+        this.doc.blocks.splice(this.b + 1, 0, nb);
         this.b++;
         this.o = 0;
         return true;
@@ -2307,6 +2312,10 @@ export class Editor {
           this.checkpoint('type');
           blk.items.splice(this.o - 1, 1);
           this.o--;
+        } else if (isListKind(blk.kind) && blk.indent) {
+          // at the start of a nested item: out a level first
+          this.checkpoint();
+          blk.indent--;
         } else if (blk.kind !== 'p') {
           this.checkpoint();
           blk.kind = 'p';
@@ -2335,7 +2344,17 @@ export class Editor {
           blk.items.push(...this.doc.blocks.splice(this.b + 1, 1)[0].items);
         }
         return true;
-      case 'Tab': return true;
+      // nest / un-nest a list item (anywhere in it)
+      case 'Tab': case 'S-Tab':
+        if (isListKind(blk.kind)) {
+          const d = Math.max(0, Math.min(MAX_INDENT, (blk.indent ?? 0) + (k === 'Tab' ? 1 : -1)));
+          if (d !== (blk.indent ?? 0)) {
+            this.checkpoint();
+            if (d) blk.indent = d;
+            else delete blk.indent;
+          }
+        }
+        return true;
       case '$':
         this.deleteSelection();
         this.insertMath(false);
@@ -2423,8 +2442,9 @@ export class Editor {
   private markdownShortcut() {
     const blk = this.blk;
     const text = blk.items.slice(0, this.o).map((i) => (i.t === 'c' ? i.ch : '\0')).join('');
-    const map: Record<string, BlockKind> = { '# ': 'h1', '## ': 'h2', '### ': 'h3', '- ': 'li', '* ': 'li' };
-    if (map[text] && blk.kind === 'p') {
+    const map: Record<string, BlockKind> = { '# ': 'h1', '## ': 'h2', '### ': 'h3', '- ': 'li', '* ': 'li', '1. ': 'ol', '1) ': 'ol' };
+    // (in a list item, `- ` / `1. ` switch its kind instead of being typed)
+    if (map[text] && (blk.kind === 'p' || (isListKind(blk.kind) && isListKind(map[text])))) {
       blk.items.splice(0, this.o);
       blk.kind = map[text];
       this.o = 0;
@@ -2785,7 +2805,8 @@ export class Editor {
       { name: 'h2', desc: 'heading 2', run: setKind('h2') },
       { name: 'h3', desc: 'heading 3', run: setKind('h3') },
       { name: 'p', desc: 'paragraph', run: setKind('p') },
-      { name: 'li', desc: 'list item', run: setKind('li') },
+      { name: 'li', desc: 'list item  - ␣', run: setKind('li') },
+      { name: 'ol', desc: 'numbered list item  1. ␣', run: setKind('ol') },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
       { name: 'config', desc: 'edit the config file (snippets, themes, css)', run: () => this.editConfig() },
