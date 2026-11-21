@@ -75,19 +75,26 @@ describe('layoutRow', () => {
 describe('renderLabel caret', () => {
   const C = '<span class="lcaret"></span>';
   it('sits between characters without replacing any', () => {
-    expect(renderLabel('abc', 1)).toBe(`a${C}bc`);
-    expect(renderLabel('abc', 0)).toBe(`${C}abc`);
-    expect(renderLabel('abc', 3)).toBe(`abc${C}`);
+    expect(renderLabel('abc', { at: 1, anchor: null })).toBe(`a${C}bc`);
+    expect(renderLabel('abc', { at: 0, anchor: null })).toBe(`${C}abc`);
+    expect(renderLabel('abc', { at: 3, anchor: null })).toBe(`abc${C}`);
   });
   it('shows in an empty label', () => {
-    expect(renderLabel('', 0)).toBe(C);
+    expect(renderLabel('', { at: 0, anchor: null })).toBe(C);
   });
   it('goes after a math part it is inside, once at a boundary', () => {
-    const html = renderLabel('a $x+y$ b', 5);
+    const html = renderLabel('a $x+y$ b', { at: 5, anchor: null });
     expect(html.split(C).length).toBe(2);
     expect(html.indexOf(C)).toBeGreaterThan(html.lastIndexOf('katex'));
-    expect(renderLabel('a $x$', 2).indexOf(C)).toBe(2); // right before the math
-    expect(renderLabel('a $x$', 5).endsWith(C)).toBe(true);
-    for (let i = 0; i <= 'p $x$ q $y$'.length; i++) expect(renderLabel('p $x$ q $y$', i).split(C).length).toBe(2);
+    expect(renderLabel('a $x$', { at: 2, anchor: null }).indexOf(C)).toBe(2); // right before the math
+    expect(renderLabel('a $x$', { at: 5, anchor: null }).endsWith(C)).toBe(true);
+    for (let i = 0; i <= 'p $x$ q $y$'.length; i++) expect(renderLabel('p $x$ q $y$', { at: i, anchor: null }).split(C).length).toBe(2);
+  });
+  it('highlights the selection, a math part it touches as a whole', () => {
+    expect(renderLabel('abcd', { at: 3, anchor: 1 })).toBe(`a<span class="lsel">bc</span>${C}d`);
+    expect(renderLabel('abcd', { at: 1, anchor: 3 })).toBe(`a${C}<span class="lsel">bc</span>d`);
+    const m = renderLabel('a $x$ b', { at: 3, anchor: 0 });
+    expect(m.startsWith('<span class="lsel">a </span>')).toBe(true);
+    expect(m).toMatch(/<span class="lsel"><span class="katex"/);
   });
 });

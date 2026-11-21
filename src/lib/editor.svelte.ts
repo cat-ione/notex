@@ -75,8 +75,8 @@ export class Editor {
   pick = $state<{ phase: 'from' | 'to'; loc: Loc; from?: Loc; purpose: 'arrow' | MarkKind; edit?: { id: Id; end: 'from' | 'to' | 'at' } } | null>(null);
   styling = $state<Id | null>(null);
   hints = $state<{ list: Hint[]; typed: string } | null>(null);
-  /** The label being typed for the selected drawing, with the caret position in it. */
-  label = $state<{ text: string; at: number } | null>(null);
+  /** The label being typed for the selected drawing: caret offset and selection anchor. */
+  label = $state<{ text: string; at: number; anchor: number | null } | null>(null);
   message = $state('');
   showHelp = $state(false);
   config = $state<C.Config>(C.DEFAULT_CONFIG);
@@ -668,6 +668,15 @@ export class Editor {
 
   /** Handle a DOM copy/cut event. */
   copy(e: ClipboardEvent, cut: boolean) {
+    if (this.mode === 'label') {
+      const sel = this.labelSel();
+      e.preventDefault();
+      if (!sel) return;
+      e.clipboardData?.setData('text/plain', this.label!.text.slice(...sel));
+      if (cut) this.labelInsert('');
+      this.touch();
+      return;
+    }
     const range = this.mathSelRange;
     if (this.mode === 'math' && range) {
       // Part of a formula: copy it as LaTeX, which pastes back as structure.
@@ -1277,7 +1286,8 @@ export class Editor {
         const notes: RowNote[] = row.map(({ m, g }) => {
           // the note's box as LabelLayer draws it: hanging from y - 12 (below) or standing on y + 3 (above)
           const edge = below ? g.label.y - 12 : g.label.y + 3;
-          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, size: (maxW: number) => measureLabel(m.label, maxW), key: m.label };
+          const typing = this.typingLabel === m.id;
+          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, size: (maxW: number) => measureLabel(m.label, maxW, typing), key: typing ? `\u0000${m.label}` : m.label };
         });
         // keep off ink on this line, other shapes and notes already placed
         const mine = new Set(row.map((i) => i.m.id));
@@ -1332,7 +1342,7 @@ export class Editor {
       if (b.y < target.y - 4) items.push({ anchor: first, side: 'above', r: b });
       if (m.label) {
         // the note as LabelLayer draws it: hanging from y - 12 (below) or standing on y + 3 (above)
-        const s = measureLabel(m.label, g.label.maxW ?? Infinity);
+        const s = measureLabel(m.label, g.label.maxW ?? Infinity, this.typingLabel === m.id);
         const x = g.label.x + origin.left - s.w / 2;
         const y = g.label.below ? g.label.y - 12 + origin.top : g.label.y + 3 - s.h + origin.top;
         items.push({ anchor: g.label.below ? last : first, side: g.label.below ? 'below' : 'above', r: { x, y, w: s.w, h: s.h } });
@@ -2740,7 +2750,7 @@ export class Editor {
       case 'c': edit(() => (a.color = nextInk(a.color))); return true;
       case 's': this.retarget(a.id, 'from'); return true;
       case 'e': this.retarget(a.id, 'to'); return true;
-      case 'l': case 'i': case '"': this.label = { text: a.label, at: a.label.length }; this.setMode('label'); return true;
+      case 'l': case 'i': case '"': this.label = { text: a.label, at: a.label.length, anchor: null }; this.setMode('label'); return true;
       case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();
         this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1);
@@ -2762,7 +2772,7 @@ export class Editor {
       case 'd': edit(() => (m.dash = !m.dash)); return true;
       case 'c': edit(() => (m.color = nextInk(m.color))); return true;
       case 'e': case 'm': this.retarget(m.id, 'at'); return true;
-      case 'l': case 'i': case '"': this.label = { text: m.label, at: m.label.length }; this.setMode('label'); return true;
+      case 'l': case 'i': case '"': this.label = { text: m.label, at: m.label.length, anchor: null }; this.setMode('label'); return true;
       case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();
         this.doc.marks.splice(this.doc.marks.indexOf(m), 1);
@@ -2778,7 +2788,7 @@ export class Editor {
     switch (k) {
       case 'Escape': this.label = null; this.mode = 'style'; return true;
       case 'Enter':
-        if (a) { this.checkpoint(); a.label = lb.text; }
+        if (a) { this.checkpoint(); a.label = lb.text.trim(); }
         this.label = null;
         this.mode = 'style';
         return true;
@@ -2798,27 +2808,60 @@ export class Editor {
     const cut = (from: number, to: number) => {
       lb.text = t.slice(0, from) + t.slice(to);
       lb.at = from;
+      lb.anchor = null;
     };
+    const sel = this.labelSel();
+    // where a move goes; with Shift it extends the selection, without it collapses it
+    const target = (key: string): number | null => {
+      switch (key) {
+        case 'Left': return sel && !k.startsWith('S-') ? sel[0] : Math.max(0, lb.at - 1);
+        case 'Right': return sel && !k.startsWith('S-') ? sel[1] : Math.min(t.length, lb.at + 1);
+        case 'C-Left': return wordBack(lb.at);
+        case 'C-Right': return wordFwd(lb.at);
+        case 'Home': case 'Up': return 0;
+        case 'End': case 'Down': return t.length;
+      }
+      return null;
+    };
+    const shift = /^(C-)?S-/.test(k);
+    const to = target(shift ? k.replace('S-', '') : k);
+    if (to !== null) {
+      if (shift) lb.anchor ??= lb.at;
+      else lb.anchor = null;
+      lb.at = to;
+      if (lb.anchor === lb.at) lb.anchor = null;
+      return true;
+    }
     switch (k) {
-      case 'Left': lb.at = Math.max(0, lb.at - 1); return true;
-      case 'Right': lb.at = Math.min(t.length, lb.at + 1); return true;
-      case 'C-Left': lb.at = wordBack(lb.at); return true;
-      case 'C-Right': lb.at = wordFwd(lb.at); return true;
-      case 'Home': case 'Up': lb.at = 0; return true;
-      case 'End': case 'Down': lb.at = t.length; return true;
-      case 'Backspace': if (lb.at > 0) cut(lb.at - 1, lb.at); return true;
-      case 'C-Backspace': cut(wordBack(lb.at), lb.at); return true;
-      case 'Delete': if (lb.at < t.length) cut(lb.at, lb.at + 1); return true;
-      case 'C-Delete': cut(lb.at, wordFwd(lb.at)); return true;
+      case 'C-a': lb.anchor = 0; lb.at = t.length; if (!t) lb.anchor = null; return true;
+      case 'Backspace': if (sel) cut(...sel); else if (lb.at > 0) cut(lb.at - 1, lb.at); return true;
+      case 'C-Backspace': if (sel) cut(...sel); else cut(wordBack(lb.at), lb.at); return true;
+      case 'Delete': if (sel) cut(...sel); else if (lb.at < t.length) cut(lb.at, lb.at + 1); return true;
+      case 'C-Delete': if (sel) cut(...sel); else cut(lb.at, wordFwd(lb.at)); return true;
     }
     if (k.length === 1) this.labelInsert(k);
     return true;
   }
 
+  /** The drawing whose label is being typed. */
+  private get typingLabel(): Id | null {
+    return this.mode === 'label' && this.label ? this.styling : null;
+  }
+
+  /** The selected part of the label being typed, [start, end), if any. */
+  private labelSel(): [number, number] | null {
+    const lb = this.label;
+    if (!lb || lb.anchor === null || lb.anchor === lb.at) return null;
+    return [Math.min(lb.anchor, lb.at), Math.max(lb.anchor, lb.at)];
+  }
+
+  /** Type or paste into the label at the caret, replacing the selection. */
   private labelInsert(s: string) {
     const lb = this.label!;
-    lb.text = lb.text.slice(0, lb.at) + s + lb.text.slice(lb.at);
-    lb.at += s.length;
+    const [a, b] = this.labelSel() ?? [lb.at, lb.at];
+    lb.text = lb.text.slice(0, a) + s + lb.text.slice(b);
+    lb.at = a + s.length;
+    lb.anchor = null;
   }
 
   // ───────────────────────── hints ─────────────────────────

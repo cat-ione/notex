@@ -8,7 +8,7 @@
   // contain $math$.
   let { ed }: { ed: Editor } = $props();
 
-  type L = { id: string; text: string; caret?: number; x: number; y: number; below: boolean; maxW?: number; color?: string; sel: boolean; ghost: boolean };
+  type L = { id: string; text: string; edit?: { at: number; anchor: number | null }; x: number; y: number; below: boolean; maxW?: number; color?: string; sel: boolean; ghost: boolean };
   const labels = $derived.by(() => {
     const out: L[] = [];
     const ghost = ed.pick?.edit?.id;
@@ -16,11 +16,11 @@
     // lays the note out for the draft too)
     const editing = (id: string) => ed.mode === 'label' && !!ed.label && ed.styling === id;
     const text = (id: string, saved: string) => (editing(id) ? ed.label!.text : saved);
-    const caret = (id: string) => (editing(id) ? ed.label!.at : undefined);
+    const edit = (id: string) => (editing(id) ? { at: ed.label!.at, anchor: ed.label!.anchor } : undefined);
     for (const a of ed.doc.arrows) {
       const g = ed.arrowGeos[a.id];
       const t = text(a.id, a.label);
-      if (g && (t || editing(a.id))) out.push({ id: a.id, text: t, caret: caret(a.id), x: g.mid.x, y: g.mid.y - 4, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
+      if (g && (t || editing(a.id))) out.push({ id: a.id, text: t, edit: edit(a.id), x: g.mid.x, y: g.mid.y - 4, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
     }
     for (const m of ed.doc.marks) {
       const g = ed.markGeos[m.id];
@@ -28,7 +28,7 @@
       if (!g || !(t || editing(m.id))) continue;
       // label.y is a text baseline: shift to the box's top (below) or bottom (above) edge
       const y = g.label.below ? g.label.y - 12 : g.label.y + 3;
-      out.push({ id: m.id, text: t, caret: caret(m.id), x: g.label.x, y, below: g.label.below, maxW: g.label.maxW, color: m.color, sel: ed.styling === m.id, ghost: ghost === m.id });
+      out.push({ id: m.id, text: t, edit: edit(m.id), x: g.label.x, y, below: g.label.below, maxW: g.label.maxW, color: m.color, sel: ed.styling === m.id, ghost: ghost === m.id });
     }
     return out;
   });
@@ -43,10 +43,11 @@
     class:ghost={l.ghost}
     class:inked={!!l.color}
     class:wrapped={!!l.maxW}
+    class:typing={!!l.edit}
     style="left: {l.x}px; top: {l.y}px; --ink: {inkVar(l.color)};{l.maxW ? ` max-width: ${l.maxW}px;` : ''}"
     in:fade={{ duration: 200 }}
   >
-    {@html render(l.text, l.caret)}
+    {@html render(l.text, l.edit)}
   </div>
 {/each}
 
@@ -83,6 +84,17 @@
   }
   :global(.dlabel) :global(.katex) {
     font-size: 1.15em;
+  }
+  /* being typed: every space counts (a trailing one too), as measured */
+  :global(.dlabel.typing) {
+    white-space: pre;
+  }
+  :global(.dlabel.typing.wrapped) {
+    white-space: break-spaces;
+  }
+  :global(.dlabel .lsel) {
+    background: var(--text-sel);
+    border-radius: 2px;
   }
   /* zero width: the text around it stays where it is */
   :global(.dlabel .lcaret) {

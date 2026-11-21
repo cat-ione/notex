@@ -15,7 +15,7 @@
     mark: '←→ or t shape · d dashed · c colour · l note · e move · del remove · enter done',
     hint: 'type a label to jump · esc cancel',
     palette: 'enter accept · ↑↓ choose · esc cancel',
-    label: 'type on the page · $…$ math · ←→ ctrl+←→ home end move · enter save · esc cancel',
+    label: 'type on the page · $…$ math · ←→ ctrl+←→ home end move · shift selects · enter save · esc cancel',
   };
   // Counts don't need to follow every keystroke: refresh them when typing pauses.
   let counts = $state({ words: 0, maths: 0, drawings: 0 });

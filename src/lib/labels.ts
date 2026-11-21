@@ -17,42 +17,64 @@ import type { Rect } from './geom';
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 const htmlCache = new Map<string, string>();
+const katexHtml = (tex: string) => katex.renderToString(tex, { throwOnError: false, strict: 'ignore', output: 'html' });
 /** A caret inside a note being typed: no width of its own, so the text doesn't move. */
 const CARET = '<span class="lcaret"></span>';
+
 /**
- * Note text as HTML: prose with `$math$` rendered by KaTeX. With `caret`, a caret at
- * that offset (after a $math$ part when the offset is inside one).
+ * Note text as HTML: prose with `$math$` rendered by KaTeX. While the note is being
+ * typed (`edit`): a caret at offset `at` (after a $math$ part when inside one) and
+ * the selection from `anchor` highlighted (a $math$ part it touches, as a whole).
  */
-export function renderLabel(text: string, caret?: number): string {
-  const key = caret === undefined ? text : `${caret}|${text}`;
+export function renderLabel(text: string, edit?: { at: number; anchor: number | null }): string {
+  const key = edit ? `${edit.at}:${edit.anchor}|${text}` : text;
   let html = htmlCache.get(key);
-  if (html === undefined) {
-    let at = 0, placed = false;
-    html = text
-      .split(/(\$[^$]+\$)/)
+  if (html !== undefined) return html;
+  const parts = text.split(/(\$[^$]+\$)/);
+  if (!edit) html = parts.map((p) => (/^\$[^$]+\$$/.test(p) ? katexHtml(p.slice(1, -1)) : esc(p))).join('');
+  else {
+    const { at: caret } = edit;
+    const [s, e] = edit.anchor === null ? [caret, caret] : [Math.min(edit.anchor, caret), Math.max(edit.anchor, caret)];
+    const sel = (h: string) => `<span class="lsel">${h}</span>`;
+    let pos = 0, placed = false;
+    html = parts
       .map((p) => {
-        const start = at;
-        at += p.length;
-        const math = /^\$[^$]+\$$/.test(p);
-        const out = math ? katex.renderToString(p.slice(1, -1), { throwOnError: false, strict: 'ignore', output: 'html' }) : esc(p);
-        if (placed || caret === undefined || caret < start || caret > at || (caret === at && at < text.length && !math)) return out;
-        placed = true;
-        if (math) return caret === start ? CARET + out : out + CARET;
-        return esc(p.slice(0, caret - start)) + CARET + esc(p.slice(caret - start));
+        const start = pos, end = (pos += p.length);
+        // the caret goes in the first part that holds it (after a $math$ part it is inside)
+        const here = !placed && caret >= start && caret <= end && (caret < end || end === text.length || /^\$[^$]+\$$/.test(p));
+        if (here) placed = true;
+        if (/^\$[^$]+\$$/.test(p)) {
+          const h = s < end && e > start ? sel(katexHtml(p.slice(1, -1))) : katexHtml(p.slice(1, -1));
+          return here ? (caret === start ? CARET + h : h + CARET) : h;
+        }
+        // prose, character by character: the caret before its offset, the selection wrapped
+        let out = '', open = false;
+        for (let i = start; i <= end; i++) {
+          const inSel = i < end && i >= s && i < e;
+          if (open && !inSel) (out += '</span>'), (open = false);
+          if (here && i === caret) out += CARET;
+          if (i === end) break;
+          if (inSel && !open) (out += '<span class="lsel">'), (open = true);
+          out += esc(text[i]);
+        }
+        return out;
       })
       .join('');
-    if (caret !== undefined && !text) html = CARET;
-    if (htmlCache.size > 300) htmlCache.clear();
-    htmlCache.set(key, html);
+    if (!text) html = CARET;
   }
+  if (htmlCache.size > 300) htmlCache.clear();
+  htmlCache.set(key, html);
   return html;
 }
 
 let measurer: HTMLDivElement | null = null;
 const sizeCache = new Map<string, { w: number; h: number }>();
-/** Size of a note as LabelLayer draws it (class `dlabel`), optionally wrapped to `maxW`. */
-export function measureLabel(text: string, maxW = Infinity): { w: number; h: number } {
-  const key = `${maxW}|${text}`;
+/**
+ * Size of a note as LabelLayer draws it (class `dlabel`), optionally wrapped to `maxW`.
+ * `typing`: as drawn while being typed, where every space counts (a trailing one too).
+ */
+export function measureLabel(text: string, maxW = Infinity, typing = false): { w: number; h: number } {
+  const key = `${maxW}|${typing ? 1 : 0}|${text}`;
   const hit = sizeCache.get(key);
   if (hit) return hit;
   if (!measurer) {
@@ -62,7 +84,7 @@ export function measureLabel(text: string, maxW = Infinity): { w: number; h: num
     (document.querySelector('.page') ?? document.body).appendChild(measurer);
   }
   measurer.innerHTML = renderLabel(text);
-  measurer.style.whiteSpace = maxW === Infinity ? 'nowrap' : 'normal';
+  measurer.style.whiteSpace = maxW === Infinity ? (typing ? 'pre' : 'nowrap') : typing ? 'break-spaces' : 'normal';
   measurer.style.width = maxW === Infinity ? 'auto' : 'max-content';
   measurer.style.maxWidth = maxW === Infinity ? 'none' : `${maxW}px`;
   const r = measurer.getBoundingClientRect();
