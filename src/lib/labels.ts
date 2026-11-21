@@ -108,7 +108,7 @@ export function leaderFor(n: RowNote, box: Rect, below: boolean): Placed['leader
   const ey = below ? box.y : box.y + box.h;
   // "comfortably": the tip within the middle 70% of the note
   const m = Math.max(4, box.w * 0.15);
-  if (n.tip.x >= box.x + m && n.tip.x <= box.x + box.w - m && Math.abs(ey - n.tip.y) <= 14) return null;
+  if (n.tip.x >= box.x + m && n.tip.x <= box.x + box.w - m && Math.abs(ey - n.tip.y) <= 8) return null;
   const inset = Math.min(10, box.w / 2);
   return [n.tip.x, n.tip.y, Math.max(box.x + inset, Math.min(box.x + box.w - inset, n.tip.x)), ey];
 }
@@ -146,6 +146,8 @@ export function cost(notes: RowNote[], placed: Placed[], o: Opts): number {
       const dx = Math.abs(p.leader[2] - p.leader[0]), dy = Math.abs(p.leader[3] - p.leader[1]);
       // leaders are a cost, and flat ones look like stray underlines
       c += 8 + Math.hypot(dx, dy) * 0.25 + Math.max(0, dx * 0.7 - dy) * 1.2;
+      // a leader needs room to be seen: a stub under the shape reads as no leader at all
+      c += Math.max(0, 8 - dy) * 4;
       for (const r of obstacles) if (segHitsBox(p.leader, grow(r, -1))) c += 40;
     }
     // extra lines from wrapping, and distance from the shape (vertical space used)

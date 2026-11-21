@@ -718,68 +718,124 @@ export class Editor {
 
   /**
    * Push lines apart where a drawing (a brace, a note, a big circle) would run
-   * into the line above or below it. Each affected line gets an invisible,
-   * zero-height spacer shifted up or down to just past the drawing, which the
-   * line box has to stretch to include; display formulas get padding instead.
-   * The spacers are measured, so this settles in a pass or two.
+   * into the ink or notes above or below it. Only what is actually in the way
+   * counts: a note below one line and a note above the next can share the gap
+   * when they don't overlap sideways.
+   *
+   * Each affected line gets an invisible, zero-height spacer shifted up or down,
+   * which the line box has to stretch to include, plus two zero-height probes
+   * that mark the line's top and bottom; display formulas get padding instead.
+   * Everything is measured, so this settles in a pass or two.
    */
   private makeRoom(geos: Record<Id, MarkGeo>, origin: DOMRect) {
     const page = this.page!;
     const GAP = 3;
-    const want: Record<Id, Spacer> = {};
-    const need = (item: Id, side: 'above' | 'below', y: number) => {
-      const w = (want[item] ??= {});
-      w[side] = side === 'below' ? Math.max(w[side] ?? -Infinity, y) : Math.min(w[side] ?? Infinity, y);
-    };
+    type Item = { anchor: Id; side: 'above' | 'below'; r: Rect };
+    const items: Item[] = [];
     for (const m of this.doc.marks) {
       const g = geos[m.id];
       const target = this.rectOfIds(m.at);
       if (!g || !target) continue;
-      let top = g.bounds.y + origin.top, bottom = g.bounds.y + g.bounds.h + origin.top;
-      if (m.label) {
-        // Position from the fresh geometry (the label on screen may not have moved yet),
-        // height from the label itself (math can make it taller); one small line until it exists.
-        const h = page.querySelector(`.dlabel[data-id="${m.id}"]`)?.getBoundingClientRect().height ?? 15;
-        const ly = g.label.y + origin.top;
-        if (g.label.below) bottom = Math.max(bottom, ly - 12 + h);
-        else top = Math.min(top, ly + 3 - h);
-      }
       // anchor the room on the item at the start (above) / end (below) of the target
-      const items = m.at.flatMap((id) => {
+      const anchors = m.at.flatMap((id) => {
         const el = this.el(id);
         if (el?.classList.contains('block')) return [...el.querySelectorAll<HTMLElement>(':scope > .ch, :scope > .math')].map((e) => e.dataset.nx!);
         const it = (el?.closest('.ch, .math') as HTMLElement | null)?.dataset.nx;
         return it ? [it] : [];
       });
-      if (!items.length) continue;
-      if (bottom > target.y + target.h + 4) need(items[items.length - 1], 'below', bottom + GAP);
-      if (top < target.y - 4) need(items[0], 'above', top - GAP);
+      if (!anchors.length) continue;
+      const first = anchors[0], last = anchors[anchors.length - 1];
+      const b = { x: g.bounds.x + origin.left, y: g.bounds.y + origin.top, w: g.bounds.w, h: g.bounds.h };
+      if (b.y + b.h > target.y + target.h + 4) items.push({ anchor: last, side: 'below', r: b });
+      if (b.y < target.y - 4) items.push({ anchor: first, side: 'above', r: b });
+      if (m.label) {
+        // the note as LabelLayer draws it: hanging from y - 12 (below) or standing on y + 3 (above)
+        const s = measureLabel(m.label, g.label.maxW ?? Infinity);
+        const x = g.label.x + origin.left - s.w / 2;
+        const y = g.label.below ? g.label.y - 12 + origin.top : g.label.y + 3 - s.h + origin.top;
+        items.push({ anchor: g.label.below ? last : first, side: g.label.below ? 'below' : 'above', r: { x, y, w: s.w, h: s.h } });
+      }
     }
 
-    // Turn wanted extents (viewport y) into spacer sizes, measuring the current spacers.
+    // ink of the blocks involved and their neighbours
+    const blocks = new Set<Element>();
+    for (const it of items) {
+      const b = this.el(it.anchor)?.closest('.block');
+      for (const e of [b, b?.previousElementSibling, b?.nextElementSibling]) if (e?.classList.contains('block')) blocks.add(e);
+    }
+    const ink = [...blocks].flatMap((b) => inkRects(b));
+    const across = (a: Rect, b: Rect) => a.x < b.x + b.w + 2 && b.x < a.x + a.w + 2;
+    const mid = (e: Element | null) => {
+      const r = e?.getBoundingClientRect();
+      return r ? r.top + r.height / 2 : null;
+    };
+    // The anchor's line: its edges from the probes (prose) or the formula's box (display).
+    // Only ink beyond these edges is in the way; ink on the same line moves with it.
+    const edges = (id: Id): { top: number; bottom: number } | null => {
+      const el = this.el(id);
+      if (el?.classList.contains('display')) {
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom };
+      }
+      const t = mid(page.querySelector(`[data-pt="${id}"]`)), b = mid(page.querySelector(`[data-pb="${id}"]`));
+      return t === null || b === null ? null : { top: t, bottom: b };
+    };
+
+    // How far each line has to move (negative: it could move back) so its drawings clear
+    // what is under / over them. A note below a line answers to the ink of the lines
+    // below; a note above a line answers to the ink and the drawings of the lines above
+    // (so a pair facing each other is counted once).
+    const need: Record<Id, Spacer> = {};
+    const add = (id: Id, side: 'above' | 'below', v: number) => {
+      const n = (need[id] ??= {});
+      n[side] = Math.max(n[side] ?? -Infinity, v);
+    };
+    const unmeasured = new Set<string>();
+    for (const it of items) {
+      const r = it.r;
+      const e = edges(it.anchor);
+      // no probes yet: create the spacer (at rest) so the line can be measured next pass
+      if (!e) { unmeasured.add(`${it.anchor}:${it.side}`); continue; }
+      if (it.side === 'below') {
+        const under = ink.filter((q) => q.y >= e.bottom - 1 && across(q, r));
+        add(it.anchor, 'below', under.length ? r.y + r.h + GAP - Math.min(...under.map((q) => q.y)) : -Infinity);
+      } else {
+        const over = [
+          ...ink.filter((q) => q.y + q.h <= e.top + 1 && across(q, r)),
+          // drawings hanging below the lines above (a note facing this one across the gap)
+          ...items.filter((o) => o.side === 'below' && o.anchor !== it.anchor && o.r.y + o.r.h <= e.top + 1 + r.h && o.r.y < r.y && across(o.r, r)).map((o) => o.r),
+        ];
+        add(it.anchor, 'above', over.length ? Math.max(...over.map((q) => q.y + q.h)) + GAP - r.y : -Infinity);
+      }
+    }
+
     const next: Record<Id, Spacer> = {};
-    for (const [id, w] of Object.entries(want)) {
+    for (const key of unmeasured) {
+      const [id, side] = key.split(':') as [Id, 'above' | 'below'];
+      (next[id] ??= {})[side] = this.spacers[id]?.[side] ?? 0;
+    }
+    for (const [id, n] of Object.entries(need)) {
       const el = this.el(id);
       if (!el) continue;
       const cur = this.spacers[id] ?? {};
-      const out: Spacer = {};
-      if (el.classList.contains('display')) {
-        const r = el.getBoundingClientRect();
-        if (w.below !== undefined) out.below = Math.max(0, Math.ceil(w.below - (r.bottom - (cur.below ?? 0))));
-        if (w.above !== undefined) out.above = Math.max(0, Math.ceil(r.top + (cur.above ?? 0) - w.above));
-      } else {
-        for (const side of ['below', 'above'] as const) {
-          if (w[side] === undefined) continue;
-          const sp = page.querySelector(`[data-sp="${id}-${side}"]`)?.getBoundingClientRect();
-          const h = cur[side] ?? 0;
-          if (!sp) { out[side] = 0; continue; } // measure next pass
-          // The spacer's (zero-height) line box sits at the middle of its text; moving
-          // it by d moves that point by d, and the line edge follows once it's outside.
-          const at = sp.top + sp.height / 2;
-          out[side] = Math.max(0, Math.ceil(side === 'below' ? h + (w.below! - at) : h + (at - w.above!)));
+      const out: Spacer = next[id] ?? {};
+      for (const side of ['below', 'above'] as const) {
+        const v = n[side];
+        const now = cur[side] ?? 0;
+        if (v === undefined || !Number.isFinite(v) || (now === 0 && v <= 0)) continue;
+        if (el.classList.contains('display')) {
+          // padding moves what follows (below) or the formula itself (above) by the same amount
+          out[side] = Math.max(0, Math.ceil(now + v));
+          continue;
         }
+        const edge = mid(page.querySelector(side === 'below' ? `[data-pb="${id}"]` : `[data-pt="${id}"]`));
+        const at = mid(page.querySelector(`[data-sp="${id}-${side}"]`));
+        if (edge === null || at === null) { out[side] = 0; continue; } // measure next pass
+        // put the spacer's point v past the line's edge; the edge follows it once it's outside
+        const target = side === 'below' ? edge + v : edge - v;
+        out[side] = Math.max(0, Math.ceil(side === 'below' ? now + (target - at) : now + (at - target)));
       }
-      next[id] = out;
+      if (Object.keys(out).length) next[id] = out;
     }
 
     const same = (a: Record<Id, Spacer>, b: Record<Id, Spacer>) => {
@@ -787,8 +843,13 @@ export class Editor {
       return ka.length === kb.length && ka.every((k) => b[k] && Math.abs((a[k].below ?? -1) - (b[k].below ?? -1)) <= 1 && Math.abs((a[k].above ?? -1) - (b[k].above ?? -1)) <= 1);
     };
     if (this.spacerVersion !== this.version) (this.spacerVersion = this.version), (this.spacerPasses = 0);
+    // A note below one line and a note above the next both move the same gap: correcting
+    // both at once overshoots. Settle the "below" spacers first, then the "above" ones.
+    const moved = (k: Id) => Math.abs((next[k].below ?? 0) - (this.spacers[k]?.below ?? 0)) > 1;
+    if (Object.keys(next).some(moved))
+      for (const [k, v] of Object.entries(next)) if (v.above !== undefined && this.spacers[k]?.above !== undefined) v.above = this.spacers[k].above;
     if (same(next, this.spacers)) return;
-    if (++this.spacerPasses > 4) return; // never loop forever on odd layouts
+    if (++this.spacerPasses > 8) return; // never loop forever on odd layouts
     this.spacers = next;
     tick().then(() => this.layout());
   }

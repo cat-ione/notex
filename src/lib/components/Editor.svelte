@@ -73,10 +73,11 @@
   const SIGIL = { math: 'ƒ', text: '❯', draw: '✎' };
 </script>
 
-<!-- Invisible line spacers that make room for drawings (see Editor.makeRoom).
+<!-- Invisible line spacers that make room for drawings, and probes marking the
+     line's top and bottom (see Editor.makeRoom).
      A word joiner, so they never add a line break opportunity.
      (Kept on one line: whitespace here would show up in the pre-wrap text.) -->
-{#snippet spacer(id: string)}{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
+{#snippet spacer(id: string)}{#if ed.spacers[id]}<span class="nx-sp nx-probe" data-pt={id} style="vertical-align: top">&#8288;</span><span class="nx-sp nx-probe" data-pb={id} style="vertical-align: bottom">&#8288;</span>{/if}{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
 
 <div class="shell">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
