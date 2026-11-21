@@ -1,0 +1,136 @@
+// User configuration: themes, sizes, fonts, snippets and custom CSS.
+//
+// Desktop: <app config dir>/config.json (written with defaults on first run so
+// there is something to edit). Browser: localStorage.
+
+import { isDesktop } from './files';
+
+export type ThemeDef = { base?: string; colors: Record<string, string> };
+
+export type Config = {
+  /** A built-in theme (midnight, phosphor, paper) or one defined under `themes`. */
+  theme: string;
+  fontSize: number;
+  pageWidth: number;
+  fonts: { prose: string; mono: string };
+  /**
+   * Snippets expand as you type their trigger.
+   * math: trigger → LaTeX (`#` marks where the caret goes).
+   * text: trigger → replacement text (may contain $math$).
+   */
+  snippets: { math: Record<string, string>; text: Record<string, string> };
+  /** Custom themes: CSS variable overrides on top of a built-in base theme. */
+  themes: Record<string, ThemeDef>;
+  /** Extra CSS appended to the page. */
+  css: string;
+};
+
+export const BUILTIN_THEMES = ['midnight', 'phosphor', 'paper'];
+
+export const DEFAULT_CONFIG: Config = {
+  theme: 'midnight',
+  fontSize: 16,
+  pageWidth: 820,
+  fonts: { prose: '', mono: '' },
+  snippets: {
+    math: {
+      eps: '\\varepsilon',
+      norm: '\\left\\| # \\right\\|',
+      pd: '\\frac{\\partial #}{\\partial }',
+      dd: '\\frac{d #}{d }',
+      inv: '^{-1}',
+      TT: '^{\\top}',
+    },
+    text: {
+      '->': '→',
+      '=>': '⇒',
+      '<-': '←',
+    },
+  },
+  themes: {
+    ember: {
+      base: 'midnight',
+      colors: { accent: '#ff9e64', caret: '#ff9e64', 'mode-text': '#ff9e64', arrow: '#7dcfff', 'hint-bg': '#7dcfff' },
+    },
+  },
+  css: '',
+};
+
+const LOCAL_KEY = 'notex.config';
+
+/** Fill in anything missing from a (possibly partial or old) user config. */
+export function withDefaults(user: Partial<Config> | null | undefined): Config {
+  const u = user ?? {};
+  return {
+    ...DEFAULT_CONFIG,
+    ...u,
+    fonts: { ...DEFAULT_CONFIG.fonts, ...(u.fonts ?? {}) },
+    snippets: {
+      math: u.snippets?.math ?? DEFAULT_CONFIG.snippets.math,
+      text: u.snippets?.text ?? DEFAULT_CONFIG.snippets.text,
+    },
+    themes: u.themes ?? DEFAULT_CONFIG.themes,
+  };
+}
+
+export const configToText = (c: Config) => JSON.stringify(c, null, 2) + '\n';
+
+export function parseConfig(text: string): Config {
+  const data = JSON.parse(text);
+  if (typeof data !== 'object' || !data || Array.isArray(data)) throw new Error('config must be a JSON object');
+  return withDefaults(data);
+}
+
+async function invoke<T>(cmd: string, args?: Record<string, unknown>) {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(cmd, args);
+}
+
+/** Load the config, creating the file with defaults on first run. */
+export async function loadConfig(): Promise<{ config: Config; error?: string }> {
+  try {
+    const text = isDesktop() ? await invoke<string | null>('load_config') : localStorage.getItem(LOCAL_KEY);
+    if (text == null) {
+      await saveConfig(DEFAULT_CONFIG);
+      return { config: DEFAULT_CONFIG };
+    }
+    return { config: parseConfig(text) };
+  } catch (e) {
+    return { config: DEFAULT_CONFIG, error: `config: ${e instanceof Error ? e.message : e}` };
+  }
+}
+
+export async function saveConfig(c: Config) {
+  const text = configToText(c);
+  if (isDesktop()) await invoke('save_config', { contents: text });
+  else localStorage.setItem(LOCAL_KEY, text);
+}
+
+export async function openConfigExternally(): Promise<string | null> {
+  if (!isDesktop()) return null;
+  return invoke<string>('open_config');
+}
+
+/** Apply the visual parts of a config to the document. */
+export function applyConfig(c: Config) {
+  const root = document.documentElement;
+  const custom = c.themes[c.theme];
+  const base = BUILTIN_THEMES.includes(c.theme) ? c.theme : (custom?.base ?? 'midnight');
+  root.dataset.theme = base;
+
+  const vars: string[] = [`--font-size: ${c.fontSize}px;`, `--page-width: ${c.pageWidth}px;`];
+  if (c.fonts.prose) vars.push(`--prose: ${c.fonts.prose};`);
+  if (c.fonts.mono) vars.push(`--mono: ${c.fonts.mono};`);
+  for (const [k, v] of Object.entries(custom?.colors ?? {})) vars.push(`--${k.replace(/^--/, '')}: ${v};`);
+
+  let el = document.getElementById('nx-user-style') as HTMLStyleElement | null;
+  if (!el) {
+    el = document.createElement('style');
+    el.id = 'nx-user-style';
+    document.head.appendChild(el);
+  }
+  // `html:root[data-theme]` outranks the built-in `[data-theme=…]` rules.
+  el.textContent = `html:root[data-theme] { ${vars.join(' ')} }\n${c.css}`;
+}
+
+export const allThemes = (c: Config) => [...BUILTIN_THEMES, ...Object.keys(c.themes).filter((t) => !BUILTIN_THEMES.includes(t))];

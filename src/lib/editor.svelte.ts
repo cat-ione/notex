@@ -15,6 +15,7 @@ import { tick } from 'svelte';
 import { arrowGeo, defaultBend, type ArrowGeo } from './arrows';
 import { docToLatex } from './export';
 import * as F from './files';
+import * as C from './config';
 import { measure, relTo, union, type Rect } from './geom';
 import * as M from './math/edit';
 import { CMDS, GREEK_LEADER, MATH_PALETTE } from './math/defs';
@@ -36,7 +37,6 @@ type PaletteEntry = { name: string; desc: string; run: () => void };
 type Hint = { label: string; rect: Rect; act: () => void };
 type Snap = { doc: Doc; b: number; o: number };
 
-export const THEMES = ['midnight', 'phosphor', 'paper'] as const;
 
 const STORAGE_KEY = 'notex.doc.v1';
 
@@ -58,7 +58,9 @@ export class Editor {
   label = $state<{ text: string } | null>(null);
   message = $state('');
   showHelp = $state(false);
-  theme = $state<(typeof THEMES)[number]>('midnight');
+  config = $state<C.Config>(C.DEFAULT_CONFIG);
+  showSettings = $state(false);
+  settingsEditing = $state(false);
 
   /** The note's file (path is null for unsaved notes or in the browser). */
   file = $state<{ path: string | null; name: string }>({ path: null, name: 'untitled' });
@@ -98,8 +100,6 @@ export class Editor {
         this.file = { path: j.path ?? null, name: j.name ?? 'untitled' };
         this.dirty = !!j.dirty;
       }
-      const t = localStorage.getItem('notex.theme');
-      if (t && (THEMES as readonly string[]).includes(t)) this.theme = t as any;
     } catch {
       this.doc = welcomeDoc();
     }
@@ -558,6 +558,8 @@ export class Editor {
 
   key(e: KeyboardEvent) {
     if (e.isComposing) return;
+    // Text fields (settings, config editor) handle their own keys.
+    if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
     const k = keyName(e);
     if (!k) return;
     // Let the browser fire copy/cut/paste events; those are handled separately.
@@ -573,6 +575,13 @@ export class Editor {
       fileKeys[k]();
       return;
     }
+    if (k === 'C-,') {
+      this.showSettings = !this.showSettings;
+      this.settingsEditing = false;
+      e.preventDefault();
+      return;
+    }
+    if (this.showSettings) return; // the settings panel listens for its own keys
     if (k === 'F1' || k === 'C-/') {
       this.showHelp = !this.showHelp;
       e.preventDefault();
@@ -744,6 +753,7 @@ export class Editor {
         }
         if (this.o > 0) {
           const prev = blk.items[this.o - 1];
+          if (this.lastSnippet && this.undoSnippet()) return true;
           if (prev.t === 'm') {
             this.o--;
             this.enterMath(true);
@@ -796,9 +806,41 @@ export class Editor {
       this.blk.items.splice(this.o, 0, ch(k));
       this.o++;
       if (k === ' ') this.markdownShortcut();
+      this.textSnippet();
       return true;
     }
     return false;
+  }
+
+  /** Last text snippet expansion, so an immediate Backspace can undo it. */
+  private lastSnippet: { b: number; o: number; trigger: string; len: number } | null = null;
+
+  private textSnippet() {
+    const items = this.blk.items;
+    let s = '';
+    let best: { k: number; rep: string } | null = null;
+    const snippets = this.config.snippets.text;
+    for (let k = 1; k <= this.o && k <= 16; k++) {
+      const it = items[this.o - k];
+      if (it.t !== 'c') break;
+      s = it.ch + s;
+      if (snippets[s] !== undefined) best = { k, rep: snippets[s] };
+    }
+    if (!best) return;
+    const repl = textWithMath(best.rep);
+    items.splice(this.o - best.k, best.k, ...repl);
+    this.o += repl.length - best.k;
+    this.lastSnippet = { b: this.b, o: this.o, trigger: s.slice(-best.k), len: repl.length };
+  }
+
+  /** Backspace right after a snippet expanded turns it back into its trigger. */
+  private undoSnippet(): boolean {
+    const l = this.lastSnippet;
+    this.lastSnippet = null;
+    if (!l || l.b !== this.b || l.o !== this.o) return false;
+    this.blk.items.splice(this.o - l.len, l.len, ...chars(l.trigger));
+    this.o += l.trigger.length - l.len;
+    return true;
   }
 
   private markdownShortcut() {
@@ -923,10 +965,11 @@ export class Editor {
     if (!p) return [];
     const q = p.query;
     if (p.ctx === 'math') {
-      const names = Object.keys(MATH_PALETTE);
+      const user = this.config.snippets.math;
+      const names = [...new Set([...Object.keys(user), ...Object.keys(MATH_PALETTE)])];
       return rank(names, q)
         .slice(0, 8)
-        .map((n) => ({ name: n, desc: describeInserter(n) }));
+        .map((n) => ({ name: n, desc: user[n] !== undefined ? user[n] : describeInserter(n) }));
     }
     const cmds = this.textCommands();
     return rank(cmds.map((c) => c.name), q)
@@ -989,9 +1032,11 @@ export class Editor {
     if (p.ctx === 'math') {
       const item = this.mathItem!;
       this.checkpoint();
-      // Exact names win over the highlighted suggestion.
-      const ins = MATH_PALETTE[q] ?? (name ? MATH_PALETTE[name] : undefined);
-      if (ins && (MATH_PALETTE[q] || name)) M.applyInserter(item.root, this.mc, ins);
+      // Exact names win over the highlighted suggestion; user snippets win over built-ins.
+      const user = this.config.snippets.math;
+      const key = user[q] !== undefined || MATH_PALETTE[q] ? q : name;
+      if (key && user[key] !== undefined) M.insertParsed(item.root, this.mc, parseLatex(user[key]));
+      else if (key && MATH_PALETTE[key]) M.applyInserter(item.root, this.mc, MATH_PALETTE[key]);
       else if (q) M.insertNode(item.root, this.mc, sym('\\' + q));
       return;
     }
@@ -1013,7 +1058,9 @@ export class Editor {
       { name: 'h3', desc: 'heading 3', run: setKind('h3') },
       { name: 'p', desc: 'paragraph', run: setKind('p') },
       { name: 'li', desc: 'list item', run: setKind('li') },
-      { name: 'theme', desc: `cycle theme (${this.theme})`, run: () => this.cycleTheme() },
+      { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
+      { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
+      { name: 'config', desc: 'edit the config file (snippets, themes, css)', run: () => this.editConfig() },
       { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
       { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
       { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },
@@ -1026,10 +1073,54 @@ export class Editor {
     ];
   }
 
-  cycleTheme() {
-    this.theme = THEMES[(THEMES.indexOf(this.theme) + 1) % THEMES.length];
-    try { localStorage.setItem('notex.theme', this.theme); } catch {}
-    this.flash(`theme: ${this.theme}`);
+  // ── config ──
+
+  /** (Re)load the config from disk and apply it. */
+  async loadConfig() {
+    const { config, error } = await C.loadConfig();
+    this.useConfig(config);
+    if (error) this.flash(error);
+  }
+
+  private useConfig(c: C.Config) {
+    this.config = c;
+    C.applyConfig(c);
+    M.setMathSnippets(c.snippets.math);
+    this.touch();
+  }
+
+  /** Change some settings, apply them right away and persist. */
+  async updateConfig(patch: Partial<C.Config>) {
+    this.useConfig({ ...this.config, ...patch });
+    try {
+      await C.saveConfig($state.snapshot(this.config) as C.Config);
+    } catch (e) {
+      this.flash(`could not save config: ${e}`);
+    }
+  }
+
+  /** Replace the whole config from edited JSON text. Returns an error message on failure. */
+  async setConfigText(text: string): Promise<string | null> {
+    try {
+      const c = C.parseConfig(text);
+      await this.updateConfig(c);
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  editConfig() {
+    this.showSettings = true;
+    this.settingsEditing = true;
+  }
+
+  cycleTheme(dir = 1) {
+    const all = C.allThemes(this.config);
+    const i = all.indexOf(this.config.theme);
+    const theme = all[(i + dir + all.length) % all.length];
+    this.updateConfig({ theme });
+    this.flash(`theme: ${theme}`);
   }
 
   private async copyText(s: string, what: string) {

@@ -40,13 +40,44 @@ Ctrl+C/X/V (math survives copy/paste), Ctrl+Z/Y, Ctrl+←/→ by word. On top of
 
 Arrow picking also accepts `hjkl`/`HJKL` for people who like them.
 
+## Files
+
+Notes are `.ntx` files (Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+N). Once a note has a file it
+autosaves. The format is compact JSON: text is stored as plain strings and math as a tree
+(see `src/lib/format.ts`).
+
+## Customizing
+
+Ctrl+, opens settings (theme, text size, page width) and an editor for the config file. On
+desktop the file lives in the app config directory as `config.json` and can also be opened in
+your own editor; changes load when you switch back to notex.
+
+```jsonc
+{
+  "theme": "ember",                       // built-in: midnight, phosphor, paper
+  "fontSize": 16,
+  "pageWidth": 820,
+  "fonts": { "prose": "", "mono": "" },   // any CSS font-family
+  "snippets": {
+    "math": {                             // expand while typing in math; # = caret
+      "norm": "\\left\\| # \\right\\|",
+      "pd": "\\frac{\\partial #}{\\partial }"
+    },
+    "text": { "->": "→", ":)": "nice $\\heartsuit$" }   // text may contain $math$
+  },
+  "themes": {                             // CSS variable overrides on a base theme
+    "ember": { "base": "midnight", "colors": { "accent": "#ff9e64" } }
+  },
+  "css": ".block.h1 { letter-spacing: 0.02em; }"
+}
+```
+
 ## Roadmap / ideas
 
-- **Customization**: user config file (snippets → `AUTO_REPLACE`/`MATH_PALETTE`, keymaps,
-  palette commands), user CSS themes (all colors are CSS variables already), scripting hooks.
-- **Files**: native open/save of `.ntx` via Tauri fs + dialog; multiple notes; search.
-- **Drawing without a mouse**: a canvas block with a grid cursor (move with hjkl, drop
-  points, box/circle/line from mark to cursor), shapes that can anchor to text like arrows.
+- **Customization**: keymaps, user palette commands, scripting hooks.
+- **Files**: a notes sidebar / recent files, search across notes.
+- **Drawing**: shapes (boxes, circles, brackets, highlights) that anchor to text and math like
+  arrows do, placed with the mouse or the keyboard.
 - **Arrows**: multi-segment routes, endpoint side control, math labels, LaTeX export via
   `tikzmark`.
-- Visual mode + yank/paste (including math subtrees), math selection, LaTeX paste → tree.
+- Selection inside formulas (copy/cut parts of an equation).

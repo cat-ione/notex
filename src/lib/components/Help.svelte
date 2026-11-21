@@ -4,7 +4,7 @@
       ['$', 'start math ($$ for a centered block)'], ['\\  or  ctrl+k', 'commands'],
       ['# ␣   ## ␣   - ␣', 'heading, subheading, list'], ['click / shift+arrows', 'place caret / select'],
       ['ctrl+c  x  v', 'copy, cut, paste (math included)'], ['ctrl+z  ctrl+y', 'undo, redo'],
-      ['ctrl+← →', 'jump by word'], ['F1', 'this help'],
+      ['ctrl+← →', 'jump by word'], ['ctrl+s  o  n', 'save, open, new note'], ['ctrl+,', 'settings, snippets, themes'], ['F1', 'this help'],
     ]],
     ['math', [
       ['/', 'fraction from what you just typed'], ['^  _', 'superscript, subscript'],

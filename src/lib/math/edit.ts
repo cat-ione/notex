@@ -8,7 +8,7 @@
 import { cmd, sym, type MCmd, type MNode, type MRow } from '../model';
 import { AUTO_REPLACE, AUTO_STRUCT, CMDS, OPENERS, type Inserter } from './defs';
 import type { MCursor, Step } from './latex';
-import { caretFor, type Parsed } from './parse';
+import { caretFor, parseLatex, type Parsed } from './parse';
 
 export function rowAt(root: MRow, path: Step[]): MRow {
   let r = root;
@@ -298,22 +298,36 @@ export function typeChar(root: MRow, cur: MCursor, c: string) {
   autoReplace(root, cur);
 }
 
+/** User snippets (trigger → LaTeX template), set from the config. They win over built-ins. */
+let userSnippets: Record<string, string> = {};
+let longestTrigger = 8;
+export function setMathSnippets(map: Record<string, string>) {
+  userSnippets = map;
+  longestTrigger = Math.max(8, ...Object.keys(map).map((k) => k.length));
+}
+
 function autoReplace(root: MRow, cur: MCursor) {
   const r = rowAt(root, cur.path);
   let best: { k: number; key: string } | null = null;
   let s = '';
-  for (let k = 1; k <= cur.off && k <= 8; k++) {
+  for (let k = 1; k <= cur.off && k <= longestTrigger; k++) {
     const n = r[cur.off - k];
     if (n.k !== 'sym') break;
     const piece = n.src ?? (n.v.startsWith('\\') && n.v.length > 1 ? null : n.v);
     if (piece == null) break;
     s = piece + s;
-    if (AUTO_REPLACE[s] || AUTO_STRUCT[s]) best = { k, key: s };
+    if (userSnippets[s] !== undefined || AUTO_REPLACE[s] || AUTO_STRUCT[s]) best = { k, key: s };
   }
   if (!best) return;
   r.splice(cur.off - best.k, best.k);
   cur.off -= best.k;
-  if (AUTO_REPLACE[best.key]) insertNode(root, cur, sym(AUTO_REPLACE[best.key], best.key));
+  const user = userSnippets[best.key];
+  if (user !== undefined) {
+    const parsed = parseLatex(user);
+    // A single symbol keeps its trigger so backspace / longer triggers still work.
+    if (parsed.row.length === 1 && parsed.row[0].k === 'sym' && !parsed.cursor) insertNode(root, cur, sym(parsed.row[0].v, best.key));
+    else insertParsed(root, cur, parsed);
+  } else if (AUTO_REPLACE[best.key]) insertNode(root, cur, sym(AUTO_REPLACE[best.key], best.key));
   else applyInserter(root, cur, AUTO_STRUCT[best.key]);
 }
 

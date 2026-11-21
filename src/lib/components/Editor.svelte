@@ -7,7 +7,8 @@
   import ArrowLayer from './ArrowLayer.svelte';
   import StatusLine from './StatusLine.svelte';
   import Help from './Help.svelte';
-  import { setWindowTitle } from '$lib/files';
+  import Settings from './Settings.svelte';
+  import { isDesktop, setWindowTitle } from '$lib/files';
 
   const ed = new Editor();
   let page: HTMLElement;
@@ -25,7 +26,10 @@
       on('paste', (e) => ed.paste(e)),
       on('mousemove', (e) => ed.mouseMove(e)),
       on('mouseup', () => ed.mouseUp()),
+      // Pick up config edits made in an external editor.
+      on('focus', () => isDesktop() && ed.loadConfig()),
     ];
+    ed.loadConfig();
     const ro = new ResizeObserver(() => ed.layout());
     ro.observe(page);
     document.fonts?.ready.then(() => ed.layout());
@@ -56,9 +60,6 @@
     setWindowTitle(`${ed.dirty ? '● ' : ''}${ed.file.name} — notex`);
   });
 
-  $effect(() => {
-    document.documentElement.dataset.theme = ed.theme;
-  });
 
   const editingMath = (b: number, o: number) => (ed.mode === 'math' || (ed.mode === 'palette' && ed.palette?.ctx === 'math')) && ed.b === b && ed.o === o;
 </script>
@@ -124,6 +125,10 @@
 
   <StatusLine {ed} />
 
+  {#if ed.showSettings}
+    <Settings {ed} />
+  {/if}
+
   {#if ed.showHelp}
     <div class="help-wrap" transition:fade={{ duration: 120 }}>
       <Help />
@@ -147,11 +152,11 @@
   }
   .page {
     position: relative;
-    max-width: 820px;
+    max-width: var(--page-width, 820px);
     margin: 0 auto;
     padding: 48px 32px 40vh;
     font-family: var(--prose);
-    font-size: 16px;
+    font-size: var(--font-size, 16px);
     line-height: 2.1;
   }
   .block {
