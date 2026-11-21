@@ -38,6 +38,8 @@ export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
 type LabelSnap = { text: string; at: number; anchor: number | null };
+/** A find match: characters [s, e) of block b, or (math) the formula at s. */
+export type FindMatch = { b: number; s: number; e: number; math?: true };
 /**
  * Something a menu entry, a key, a toolbar button or the palette can do. `more`: another
  * way to do it (for tooltips); `off`: not possible right now; `sep`: a menu rule before it.
@@ -101,6 +103,10 @@ export class Editor {
   caret = $state<{ r: Rect; shape: 'bar' | 'math' } | null>(null);
   /** The text selection as rectangles, one per line (page-relative). */
   selRects = $state.raw<Rect[]>([]);
+  /** Find (Ctrl+F): what's searched for and which match is current (see findMatches). */
+  find = $state<{ q: string; i: number } | null>(null);
+  /** The matches drawn on the page (page coordinates), the current one marked. */
+  findRects = $state.raw<{ r: Rect; cur: boolean }[]>([]);
   /** The frame around the formula being edited (page coordinates). */
   mathFrame = $state.raw<Rect | null>(null);
   pickRects = $state<{ cur: Rect | null; from: Rect | null }>({ cur: null, from: null });
@@ -1451,6 +1457,7 @@ export class Editor {
     }
     this.caret = caret;
     this.selRects = [...this.selectionRects(origin), ...this.mathSelRects(origin)];
+    this.findRects = this.find ? this.findHitRects(origin) : this.findRects.length ? [] : this.findRects;
     this.mathFrame = this.inFormula ? this.mathFrameRect(origin) : null;
 
     // Pick highlights
@@ -2144,6 +2151,12 @@ export class Editor {
     if (k === 'C-d' && (this.mode === 'text' || this.mode === 'math')) {
       this.openPalette('draw');
       e.preventDefault();
+      return;
+    }
+    if (k === 'C-f' || k === 'F3' || k === 'S-F3') {
+      e.preventDefault();
+      if (k === 'C-f' || !this.find) this.openFind();
+      else this.findGo(k === 'F3' ? 1 : -1);
       return;
     }
     const handled = this.menu ? this.menuKey(k) : this.runKey(k);
@@ -3589,6 +3602,113 @@ export class Editor {
   get paletteAnchor(): Rect | null {
     if (this.caret) return this.caret.r;
     return this.styling ? this.drawingRect(this.styling) : null;
+  }
+
+  // ── find ──
+
+  /**
+   * Where the search text occurs, in reading order: runs of characters within a paragraph
+   * (case-insensitive), and formulas whose LaTeX contains it (as a whole).
+   */
+  findMatches = $derived.by((): FindMatch[] => {
+    const q = this.find?.q.toLowerCase();
+    if (!q) return [];
+    const out: FindMatch[] = [];
+    this.doc.blocks.forEach((blk, b) => {
+      // characters, a formula standing in as one character nothing matches
+      const text = blk.items.map((it) => (it.t === 'c' ? it.ch : '\u0000')).join('').toLowerCase();
+      const hits: FindMatch[] = [];
+      for (let i = text.indexOf(q); i >= 0; i = text.indexOf(q, i + q.length)) hits.push({ b, s: i, e: i + q.length });
+      blk.items.forEach((it, o) => {
+        if (it.t === 'm' && toLatex(it.root).toLowerCase().includes(q)) hits.push({ b, s: o, e: o + 1, math: true });
+      });
+      out.push(...hits.sort((x, y) => x.s - y.s));
+    });
+    return out;
+  });
+
+  /** Open find (with the selected text, if a word or so is selected), or focus it again. */
+  openFind() {
+    const s = this.selection;
+    let q = this.find?.q ?? this.lastFind;
+    if (s && s.s.b === s.e.b && s.e.o - s.s.o <= 60) {
+      const t = this.doc.blocks[s.s.b].items.slice(s.s.o, s.e.o);
+      if (t.every((i) => i.t === 'c')) q = t.map((i) => (i as Char).ch).join('');
+    }
+    this.find = { q, i: 0 };
+    this.findFrom();
+    this.findFocus++;
+  }
+
+  /** The last thing searched for (F3 / Ctrl+F start from it). */
+  private lastFind = '';
+
+  /** Bumped to (re)focus the find field. */
+  findFocus = $state(0);
+
+  /** The search text changed: the first match from the caret on becomes current. */
+  setFindQuery(q: string) {
+    if (!this.find) return;
+    this.find.q = q;
+    this.findFrom();
+  }
+
+  private findFrom() {
+    const ms = this.findMatches;
+    if (!this.find || !ms.length) return;
+    const k = ms.findIndex((m) => m.b > this.b || (m.b === this.b && m.e > this.o));
+    this.find.i = k < 0 ? 0 : k;
+    this.showMatch();
+  }
+
+  /** Next (1) / previous (-1) match, round the end. */
+  findGo(d: 1 | -1) {
+    const ms = this.findMatches;
+    if (!this.find || !ms.length) return;
+    this.find.i = (this.find.i + d + ms.length) % ms.length;
+    this.showMatch();
+  }
+
+  /** Select the current match (in the text), which also scrolls it into view. */
+  private showMatch() {
+    const m = this.findMatches[this.find?.i ?? -1];
+    if (!m) return;
+    this.withFrame(() => {
+      if (this.mode !== 'text') {
+        if (this.mode === 'label' && this.label) this.commitLabel();
+        this.styling = null;
+        this.pick = null;
+        this.palette = null;
+        this.menu = null;
+        this.setMode('text');
+      }
+      this.b = m.b;
+      this.anchor = { b: m.b, o: m.s };
+      this.o = m.e;
+      this.touch();
+    });
+  }
+
+  /** Close find, leaving the current match selected. */
+  closeFind() {
+    this.lastFind = this.find?.q ?? this.lastFind;
+    this.find = null;
+    this.touch();
+  }
+
+  private findHitRects(origin: DOMRect): { r: Rect; cur: boolean }[] {
+    const out: { r: Rect; cur: boolean }[] = [];
+    const view = this.page?.parentElement?.getBoundingClientRect();
+    this.findMatches.forEach((m, k) => {
+      if (out.length > 400) return;
+      const el = this.blockEl(m.b);
+      const br = el?.getBoundingClientRect();
+      // only what's near the screen
+      if (!br || (view && (br.bottom < view.top - 400 || br.top > view.bottom + 400))) return;
+      const ids = this.doc.blocks[m.b].items.slice(m.s, m.e).map((i) => i.id);
+      for (const r of byLine(this.rectsOfIds(ids))) out.push({ r: relTo(r, origin), cur: k === this.find!.i });
+    });
+    return out;
   }
 
   // ── right-click menu ──

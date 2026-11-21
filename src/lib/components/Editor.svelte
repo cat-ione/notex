@@ -9,6 +9,7 @@
   import LabelLayer from './LabelLayer.svelte';
   import DrawingMenu from './DrawingMenu.svelte';
   import DrawingBar from './DrawingBar.svelte';
+  import FindBar from './FindBar.svelte';
   import Tooltip from './Tooltip.svelte';
   import StatusLine from './StatusLine.svelte';
   import Help from './Help.svelte';
@@ -117,6 +118,7 @@
 
 <div class="shell">
   <DrawingMenu {ed} />
+  <FindBar {ed} />
   <Tooltip {ed} />
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroller" onmousedown={(e) => ed.mouseDown(e)} oncontextmenu={(e) => ed.openPageMenu(e)} onscroll={() => ed.scrolled()}>
@@ -128,6 +130,9 @@
       {/if}
       {#each ed.selRects as r, i (i)}
         <div class="selrect" style="transform: translate({r.x}px, {r.y}px); width: {r.w}px; height: {r.h}px;"></div>
+      {/each}
+      {#each ed.findRects as f, i (i)}
+        <div class="findhit" class:cur={f.cur} style="transform: translate({f.r.x - 1}px, {f.r.y}px); width: {f.r.w + 2}px; height: {f.r.h}px;"></div>
       {/each}
       {#each ed.doc.blocks as blk, b (blk.id)}
         <div class="block {blk.kind}" class:current={ed.b === b} data-nx={blk.id} data-depth={blk.indent || undefined} data-n={listNums[b]} style:--indent={blk.indent || undefined}>
@@ -351,6 +356,20 @@
   .eol {
     display: inline-block;
     width: 0;
+  }
+  /* find matches, behind the text (the current one stronger) */
+  .findhit {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: -1;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--ink-purple, var(--accent)) 22%, transparent);
+    pointer-events: none;
+  }
+  .findhit.cur {
+    background: color-mix(in srgb, var(--ink-purple, var(--accent)) 45%, transparent);
+    box-shadow: 0 0 0 1px var(--ink-purple, var(--accent));
   }
   .ch.b {
     font-weight: 700;
