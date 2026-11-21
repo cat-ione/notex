@@ -941,6 +941,7 @@ export class Editor {
    * its drawing, and a drag from here moves the note.
    */
   noteDown(id: Id, e: MouseEvent) {
+    if (e.button === 1) return this.deleteDrawing(id);
     this.withFrame(() => {
       this.menu = null;
       const lb = this.label;
@@ -964,6 +965,191 @@ export class Editor {
       this.noteDrag = { id, x: e.clientX, y: e.clientY, moved: false };
       this.touch();
     });
+  }
+
+  /** A drag on a drawing itself: a shape moves to what's under the mouse, an arrow bends. */
+  private bodyDrag: { id: Id; x: number; y: number; moved: boolean; count: number; grab: number } | null = null;
+  /** Something is being dragged (the toolbar steps aside). */
+  dragBusy = $state(false);
+
+  /**
+   * A press on a drawing's outline: select it; a drag from there moves a shape onto
+   * another word or symbol (keeping its size, held where it was grabbed) or bends an
+   * arrow through the mouse. A middle press deletes it.
+   */
+  drawingDown(id: Id, e: MouseEvent) {
+    if (e.button === 1) return this.deleteDrawing(id);
+    if (e.button !== 0) return;
+    this.withFrame(() => {
+      this.menu = null;
+      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      // which of the shape's pieces was grabbed: it stays under the mouse
+      const m = this.doc.marks.find((x) => x.id === id);
+      let count = 1, grab = 0;
+      if (m) {
+        const us = this.unitsOf(this.locForIds(m.at));
+        count = us.length;
+        let best = Infinity;
+        us.forEach((u, k) => {
+          const r = this.rectOfIds(this.anchorIds(u));
+          const d = r ? Math.abs(r.x + r.w / 2 - e.clientX) : Infinity;
+          if (d < best) (best = d), (grab = k);
+        });
+      }
+      this.bodyDrag = { id, x: e.clientX, y: e.clientY, moved: false, count, grab };
+      this.touch();
+    });
+  }
+
+  /** The single targets (words, math groups) a range is made of. */
+  private unitsOf(l: Loc): Loc[] {
+    if (l.k === 'word') return this.wordsIn(l.b).filter((w) => w.s >= l.s && w.e <= l.e);
+    if (l.k === 'node') {
+      const gs = groups(M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path));
+      return gs.filter(([i, j]) => i >= l.i && j <= l.j).map(([i, j]) => ({ ...l, i, j }));
+    }
+    return [l];
+  }
+
+  /** The targets alongside one: the words of its paragraph, the groups of its formula row. */
+  private unitsAround(l: Loc): Loc[] {
+    if (l.k === 'word') return this.wordsIn(l.b);
+    if (l.k === 'node') return groups(M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path)).map(([i, j]) => ({ ...l, i, j }));
+    return [l];
+  }
+
+  private dragBody(e: MouseEvent) {
+    const bd = this.bodyDrag!;
+    const m = this.doc.marks.find((x) => x.id === bd.id), a = this.doc.arrows.find((x) => x.id === bd.id);
+    if (!m && !a) return void (this.bodyDrag = null);
+    if (!bd.moved) {
+      if (Math.hypot(e.clientX - bd.x, e.clientY - bd.y) < 4) return;
+      bd.moved = true;
+      this.dragBusy = true;
+      this.checkpoint();
+    }
+    if (a) {
+      const fr = this.rectOfIds(a.from), tr = this.rectOfIds(a.to);
+      if (fr && tr) a.bend = bendThrough(fr, tr, { x: e.clientX, y: e.clientY });
+      return this.touch();
+    }
+    // the shape lands on what's under the mouse, the grabbed piece there, as many pieces as before
+    const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
+    const t = id ? this.locFromId(id) : null;
+    if (!t) return;
+    const around = this.unitsAround(t);
+    const ti = Math.max(0, around.findIndex((u) => this.sameLoc(u, t)));
+    const start = Math.max(0, Math.min(ti - bd.grab, around.length - bd.count));
+    const end = Math.min(around.length - 1, start + bd.count - 1);
+    const span = start === end ? around[start] : (this.spanLoc(around[start], around[end]) ?? t);
+    const ids = this.anchorIds(span);
+    if (ids.length && ids.join() !== m!.at.join()) m!.at = ids;
+    this.touch();
+  }
+
+  /** Remove a drawing (middle-click, the toolbar's ✕). */
+  deleteDrawing(id: Id) {
+    this.withFrame(() => {
+      const ai = this.doc.arrows.findIndex((x) => x.id === id), mi = this.doc.marks.findIndex((x) => x.id === id);
+      if (ai < 0 && mi < 0) return;
+      this.checkpoint();
+      if (ai >= 0) this.doc.arrows.splice(ai, 1);
+      else this.doc.marks.splice(mi, 1);
+      this.menu = null;
+      if (this.styling === id) this.endDrawing();
+      this.touch();
+    });
+  }
+
+  /** Change a shape's kind / a drawing's colour (the toolbar). */
+  setMarkKind(id: Id, kind: MarkKind) {
+    const m = this.doc.marks.find((x) => x.id === id);
+    if (!m || m.kind === kind) return;
+    this.withFrame(() => { this.checkpoint('style'); m.kind = kind; this.lastMarkKind = kind; this.touch(); });
+  }
+
+  setInk(id: Id, color: string) {
+    const d = this.drawing(id);
+    if (!d || (d.color ?? '') === color) return;
+    this.withFrame(() => { this.checkpoint('style'); d.color = color || undefined; this.touch(); });
+  }
+
+  /** Run one of a drawing's actions by name (the toolbar). */
+  runAction(id: Id, name: string) {
+    this.withFrame(() => {
+      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      this.drawingActions(id).find((a) => a.name === name)?.run();
+      this.touch();
+    });
+  }
+
+  /**
+   * The wheel over the selected drawing (its outline or note): a shape's kind, an arrow's
+   * bend; with Shift, the colour. Anywhere else the page scrolls as usual.
+   */
+  private wheelAcc = 0;
+  wheel(e: WheelEvent) {
+    if (this.mode !== 'style' || !this.styling) return;
+    const id = ((e.target as Element | null)?.closest?.('[data-id]') as HTMLElement | null)?.dataset.id;
+    if (id !== this.styling) return;
+    e.preventDefault();
+    const d = this.drawing(id);
+    if (!d) return;
+    // (Shift turns the wheel sideways in some browsers)
+    const delta = e.deltaY || e.deltaX;
+    // one step per notch; a touchpad's many small deltas add up to one
+    this.wheelAcc += delta;
+    if (Math.abs(this.wheelAcc) < 40) return;
+    const dir = this.wheelAcc > 0 ? 1 : -1;
+    this.wheelAcc = 0;
+    this.withFrame(() => {
+      this.checkpoint('style');
+      if (e.shiftKey) d.color = INKS[(INKS.indexOf((d.color ?? '') as (typeof INKS)[number]) + dir + INKS.length) % INKS.length] || undefined;
+      else if ('kind' in d) d.kind = MARK_KINDS[(MARK_KINDS.indexOf(d.kind) + dir + MARK_KINDS.length) % MARK_KINDS.length];
+      else d.bend = round(d.bend - 0.1 * dir * (this.arrowGeos[d.id]?.dir ?? 1));
+      this.touch();
+    });
+  }
+
+  /**
+   * Where the toolbar goes (page coordinates): above the selected drawing and its note,
+   * or below them when there's no room above.
+   */
+  get barAt(): { x: number; y: number; below: boolean } | null {
+    if (this.mode !== 'style' || !this.styling || this.menu || this.dragBusy) return null;
+    const r0 = this.drawingRect(this.styling), o = this.page?.getBoundingClientRect();
+    if (!r0 || !o) return null;
+    // clear of the drawing, its note and what it marks (a brace sits under its text)
+    const d = this.drawing(this.styling);
+    const parts = [r0];
+    const el = this.noteEl(this.styling);
+    if (el) parts.push(relTo(fromDOM(el.getBoundingClientRect()), o));
+    for (const ids of d ? ('at' in d ? [d.at] : [d.from, d.to]) : []) {
+      const t = this.rectOfIds(ids);
+      if (t) parts.push(relTo(t, o));
+    }
+    const r = union(parts)!;
+    // ...and of the text, notes and shapes around it, if it can be: try further out above
+    // and below, and take whichever side needed less (above when it's a tie)
+    const W = 'at' in (d ?? {}) ? 360 : 330, H = 30, cx = r.x + r.w / 2;
+    const around = [
+      ...[...this.page!.querySelectorAll('.dlabel[data-id]')].map((e) => relTo(fromDOM(e.getBoundingClientRect()), o)),
+      ...Object.values(this.markGeos).map((g) => g.bounds),
+      ...parts.slice(2).flatMap((t) => {
+        const blk = this.el(('at' in (d ?? {}) ? (d as Mark).at : (d as Arrow).from)[0])?.closest('.block');
+        return blk ? this.blockInk(blk).map((q) => relTo(q, o)).filter((q) => q.y < t.y + t.h + 40 && q.y + q.h > t.y - 40) : [];
+      }),
+    ];
+    const clear = (y: number) => !around.some((q) => q.x < cx + W / 2 && q.x + q.w > cx - W / 2 && q.y < y + H && q.y + q.h > y);
+    const fits = (top: number) => o.top + top > 34;
+    let best: { y: number; below: boolean; d: number } | null = null;
+    for (let d = 0; d <= 60 && !best; d += 6) {
+      const up = r.y - 8 - H - d, down = r.y + r.h + 8 + d;
+      if (fits(up) && clear(up)) best = { y: up + H, below: false, d };
+      else if (clear(down)) best = { y: down, below: true, d };
+    }
+    best ??= fits(r.y - 8 - H) ? { y: r.y - 8, below: false, d: 0 } : { y: r.y + r.h + 8, below: true, d: 0 };
+    return { x: cx, y: best.y, below: best.below };
   }
 
   /** Double-click on a note: type in it, the caret where it was clicked. */
@@ -1022,6 +1208,7 @@ export class Editor {
       if (!from) return void (this.noteDrag = null);
       nd.moved = true;
       nd.from = from;
+      this.dragBusy = true;
       this.checkpoint();
     }
     d.note = { dx: Math.round(nd.from!.dx + e.clientX - nd.x), dy: Math.round(nd.from!.dy + e.clientY - nd.y) };
@@ -1086,6 +1273,7 @@ export class Editor {
     const a = this.doc.arrows.find((x) => x.id === id);
     if (!a) return;
     this.handleDrag = { id, part };
+    this.dragBusy = true;
     if (part === 'bend') this.checkpoint();
     else this.retarget(id, part);
   }
@@ -1097,6 +1285,7 @@ export class Editor {
     const l = this.locForIds(m.at);
     if (l.k !== 'word' && l.k !== 'node') return this.flash('this shape can be changed with e (choose what it marks)');
     this.checkpoint();
+    this.dragBusy = true;
     this.handleDrag = { id, part: end, fixed: this.edgeUnit(l, end === 'end' ? 'start' : 'end') };
   }
 
@@ -1127,7 +1316,7 @@ export class Editor {
   }
 
   mouseMove(e: MouseEvent) {
-    if (!this.handleDrag && !this.dragging && !this.labelDrag && !this.noteDrag && !this.altDraw) return;
+    if (!this.handleDrag && !this.dragging && !this.labelDrag && !this.noteDrag && !this.altDraw && !this.bodyDrag) return;
     this.withFrame(() => this.mouseMoveInner(e));
   }
 
@@ -1136,6 +1325,7 @@ export class Editor {
     if (this.labelDrag) return this.dragLabelSel(e);
     if (this.noteDrag) return this.dragNote(e);
     if (this.altDraw) return this.dragAltDraw(e);
+    if (this.bodyDrag) return this.dragBody(e);
     if (!this.dragging) return;
     const h = this.hitTest(e.clientX, e.clientY);
     if (!h) return;
@@ -1168,6 +1358,8 @@ export class Editor {
     this.mathDrag = null;
     this.labelDrag = null;
     this.noteDrag = null;
+    this.bodyDrag = null;
+    this.dragBusy = false;
     const hd = this.handleDrag;
     this.handleDrag = null;
     if (hd && hd.part !== 'bend' && this.pick?.edit) {

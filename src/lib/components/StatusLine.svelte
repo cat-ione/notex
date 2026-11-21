@@ -18,7 +18,7 @@
   // a drawing's keys, from the same table as its menu
   const styleHint = $derived(
     ed.mode === 'style' && ed.styling
-      ? [...ed.drawingActions(ed.styling).filter((a) => !a.keyOnly && a.name !== 'menu').map((a) => `${keyLabel(a.keys[0])} ${a.name}`), 'enter done', 'right-click or shift+f10 for more'].join(' · ')
+      ? [...ed.drawingActions(ed.styling).filter((a) => !a.keyOnly && a.name !== 'menu').map((a) => `${keyLabel(a.keys[0])} ${a.name}`), 'enter done', 'drag to move · wheel changes it · right-click or shift+f10 for more'].join(' · ')
       : '',
   );
   // Counts don't need to follow every keystroke: refresh them when typing pauses.

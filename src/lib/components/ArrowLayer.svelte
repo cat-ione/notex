@@ -57,7 +57,7 @@
         <path
           class="hit"
           d={g.d}
-          onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.selectDrawing(a.id); }}
+          onmousedown={(e) => { if (e.button > 1) return; e.stopPropagation(); e.preventDefault(); ed.drawingDown(a.id, e); }}
           oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(a.id, e.clientX, e.clientY); }}
             ondblclick={(e) => { e.stopPropagation(); ed.editNoteOf(a.id); }}
             onpointerenter={() => ed.hover(a.id, true)}
@@ -149,6 +149,9 @@
   .clickable path.hit {
     pointer-events: stroke;
     cursor: pointer;
+  }
+  .clickable .sel path.hit {
+    cursor: grab;
   }
   .box {
     fill: var(--arrow-box);

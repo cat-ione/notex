@@ -54,7 +54,7 @@
     class:pinned={l.pinned}
     class:live
     class:hover={ed.hovered === l.id}
-    onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.noteDown(l.id, e); }}
+    onmousedown={(e) => { if (e.button > 1) return; e.stopPropagation(); e.preventDefault(); ed.noteDown(l.id, e); }}
     ondblclick={(e) => { e.stopPropagation(); ed.noteDblClick(l.id, e); }}
     oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(l.id, e.clientX, e.clientY); }}
     onpointerenter={() => ed.hover(l.id, true)}

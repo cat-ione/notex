@@ -8,6 +8,7 @@
   import MarkLayer from './MarkLayer.svelte';
   import LabelLayer from './LabelLayer.svelte';
   import DrawingMenu from './DrawingMenu.svelte';
+  import DrawingBar from './DrawingBar.svelte';
   import StatusLine from './StatusLine.svelte';
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
@@ -20,8 +21,9 @@
     ed.page = page;
     // layout experiments: window.__nx (see $lib/dev)
     if (import.meta.env.DEV || location.search.includes('lab')) import('$lib/dev').then((d) => d.install(ed));
+    // (not passive: the wheel over a selected drawing changes it instead of scrolling)
     const on = <K extends keyof WindowEventMap>(type: K, f: (e: WindowEventMap[K]) => void) => {
-      window.addEventListener(type, f);
+      window.addEventListener(type, f, { passive: false });
       return () => window.removeEventListener(type, f);
     };
     const offs = [
@@ -31,6 +33,7 @@
       on('paste', (e) => ed.paste(e)),
       on('mousemove', (e) => ed.mouseMove(e)),
       on('mouseup', () => ed.mouseUp()),
+      on('wheel', (e) => ed.wheel(e)),
       // Pick up config edits made in an external editor.
       on('focus', () => isDesktop() && ed.loadConfig()),
     ];
@@ -115,6 +118,7 @@
       <MarkLayer {ed} />
       <ArrowLayer {ed} />
       <LabelLayer {ed} />
+      <DrawingBar {ed} />
 
       {#if ed.caret}
         <div
