@@ -25,6 +25,7 @@
       value: () => (ed.config.typing.autoMath ? 'on' : 'off'),
       change: () => ed.updateConfig({ typing: { ...ed.config.typing, autoMath: !ed.config.typing.autoMath } }),
     },
+    { label: 'tips now and then', value: () => (ed.config.tips ? 'on' : 'off'), change: () => ed.updateConfig({ tips: !ed.config.tips }) },
     { label: 'snippets, themes & css…', act: () => openEditor(), hint: 'edit the config' },
     ...(isDesktop()
       ? [{ label: 'open config in my editor', act: async () => { const p = await openConfigExternally(); if (p) ed.flash(`opened ${p} — changes load when you come back`); }, hint: 'external' } as Row]

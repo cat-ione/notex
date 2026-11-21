@@ -23,6 +23,8 @@ export type Config = {
   themes: Record<string, ThemeDef>;
   /** Extra CSS appended to the page. */
   css: string;
+  /** Now and then, a one-line tip in the status bar when it's useful (each at most twice). */
+  tips: boolean;
   typing: {
     /** Math: `^` / `_` take one thing (`x^2+1`), as in LaTeX; off: stay in the script until space. */
     latexScripts: boolean;
@@ -60,6 +62,7 @@ export const DEFAULT_CONFIG: Config = {
     },
   },
   css: '',
+  tips: true,
   typing: { latexScripts: true, autoMath: true },
 };
 

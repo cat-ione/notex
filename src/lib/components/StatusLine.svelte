@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly } from 'svelte/transition';
+  import { fade, fly } from 'svelte/transition';
   import { keyLabel, type Editor } from '$lib/editor.svelte';
 
   let { ed }: { ed: Editor } = $props();
@@ -44,6 +44,8 @@
   {/key}
   {#if ed.message}
     <span class="msg" in:fly={{ x: -8, duration: 160 }}>{ed.message}</span>
+  {:else if ed.tipText}
+    <span class="tip" in:fade={{ duration: 300 }}><span class="tag">tip</span>{ed.tipText}</span>
   {:else}
     <span class="keys">{ed.mode === 'style' ? styleHint : HINTS[ed.mode]}</span>
   {/if}
@@ -85,6 +87,8 @@
   .m-pick, .m-style, .m-hint, .m-label { background: var(--mode-arrow); }
   .keys { overflow: hidden; text-overflow: ellipsis; }
   .msg { color: var(--fg); }
+  .tip { color: var(--muted); }
+  .tip .tag { margin-right: 8px; padding: 0 5px; border: 1px solid var(--border); border-radius: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
   .spacer { flex: 1; }
   .pos { color: var(--fg); }
   .file { color: var(--fg); }

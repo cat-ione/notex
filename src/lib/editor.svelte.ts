@@ -309,7 +309,63 @@ export class Editor {
     return `{"blocks":[${parts.join(',')}],"arrows":${JSON.stringify(d.arrows)},"marks":${JSON.stringify(d.marks)}}`;
   }
 
+  // ── tips ──
+
+  /** A tip in the status bar, for a few seconds (see tip()). */
+  tipText = $state('');
+  private tipId = '';
+  private tipTimer: ReturnType<typeof setTimeout> | undefined;
+  private lastTip = -Infinity;
+  /** How often each tip's moment came up this session (some wait for the second time). */
+  private tipMoments: Record<string, number> = {};
+  /** Each tip: times shown, and whether you've since done what it suggests (then never again). */
+  private tipLog: Record<string, { shown?: number; learned?: true }> = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('notex.tips') ?? '{}');
+    } catch {
+      return {};
+    }
+  })();
+
+  private saveTips() {
+    try {
+      localStorage.setItem('notex.tips', JSON.stringify(this.tipLog));
+    } catch {}
+  }
+
+  /**
+   * The moment for a tip: show it, unless it's done its job (shown twice, or you've used
+   * what it suggests), another tip was up in the last two minutes, a message is showing,
+   * or this is before its `after`-th moment. Tips can be turned off in settings.
+   */
+  private tip(id: string, text: string, after = 1) {
+    const n = (this.tipMoments[id] = (this.tipMoments[id] ?? 0) + 1);
+    const rec = this.tipLog[id] ?? {};
+    if (!this.config.tips || n < after || rec.learned || (rec.shown ?? 0) >= 2 || this.message || performance.now() - this.lastTip < 120_000) return;
+    this.tipLog[id] = { ...rec, shown: (rec.shown ?? 0) + 1 };
+    this.saveTips();
+    this.lastTip = performance.now();
+    this.tipId = id;
+    this.tipText = text;
+    clearTimeout(this.tipTimer);
+    this.tipTimer = setTimeout(() => (this.tipText = ''), 7000);
+  }
+
+  /** A tip for right after a message (the message goes first; the tip follows it). */
+  private tipLater(id: string, text: string, after = 1) {
+    setTimeout(() => this.tip(id, text, after), 3600);
+  }
+
+  /** You've done what a tip suggests: it won't come up again. */
+  private learned(id: string) {
+    if (this.tipLog[id]?.learned) return;
+    this.tipLog[id] = { ...this.tipLog[id], learned: true };
+    this.saveTips();
+    if (this.tipId === id) this.tipText = '';
+  }
+
   flash(msg: string) {
+    this.tipText = '';
     this.message = msg;
     clearTimeout(this.msgTimer);
     this.msgTimer = setTimeout(() => (this.message = ''), 3500);
@@ -1042,6 +1098,7 @@ export class Editor {
       bd.moved = true;
       this.dragBusy = true;
       this.checkpoint();
+      if (m) this.learned('drag-shape');
     }
     if (a) {
       const fr = this.rectOfIds(a.from), tr = this.rectOfIds(a.to);
@@ -1126,6 +1183,7 @@ export class Editor {
     // one step per notch; a touchpad's many small deltas add up to one
     this.wheelAcc += delta;
     if (Math.abs(this.wheelAcc) < 40) return;
+    this.learned('wheel');
     const dir = this.wheelAcc > 0 ? 1 : -1;
     this.wheelAcc = 0;
     this.withFrame(() => {
@@ -1299,6 +1357,7 @@ export class Editor {
   private endAltDraw() {
     const ad = this.altDraw!, pk = this.pick;
     this.altDraw = null;
+    this.learned(ad.shape ? 'alt-shift-drag' : 'alt-drag');
     if (!pk) return;
     // let go where it started: no arrow (a shape around the one thing is fine)
     if (!ad.shape && this.anchorIds(pk.loc).join() === this.anchorIds(ad.start).join()) {
@@ -2464,6 +2523,7 @@ export class Editor {
       const st = this.typingStyle();
       this.pendingStyle = { ...st, [s]: !st[s], at: { b: this.b, o: this.o } };
       this.flash(`${s === 'b' ? 'bold' : 'italic'} ${this.pendingStyle[s] ? 'on' : 'off'}`);
+      this.tipLater('md-bold', '**word** and *word* work as you type, too');
       return;
     }
     const chars = this.selectedItems().flat().filter((it): it is Char => it.t === 'c' && !/\s/.test(it.ch));
@@ -2489,6 +2549,7 @@ export class Editor {
     const text = items.slice(0, this.o).map((i) => (i.t === 'c' ? i.ch : '\0')).join('');
     const m = /(^|[\s(["'])(\*\*|\*)([^\s*](?:[^*]*[^\s*])?)\2$/.exec(text);
     if (!m) return;
+    this.learned('md-bold');
     const L = m[2].length, inner = m[3].length;
     const end = this.o, start = end - L - inner - L;
     this.checkpoint();
@@ -2686,7 +2747,10 @@ export class Editor {
     }
     if (k.length === 1) {
       this.checkpoint('type');
+      const scripts = cur.auto?.length ?? 0;
       M.typeChar(root, cur, k);
+      if (cur.auto?.some((a) => a.grouped)) this.learned('script-group');
+      else if (/^[a-zA-Z0-9]$/.test(k) && (cur.auto?.length ?? 0) < scripts) this.tip('script-group', 'x^(ab) puts more than one thing up (or down)');
       return true;
     }
     return false;
@@ -3153,6 +3217,7 @@ export class Editor {
     this.checkpoint();
     const m: Mark = { id: uid(), kind, at, dash: false, label: '' };
     this.lastMarkKind = kind;
+    this.tip('alt-shift-drag', `alt+shift+drag across words draws a ${kind} too`, 2);
     this.doc.marks.push(m);
     this.pick = null;
     this.selectDrawing(m.id);
@@ -3459,6 +3524,7 @@ export class Editor {
     const a: Arrow = { id: uid(), from, to, bend: defaultBend(fr, tr), head: 'end', dash: false, boxed: false, label: '' };
     this.doc.arrows.push(a);
     this.pick = null;
+    this.tip('alt-drag', 'alt+drag from one thing to another draws an arrow');
     this.styling = a.id;
     this.setMode('style');
   }
@@ -3492,6 +3558,7 @@ export class Editor {
     const a = this.doc.arrows.find((x) => x.id === id);
     const m = this.doc.marks.find((x) => x.id === id);
     if (end === 'at' && m) {
+      this.tipLater('drag-shape', 'drag a shape onto other words to move it');
       this.pick = { phase: 'from', loc: this.locForIds(m.at), purpose: m.kind, edit: { id, end } };
     } else if (a && end !== 'at') {
       const other = end === 'from' ? a.to : a.from;
@@ -3594,7 +3661,7 @@ export class Editor {
     if (m) {
       const shape = (d: number) => edit(() => (m.kind = MARK_KINDS[(MARK_KINDS.indexOf(m.kind) + d + MARK_KINDS.length) % MARK_KINDS.length]));
       return [
-        { name: 'shape', desc: `next shape (${m.kind})`, keys: ['t', 'Right', 'Down'], run: shape(1), more: 'or the wheel near it' },
+        { name: 'shape', desc: `next shape (${m.kind})`, keys: ['t', 'Right', 'Down'], run: (k) => { shape(1)(); if (k) this.tip('wheel', 'the wheel near a selected drawing changes it too', 2); }, more: 'or the wheel near it' },
         { name: 'prevshape', desc: 'previous shape', keys: ['S-t', 'T', 'Left', 'Up'], run: shape(-1), menu: false },
         { name: 'dash', desc: m.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (m.dash = !m.dash)) },
         { name: 'colour', desc: `colour (${m.color || 'default'})`, keys: ['c'], run: edit(() => (m.color = nextInk(m.color))), more: 'or shift+wheel near it' },
@@ -3924,6 +3991,7 @@ export class Editor {
     if (!d) return;
     this.label = { text: d.label, at: at ?? d.label.length, anchor: null };
     this.labelHist = { undo: [], redo: [], run: null };
+    this.tip('note-math', 'notes can hold math too: $x^2$');
     this.setMode('label');
   }
 
@@ -4032,6 +4100,7 @@ export class Editor {
     const lb = this.label;
     const a = this.doc.arrows.find((x) => x.id === this.styling) ?? this.stylingMark;
     if (lb && a && a.label !== lb.text.trim()) { this.checkpoint(); a.label = lb.text.trim(); }
+    if (lb?.text.includes('$')) this.learned('note-math');
     this.label = null;
     this.mode = 'style';
   }
