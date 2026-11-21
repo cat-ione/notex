@@ -91,8 +91,13 @@
   :global(.dlabel.below) {
     transform: translate(-50%, 0);
   }
-  :global(.dlabel.sel:not(.inked)) {
-    color: var(--accent);
+  /* selected (or being typed): its own colour, ringed, as a selected shape keeps its ink */
+  :global(.dlabel.sel) {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 55%, transparent);
+  }
+  :global(.dlabel.typing) {
+    background: color-mix(in srgb, var(--ink) 10%, var(--bg));
+    box-shadow: 0 0 0 1px var(--ink);
   }
   :global(.dlabel.live) {
     pointer-events: auto;
