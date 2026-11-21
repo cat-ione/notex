@@ -258,6 +258,7 @@ export const AUTO_STRUCT: Record<string, Inserter> = {
   prod: MATH_PALETTE.prod,
   int: MATH_PALETTE.int,
   lim: MATH_PALETTE.lim,
+  sqrt: MATH_PALETTE.sqrt,
   RR: MATH_PALETTE.R,
   NN: MATH_PALETTE.N,
   ZZ: MATH_PALETTE.Z,
