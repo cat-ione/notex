@@ -13,11 +13,11 @@
 
 import { tick } from 'svelte';
 import { arrowGeo, bendThrough, defaultBend, type ArrowGeo, type Outline } from './arrows';
-import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
+import { INKS, MARK_KINDS, markGeo, placeLabel, type MarkGeo } from './marks';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
-import { byLine, measure, relTo, union, type Rect } from './geom';
+import { byLine, inkRects, lineGroups, measure, relTo, union, type Rect } from './geom';
 import * as M from './math/edit';
 import { CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
@@ -601,6 +601,7 @@ export class Editor {
       mgeos[m.id] = g;
       if (g.outline) outlines.set(idKey(m.at), g.outline);
     }
+    this.placeLabels(mgeos, origin);
     this.markGeos = mgeos;
     this.makeRoom(mgeos, origin);
 
@@ -617,6 +618,36 @@ export class Editor {
 
     // Keep the caret in view
     this.page.querySelector('.caret')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  /**
+   * Move notes off whatever they would cover on their own line (a limit of an
+   * integral, a neighbouring word, another note): slide sideways while staying
+   * over the shape, else move away from it. Other lines are not obstacles here;
+   * makeRoom pushes those apart afterwards.
+   */
+  private placeLabels(geos: Record<Id, MarkGeo>, origin: DOMRect) {
+    const page = this.page!;
+    const lineInk = new Map<Element, Rect[][]>();
+    const placed: Rect[] = [];
+    for (const m of this.doc.marks) {
+      const g = geos[m.id];
+      const target = this.rectOfIds(m.at);
+      const blockEl = m.at.length ? this.el(m.at[0])?.closest('.block') : null;
+      if (!g || !m.label || !target || !blockEl) continue;
+      if (!lineInk.has(blockEl)) lineInk.set(blockEl, lineGroups(inkRects(blockEl).map((r) => relTo(r, origin))));
+      const t = relTo(target, origin);
+      // ink of the line(s) the target sits on
+      const ink = lineInk.get(blockEl)!.filter((l) => { const u = union(l)!; return u.y < t.y + t.h && t.y < u.y + u.h; }).flat();
+      const others = this.doc.marks.filter((o) => o.id !== m.id && geos[o.id]).map((o) => geos[o.id].bounds);
+      const el = page.querySelector(`.dlabel[data-id="${m.id}"]`)?.getBoundingClientRect();
+      const w = el?.width ?? m.label.length * 6.6 + 6, h = el?.height ?? 15;
+      // same box LabelLayer draws: hanging from y - 12 (below) or standing on y + 3 (above)
+      const box = { x: g.label.x - w / 2, y: g.label.below ? g.label.y - 12 : g.label.y + 3 - h, w, h };
+      const { dx, dy } = placeLabel(box, g.label.below ? 1 : -1, [...ink, ...others, ...placed], w / 2);
+      g.label = { ...g.label, x: g.label.x + dx, y: g.label.y + dy };
+      placed.push({ ...box, x: box.x + dx, y: box.y + dy });
+    }
   }
 
   /**

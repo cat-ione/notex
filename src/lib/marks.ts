@@ -93,3 +93,25 @@ function path(kind: MarkKind, r: Rect): Omit<MarkGeo, 'bounds'> {
 export const INKS = ['', 'red', 'green', 'blue', 'purple'] as const;
 export type Ink = (typeof INKS)[number];
 export const inkVar = (c: string | undefined) => (c ? `var(--ink-${c})` : 'var(--arrow)');
+
+const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * Find a spot for a note box that doesn't cover any obstacle: first slide it
+ * sideways (at most `maxDx`, so it stays attached to its shape), then move it
+ * away from the shape (`dir` 1 = down, -1 = up) a step at a time and slide again.
+ * Returns the box's offset, or none if nothing nearby is free.
+ */
+export function placeLabel(box: Rect, dir: 1 | -1, obstacles: Rect[], maxDx: number, gap = 2): { dx: number; dy: number } {
+  const step = 4;
+  const dxs = [0];
+  for (let d = step; d <= maxDx; d += step) dxs.push(d, -d);
+  for (let n = 0; n <= 8; n++) {
+    const dy = dir * n * 5;
+    for (const dx of dxs) {
+      const r = { x: box.x + dx - gap, y: box.y + dy - gap, w: box.w + 2 * gap, h: box.h + 2 * gap };
+      if (!obstacles.some((o) => overlaps(o, r))) return { dx, dy };
+    }
+  }
+  return { dx: 0, dy: 0 };
+}

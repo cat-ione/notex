@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { byLine } from './geom';
-import { MARK_KINDS, markGeo } from './marks';
+import { MARK_KINDS, markGeo, placeLabel } from './marks';
 
 const r = (x: number, y: number, w = 10, h = 16) => ({ x, y, w, h });
 
@@ -48,5 +48,27 @@ describe('arrows to outlined targets', () => {
     // on the (padded) ellipse
     const o = { cx: circle.r.x + circle.r.w / 2, cy: circle.r.y + circle.r.h / 2, rx: circle.r.w / 2 + 2, ry: circle.r.h / 2 + 2 };
     expect(((end[0] - o.cx) / o.rx) ** 2 + ((end[1] - o.cy) / o.ry) ** 2).toBeCloseTo(1, 1);
+  });
+});
+
+describe('placeLabel', () => {
+  const box = { x: 0, y: 0, w: 40, h: 14 };
+
+  it('stays put when free', () => {
+    expect(placeLabel(box, 1, [{ x: 100, y: 0, w: 10, h: 10 }], 20)).toEqual({ dx: 0, dy: 0 });
+  });
+
+  it('slides sideways away from something in the way', () => {
+    const { dx, dy } = placeLabel(box, 1, [{ x: -10, y: 2, w: 14, h: 10 }], 20);
+    expect(dy).toBe(0);
+    expect(dx).toBeGreaterThan(0);
+  });
+
+  it('moves away from the shape when sliding is not enough', () => {
+    const wall = { x: -100, y: 0, w: 300, h: 14 };
+    const { dx, dy } = placeLabel(box, 1, [wall], 20);
+    expect(dx).toBe(0);
+    expect(dy).toBeGreaterThanOrEqual(16);
+    expect(placeLabel(box, -1, [wall], 20).dy).toBeLessThanOrEqual(-16);
   });
 });

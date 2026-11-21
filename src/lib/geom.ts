@@ -16,8 +16,8 @@ export const union = (rs: Rect[]): Rect | null => {
 const fromDOM = (r: DOMRect): Rect => ({ x: r.left, y: r.top, w: r.width, h: r.height });
 const INK = 'svg, .frac-line, .rule, .overline-line, .underline-line, .hline';
 
-/** Tight bounding box of the visible content of an element (viewport coords). */
-export function measure(el: Element): Rect | null {
+/** The individual ink boxes inside an element (viewport coords): text runs, svgs and rules. */
+export function inkRects(el: Element): Rect[] {
   const rects: Rect[] = [];
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
   const range = document.createRange();
@@ -35,6 +35,12 @@ export function measure(el: Element): Rect | null {
     }
     n = walker.nextNode();
   }
+  return rects;
+}
+
+/** Tight bounding box of the visible content of an element (viewport coords). */
+export function measure(el: Element): Rect | null {
+  const rects = inkRects(el);
   if (!rects.length) {
     const r = el.getBoundingClientRect();
     return r.width || r.height ? fromDOM(r) : { x: r.left, y: r.top, w: 0, h: r.height || 16 };
@@ -48,8 +54,8 @@ export const center = (r: Rect) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
 
 export const pad = (r: Rect, p: number): Rect => ({ x: r.x - p, y: r.y - p, w: r.w + 2 * p, h: r.h + 2 * p });
 
-/** Merge rects into one rect per visual line (rects whose vertical centres overlap a line join it). */
-export function byLine(rs: Rect[]): Rect[] {
+/** Group rects by visual line (a rect whose vertical centre falls inside one of a line's rects joins it). */
+export function lineGroups(rs: Rect[]): Rect[][] {
   const lines: Rect[][] = [];
   for (const r of [...rs].sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2))) {
     const cy = r.y + r.h / 2;
@@ -57,5 +63,8 @@ export function byLine(rs: Rect[]): Rect[] {
     if (line) line.push(r);
     else lines.push([r]);
   }
-  return lines.map((l) => union(l)!);
+  return lines;
 }
+
+/** Merge rects into one rect per visual line. */
+export const byLine = (rs: Rect[]): Rect[] => lineGroups(rs).map((l) => union(l)!);
