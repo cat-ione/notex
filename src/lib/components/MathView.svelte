@@ -3,7 +3,13 @@
   import type { MathItem } from '$lib/model';
   import { toLatex, type MCursor, type MSelRange } from '$lib/math/latex';
 
-  let { item, cursor = null, sel = null, selected = false }: { item: MathItem; cursor?: MCursor | null; sel?: MSelRange | null; selected?: boolean } = $props();
+  let {
+    item,
+    cursor = null,
+    sel = null,
+    selected = false,
+    pad,
+  }: { item: MathItem; cursor?: MCursor | null; sel?: MSelRange | null; selected?: boolean; pad?: { above?: number; below?: number } } = $props();
 
   const html = $derived.by(() => {
     try {
@@ -20,7 +26,14 @@
   });
 </script>
 
-<span class="math" class:display={item.display} class:editing={!!cursor} class:selected data-nx={item.id}>{@html html}</span>
+<span
+  class="math"
+  class:display={item.display}
+  class:editing={!!cursor}
+  class:selected
+  data-nx={item.id}
+  style={pad ? `padding-top: ${pad.above ?? 0}px; padding-bottom: ${pad.below ?? 0}px` : undefined}
+>{@html html}</span>
 
 <style>
   .math {

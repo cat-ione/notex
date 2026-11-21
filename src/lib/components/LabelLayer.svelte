@@ -53,6 +53,7 @@
 
 {#each labels as l (l.id)}
   <div
+    data-id={l.id}
     class="dlabel"
     class:below={l.below}
     class:sel={l.sel}

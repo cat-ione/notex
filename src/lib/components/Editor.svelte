@@ -67,6 +67,11 @@
   const SIGIL = { math: 'ƒ', text: '❯', draw: '✎' };
 </script>
 
+<!-- Invisible line spacers that make room for drawings (see Editor.makeRoom).
+     A word joiner, so they never add a line break opportunity.
+     (Kept on one line: whitespace here would show up in the pre-wrap text.) -->
+{#snippet spacer(id: string)}{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
+
 <div class="shell">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroller" onmousedown={(e) => ed.mouseDown(e)}>
@@ -76,9 +81,9 @@
         <div class="block {blk.kind}" class:current={ed.b === b} data-nx={blk.id}>
           {#each blk.items as it, o (it.id)}
             {#if it.t === 'c'}
-              <span class="ch" class:sel={ed.isSelected(b, o)} data-nx={it.id}>{it.ch}</span>
+              <span class="ch" class:sel={ed.isSelected(b, o)} data-nx={it.id}>{it.ch}</span>{@render spacer(it.id)}
             {:else}
-              <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} selected={ed.isSelected(b, o)} />
+              <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} selected={ed.isSelected(b, o)} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display}{@render spacer(it.id)}{/if}
             {/if}
           {/each}<span class="eol" data-eol={blk.id}>&#8203;</span>
         </div>
@@ -238,6 +243,11 @@
   }
   .ch.sel {
     background: var(--text-sel);
+  }
+  /* no transition: makeRoom measures these right after they change */
+  .nx-sp {
+    display: inline;
+    line-height: 0;
   }
   .eol {
     display: inline-block;

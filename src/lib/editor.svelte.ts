@@ -37,6 +37,7 @@ export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
 export type PaletteItem = { name: string; desc: string; draw?: boolean };
+export type Spacer = { above?: number; below?: number };
 type Hint = { label: string; rect: Rect; act: () => void };
 type Snap = { doc: Doc; b: number; o: number };
 
@@ -80,6 +81,14 @@ export class Editor {
   pickRects = $state<{ cur: Rect | null; from: Rect | null }>({ cur: null, from: null });
   arrowGeos = $state<Record<Id, ArrowGeo>>({});
   markGeos = $state<Record<Id, MarkGeo>>({});
+  /**
+   * Room made for drawings, per item: how far (px) the invisible spacer after a
+   * character / inline formula is raised (above) or lowered (below), or the
+   * padding (px) of a display formula.
+   */
+  spacers = $state<Record<Id, Spacer>>({});
+  private spacerPasses = 0;
+  private spacerVersion = -1;
   /** Text selection captured when a command was run from the palette. */
   private cmdSel: { s: Pos; e: Pos } | null = null;
   /** Where to go back to after a drawing started from inside a formula. */
@@ -593,6 +602,7 @@ export class Editor {
       if (g.outline) outlines.set(idKey(m.at), g.outline);
     }
     this.markGeos = mgeos;
+    this.makeRoom(mgeos, origin);
 
     // Arrows
     const geos: Record<Id, ArrowGeo> = {};
@@ -607,6 +617,83 @@ export class Editor {
 
     // Keep the caret in view
     this.page.querySelector('.caret')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  /**
+   * Push lines apart where a drawing (a brace, a note, a big circle) would run
+   * into the line above or below it. Each affected line gets an invisible,
+   * zero-height spacer shifted up or down to just past the drawing, which the
+   * line box has to stretch to include; display formulas get padding instead.
+   * The spacers are measured, so this settles in a pass or two.
+   */
+  private makeRoom(geos: Record<Id, MarkGeo>, origin: DOMRect) {
+    const page = this.page!;
+    const GAP = 3;
+    const want: Record<Id, Spacer> = {};
+    const need = (item: Id, side: 'above' | 'below', y: number) => {
+      const w = (want[item] ??= {});
+      w[side] = side === 'below' ? Math.max(w[side] ?? -Infinity, y) : Math.min(w[side] ?? Infinity, y);
+    };
+    for (const m of this.doc.marks) {
+      const g = geos[m.id];
+      const target = this.rectOfIds(m.at);
+      if (!g || !target) continue;
+      let top = g.bounds.y + origin.top, bottom = g.bounds.y + g.bounds.h + origin.top;
+      if (m.label) {
+        // Position from the fresh geometry (the label on screen may not have moved yet),
+        // height from the label itself (math can make it taller); one small line until it exists.
+        const h = page.querySelector(`.dlabel[data-id="${m.id}"]`)?.getBoundingClientRect().height ?? 15;
+        const ly = g.label.y + origin.top;
+        if (g.label.below) bottom = Math.max(bottom, ly - 12 + h);
+        else top = Math.min(top, ly + 3 - h);
+      }
+      // anchor the room on the item at the start (above) / end (below) of the target
+      const items = m.at.flatMap((id) => {
+        const el = this.el(id);
+        if (el?.classList.contains('block')) return [...el.querySelectorAll<HTMLElement>(':scope > .ch, :scope > .math')].map((e) => e.dataset.nx!);
+        const it = (el?.closest('.ch, .math') as HTMLElement | null)?.dataset.nx;
+        return it ? [it] : [];
+      });
+      if (!items.length) continue;
+      if (bottom > target.y + target.h + 4) need(items[items.length - 1], 'below', bottom + GAP);
+      if (top < target.y - 4) need(items[0], 'above', top - GAP);
+    }
+
+    // Turn wanted extents (viewport y) into spacer sizes, measuring the current spacers.
+    const next: Record<Id, Spacer> = {};
+    for (const [id, w] of Object.entries(want)) {
+      const el = this.el(id);
+      if (!el) continue;
+      const cur = this.spacers[id] ?? {};
+      const out: Spacer = {};
+      if (el.classList.contains('display')) {
+        const r = el.getBoundingClientRect();
+        if (w.below !== undefined) out.below = Math.max(0, Math.ceil(w.below - (r.bottom - (cur.below ?? 0))));
+        if (w.above !== undefined) out.above = Math.max(0, Math.ceil(r.top + (cur.above ?? 0) - w.above));
+      } else {
+        for (const side of ['below', 'above'] as const) {
+          if (w[side] === undefined) continue;
+          const sp = page.querySelector(`[data-sp="${id}-${side}"]`)?.getBoundingClientRect();
+          const h = cur[side] ?? 0;
+          if (!sp) { out[side] = 0; continue; } // measure next pass
+          // The spacer's (zero-height) line box sits at the middle of its text; moving
+          // it by d moves that point by d, and the line edge follows once it's outside.
+          const at = sp.top + sp.height / 2;
+          out[side] = Math.max(0, Math.ceil(side === 'below' ? h + (w.below! - at) : h + (at - w.above!)));
+        }
+      }
+      next[id] = out;
+    }
+
+    const same = (a: Record<Id, Spacer>, b: Record<Id, Spacer>) => {
+      const ka = Object.keys(a), kb = Object.keys(b);
+      return ka.length === kb.length && ka.every((k) => b[k] && Math.abs((a[k].below ?? -1) - (b[k].below ?? -1)) <= 1 && Math.abs((a[k].above ?? -1) - (b[k].above ?? -1)) <= 1);
+    };
+    if (this.spacerVersion !== this.version) (this.spacerVersion = this.version), (this.spacerPasses = 0);
+    if (same(next, this.spacers)) return;
+    if (++this.spacerPasses > 4) return; // never loop forever on odd layouts
+    this.spacers = next;
+    tick().then(() => this.layout());
   }
 
   private mathCaret(origin: DOMRect): typeof this.caret {

@@ -14,6 +14,8 @@ export type MarkGeo = {
   label: { x: number; y: number; below: boolean };
   /** For enclosing shapes, the outline arrows should touch. */
   outline?: { r: Rect; round: boolean };
+  /** Extent of the drawn ink (without the label). */
+  bounds: Rect;
 };
 
 const f = (n: number) => Math.round(n * 10) / 10;
@@ -24,12 +26,22 @@ export function markGeo(kind: MarkKind, lines: Rect[]): MarkGeo | null {
   if (kind === 'underline' || kind === 'strike' || kind === 'highlight') {
     // Line-based marks follow the text across line wraps.
     const parts = lines.map((r) => shape(kind, r));
-    return { d: parts.map((p) => p.d).join(' '), filled: parts[0].filled, label: parts[parts.length - 1].label };
+    return { d: parts.map((p) => p.d).join(' '), filled: parts[0].filled, label: parts[parts.length - 1].label, bounds: union(parts.map((p) => p.bounds))! };
   }
   return shape(kind, union(lines)!);
 }
 
 function shape(kind: MarkKind, r: Rect): MarkGeo {
+  const g = path(kind, r);
+  const bounds =
+    g.outline?.r ??
+    (kind === 'underline' ? { x: r.x, y: r.y + r.h + 1, w: r.w, h: 2 }
+      : kind === 'brace' ? { x: r.x, y: r.y + r.h + 3, w: r.w, h: Math.min(8, Math.max(5, r.w / 10)) }
+      : r);
+  return { ...g, bounds };
+}
+
+function path(kind: MarkKind, r: Rect): Omit<MarkGeo, 'bounds'> {
   const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
   const below = { x: cx, y: r.y + r.h + 16, below: true };
   const above = { x: cx, y: r.y - 8, below: false };

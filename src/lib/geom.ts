@@ -24,7 +24,8 @@ export function measure(el: Element): Rect | null {
   let n: Node | null = walker.currentNode;
   while (n) {
     if (n.nodeType === Node.TEXT_NODE) {
-      if (n.textContent && n.textContent.trim()) {
+      // (line spacers hold an invisible word joiner; they are not ink)
+      if (n.textContent && n.textContent.trim() && !n.parentElement?.classList.contains('nx-sp')) {
         range.selectNodeContents(n);
         for (const r of range.getClientRects()) if (r.width || r.height) rects.push(fromDOM(r));
       }
