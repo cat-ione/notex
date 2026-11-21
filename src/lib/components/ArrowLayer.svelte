@@ -72,10 +72,10 @@
               cy={p.y}
               r={part === 'bend' ? 4 : 5}
               onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.beginHandleDrag(a.id, part); }}
+              data-tip={part === 'bend' ? 'drag to bend' : `drag to move the ${part === 'from' ? 'start' : 'tip'}`}
+              data-tip-key={part === 'bend' ? '↑ ↓' : part === 'from' ? 's' : 'e'}
               in:fade={{ duration: 120 }}
-            >
-              <title>{part === 'bend' ? 'drag to bend' : `drag to move the ${part === 'from' ? 'start' : 'tip'}`}</title>
-            </circle>
+            />
           {/each}
         {/if}
       </g>

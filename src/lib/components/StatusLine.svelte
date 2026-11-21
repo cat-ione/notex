@@ -42,7 +42,7 @@
     <span class="keys">{ed.mode === 'style' ? styleHint : HINTS[ed.mode]}</span>
   {/if}
   <span class="spacer"></span>
-  <span class="file" title={ed.file.path ?? 'not saved to a file yet'}>
+  <span class="file" data-tip={ed.file.path ?? 'not saved to a file yet'} data-tip-key="ctrl+s">
     {ed.file.name}{#if ed.dirty}<span class="dot" class:warn={!ed.file.path} in:fly={{ y: -4, duration: 150 }}>●</span>{/if}
   </span>
   <span class="stat">{counts.words}w · {counts.maths}∑ · {counts.drawings}↗</span>

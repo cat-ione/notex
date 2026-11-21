@@ -52,10 +52,10 @@
         height="12"
         rx="2"
         onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.beginMarkResize(me.id, part); }}
+        data-tip="drag to cover more or less"
+        data-tip-key="{part === 'end' ? 'shift' : 'ctrl+shift'}+← →"
         in:fade={{ duration: 120 }}
-      >
-        <title>drag to cover more or less ({part === 'end' ? 'shift' : 'ctrl+shift'}+← → from the keyboard)</title>
-      </rect>
+      />
     {/each}
   {/if}
 </svg>

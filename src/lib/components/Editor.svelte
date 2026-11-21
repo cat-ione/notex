@@ -9,6 +9,7 @@
   import LabelLayer from './LabelLayer.svelte';
   import DrawingMenu from './DrawingMenu.svelte';
   import DrawingBar from './DrawingBar.svelte';
+  import Tooltip from './Tooltip.svelte';
   import StatusLine from './StatusLine.svelte';
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
@@ -92,6 +93,7 @@
 
 <div class="shell">
   <DrawingMenu {ed} />
+  <Tooltip {ed} />
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroller" onmousedown={(e) => ed.mouseDown(e)} onscroll={() => ed.scrolled()}>
     <div class="page" bind:this={page}>

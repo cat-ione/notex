@@ -13,9 +13,10 @@
   const mark = $derived(id ? ed.doc.marks.find((m) => m.id === id) : undefined);
   const arrow = $derived(id ? ed.doc.arrows.find((a) => a.id === id) : undefined);
   const acts = $derived(id && at ? ed.drawingActions(id) : []);
-  const tip = (name: string, extra = '') => {
+  // tooltip for an action (see Tooltip): what it does, its key, how else to do it
+  const tip = (name: string, more = '') => {
     const a = acts.find((x) => x.name === name);
-    return a ? `${a.desc} · ${keyLabel(a.keys[0])}${extra}` : '';
+    return a ? { 'data-tip': a.desc, 'data-tip-key': keyLabel(a.keys[0]), 'data-tip-more': more } : {};
   };
   const down = (e: MouseEvent) => {
     e.stopPropagation();
@@ -50,34 +51,34 @@
     {#if mark}
       <div class="group">
         {#each MARK_KINDS as k (k)}
-          <button class:on={mark.kind === k} title="{k} · t / shift+t cycle · wheel over it" onclick={() => ed.setMarkKind(id, k)}>{@render kindIcon(k)}</button>
+          <button class:on={mark.kind === k} data-tip={k} aria-label={k} data-tip-key="t / shift+t" data-tip-more="or the wheel near it" onclick={() => ed.setMarkKind(id, k)}>{@render kindIcon(k)}</button>
         {/each}
       </div>
     {:else if arrow}
       <div class="group">
-        <button class="txt" title={tip('heads')} onclick={() => ed.runAction(id, 'heads')}>{HEADS[arrow.head]}</button>
-        <button class="txt" title={tip('reverse')} onclick={() => ed.runAction(id, 'reverse')}>⇄</button>
-        <button class="txt" class:on={arrow.bend === 0} title={tip('straight', ' · wheel over it bends')} onclick={() => ed.runAction(id, 'straight')}>⌒</button>
-        <button class="txt" class:on={arrow.boxed} title={tip('boxes')} onclick={() => ed.runAction(id, 'boxes')}>▢</button>
+        <button class="txt" {...tip('heads')} onclick={() => ed.runAction(id, 'heads')}>{HEADS[arrow.head]}</button>
+        <button class="txt" {...tip('reverse')} onclick={() => ed.runAction(id, 'reverse')}>⇄</button>
+        <button class="txt" class:on={arrow.bend === 0} {...tip('straight', 'the wheel near it bends it')} onclick={() => ed.runAction(id, 'straight')}>⌒</button>
+        <button class="txt" class:on={arrow.boxed} {...tip('boxes')} onclick={() => ed.runAction(id, 'boxes')}>▢</button>
       </div>
     {/if}
     <div class="group">
       {#each INKS as c (c)}
-        <button class="ink" class:on={(d.color ?? '') === c} title="{c || 'default'} colour · c cycles · shift+wheel over it" onclick={() => ed.setInk(id, c)}>
+        <button class="ink" class:on={(d.color ?? '') === c} data-tip="{c || 'default'} colour" aria-label="{c || 'default'} colour" data-tip-key="c" data-tip-more="or shift+wheel near it" onclick={() => ed.setInk(id, c)}>
           <span style="background: {inkVar(c)}"></span>
         </button>
       {/each}
     </div>
     <div class="group">
-      <button class="txt" class:on={d.dash} title={tip('dash')} onclick={() => ed.runAction(id, 'dash')}>┄</button>
-      <button class="txt" title="{tip('note')} · or double-click" onclick={() => ed.runAction(id, 'note')}>✎</button>
+      <button class="txt" class:on={d.dash} {...tip('dash')} onclick={() => ed.runAction(id, 'dash')}>┄</button>
+      <button class="txt" {...tip('note', 'or double-click it')} onclick={() => ed.runAction(id, 'note')}>✎</button>
       {#if mark}
-        <button class="txt" title="{tip('target')} · or drag the shape onto it" onclick={() => ed.runAction(id, 'target')}>⌖</button>
+        <button class="txt" {...tip('target', 'or drag the shape onto it')} onclick={() => ed.runAction(id, 'target')}>⌖</button>
       {:else}
-        <button class="txt" title="{tip('start')} · or drag its start dot" onclick={() => ed.runAction(id, 'start')}>⇤</button>
-        <button class="txt" title="{tip('tip')} · or drag its tip dot" onclick={() => ed.runAction(id, 'tip')}>⇥</button>
+        <button class="txt" {...tip('start', 'or drag its start dot')} onclick={() => ed.runAction(id, 'start')}>⇤</button>
+        <button class="txt" {...tip('tip', 'or drag its tip dot')} onclick={() => ed.runAction(id, 'tip')}>⇥</button>
       {/if}
-      <button class="txt danger" title="{tip('delete')} · or middle-click it" onclick={() => ed.deleteDrawing(id)}>✕</button>
+      <button class="txt danger" {...tip('delete', 'or middle-click it')} onclick={() => ed.deleteDrawing(id)}>✕</button>
     </div>
   </div>
 {/if}
