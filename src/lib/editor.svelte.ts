@@ -740,16 +740,21 @@ export class Editor {
     if (mel && this.page.contains(mel)) {
       const pos = this.findItem(mel.getAttribute('data-nx')!);
       if (pos) {
-        // KaTeX stacks empty layout boxes over glyphs (a fraction's rows, say), so the
-        // element under the pointer may be the whole structure: take the smallest node
-        // whose box contains the point
+        // On a glyph (a letter, an operator, a delimiter): the node it belongs to. On
+        // empty layout boxes, gaps and lines (between symbols, above short letters, a
+        // fraction bar, KaTeX's stacked rows over a whole fraction): the nearest symbol,
+        // not whatever structure happens to contain the point.
         let node = hit!.closest('[data-nx]');
-        let area = Infinity;
-        for (const e of mel.querySelectorAll('[data-nx]')) {
-          const r = e.getBoundingClientRect();
-          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && r.width * r.height < area) {
-            area = r.width * r.height;
-            node = e;
+        // (KaTeX's layout spans hold a zero-width space: that is not a glyph)
+        const onGlyph = /[^\s\u200b\u2060\ufeff]/.test(hit!.textContent ?? '') && !hit!.querySelector('[data-nx]') && node !== mel;
+        if (!onGlyph) {
+          let nd = Infinity;
+          for (const e of mel.querySelectorAll('[data-nx]')) {
+            if (e.querySelector('[data-nx]')) continue;
+            const r = e.getBoundingClientRect();
+            if (!r.width && !r.height) continue;
+            const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+            if (d < nd) (nd = d), (node = e);
           }
         }
         const id = node && node !== mel ? node.getAttribute('data-nx') : null;
@@ -860,7 +865,9 @@ export class Editor {
     while (d < from.path.length && d < to.path.length && from.path[d].i === to.path[d].i && from.path[d].s === to.path[d].s) d++;
     const span = (c: MCursor): [number, number] => (c.path.length > d ? [c.path[d].i, c.path[d].i + 1] : [c.off, c.off]);
     const [a0, a1] = span(from), [b0, b1] = span(to);
-    const forward = b0 > a0 || (b0 === a0 && b1 >= a1 && to.off >= from.off);
+    // same structure at the common row (both ends inside it): its parts' order decides
+    // (numerator before denominator); offsets in different rows say nothing
+    const forward = b0 !== a0 ? b0 > a0 : b1 !== a1 ? b1 > a1 : from.path.length > d && to.path.length > d ? to.path[d].s >= from.path[d].s : to.off >= from.off;
     const row = M.rowAt(root, from.path.slice(0, d));
     // a base takes its scripts along
     const grow = (e: number) => {
