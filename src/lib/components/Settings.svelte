@@ -15,6 +15,16 @@
     { label: 'theme', value: () => ed.config.theme, change: (d) => ed.cycleTheme(d) },
     { label: 'text size', value: () => `${ed.config.fontSize}px`, change: (d) => ed.updateConfig({ fontSize: clamp(ed.config.fontSize + d, 11, 28) }) },
     { label: 'page width', value: () => `${ed.config.pageWidth}px`, change: (d) => ed.updateConfig({ pageWidth: clamp(ed.config.pageWidth + d * 40, 480, 1600) }) },
+    {
+      label: 'math ^ and _',
+      value: () => (ed.config.typing.latexScripts ? 'one thing, like LaTeX' : 'stay in until space'),
+      change: () => ed.updateConfig({ typing: { ...ed.config.typing, latexScripts: !ed.config.typing.latexScripts } }),
+    },
+    {
+      label: 'x^2 in text becomes math',
+      value: () => (ed.config.typing.autoMath ? 'on' : 'off'),
+      change: () => ed.updateConfig({ typing: { ...ed.config.typing, autoMath: !ed.config.typing.autoMath } }),
+    },
     { label: 'snippets, themes & css…', act: () => openEditor(), hint: 'edit the config' },
     ...(isDesktop()
       ? [{ label: 'open config in my editor', act: async () => { const p = await openConfigExternally(); if (p) ed.flash(`opened ${p} — changes load when you come back`); }, hint: 'external' } as Row]
