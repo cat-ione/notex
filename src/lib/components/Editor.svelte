@@ -63,7 +63,8 @@
   });
 
 
-  const editingMath = (b: number, o: number) => (ed.mode === 'math' || (ed.mode === 'palette' && ed.palette?.ctx === 'math')) && ed.b === b && ed.o === o;
+  const editingMath = (b: number, o: number) => ed.inFormula && ed.b === b && ed.o === o;
+  const SIGIL = { math: 'ƒ', text: '❯', draw: '✎' };
 </script>
 
 <div class="shell">
@@ -114,11 +115,16 @@
       {/if}
 
       {#if ed.palette && ed.caret}
-        <div class="palette" style="left: {ed.caret.r.x}px; top: {ed.caret.r.y + ed.caret.r.h + 6}px;" transition:fly={{ y: -6, duration: 140, easing: cubicOut }}>
-          <div class="prompt"><span class="sigil">{ed.palette.ctx === 'math' ? 'ƒ' : '❯'}</span> \{ed.palette.query}<span class="blink">▏</span></div>
+        {@const up = (ed.page?.getBoundingClientRect().top ?? 0) + ed.caret.r.y + ed.caret.r.h + 300 > window.innerHeight - 30}
+        <div
+          class="palette"
+          style="left: {ed.caret.r.x}px; top: {up ? ed.caret.r.y - 6 : ed.caret.r.y + ed.caret.r.h + 6}px; {up ? 'transform: translateY(-100%);' : ''}"
+          transition:fly={{ y: up ? 6 : -6, duration: 140, easing: cubicOut }}
+        >
+          <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {ed.palette.ctx === 'draw' ? '' : '\\'}{ed.palette.query}<span class="blink">▏</span></div>
           {#each ed.paletteItems as item, i (item.name)}
             <div class="opt" class:sel={i === ed.palette.sel}>
-              <span class="name">{item.name}</span><span class="desc">{item.desc}</span>
+              <span class="name">{#if item.draw && ed.palette.ctx !== 'draw'}<span class="pen">✎</span>{/if}{item.name}</span><span class="desc">{item.desc}</span>
             </div>
           {:else}
             <div class="opt empty">{ed.palette.ctx === 'math' ? `insert \\${ed.palette.query}` : 'no match'}</div>
@@ -349,6 +355,10 @@
   }
   .opt.sel .name::before {
     content: '› ';
+  }
+  .opt .pen {
+    color: var(--arrow);
+    margin-right: 4px;
   }
   .opt.empty {
     font-style: italic;

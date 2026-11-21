@@ -14,6 +14,7 @@
       ['& enter', 'matrix: new column / row'], ['shift+← → / ctrl+a', 'select (grows out of boxes)'], ['/  (  \\cmd', 'wrap the selection'], ['$  →  esc', 'back to text'],
     ]],
     ['drawing  (\\arrow  \\circle  \\box …)', [
+      ['ctrl+d', 'draw menu, in text or inside math'],
       ['select, then \\cmd', 'draw on the selection right away'],
       ['← → ↑ ↓  or click', 'choose a word or symbol'], ['shift+↑ / shift+↓', 'whole expression / inside it'],
       ['shift+← →', 'extend over neighbours'], ['home  end', 'first / last on the line'], ['tab', 'jump labels'], ['enter', 'confirm start, then end'],

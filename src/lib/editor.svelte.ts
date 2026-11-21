@@ -35,7 +35,8 @@ export type Loc =
 
 export type Pos = { b: number; o: number };
 
-type PaletteEntry = { name: string; desc: string; run: () => void };
+type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
+export type PaletteItem = { name: string; desc: string; draw?: boolean };
 type Hint = { label: string; rect: Rect; act: () => void };
 type Snap = { doc: Doc; b: number; o: number };
 
@@ -53,7 +54,8 @@ export class Editor {
   /** Math cursor (valid in math mode; the math item is items[o]). */
   mc = $state<MCursor>({ path: [], off: 0 });
 
-  palette = $state<{ ctx: 'math' | 'text'; query: string; sel: number } | null>(null);
+  /** `draw` is the drawing menu (Ctrl+D), available from text and math. */
+  palette = $state<{ ctx: 'math' | 'text' | 'draw'; query: string; sel: number } | null>(null);
   /** Choosing a target: for an arrow (two phases) or a mark (one). */
   pick = $state<{ phase: 'from' | 'to'; loc: Loc; from?: Loc; purpose: 'arrow' | MarkKind; edit?: { id: Id; end: 'from' | 'to' | 'at' } } | null>(null);
   styling = $state<Id | null>(null);
@@ -80,6 +82,8 @@ export class Editor {
   markGeos = $state<Record<Id, MarkGeo>>({});
   /** Text selection captured when a command was run from the palette. */
   private cmdSel: { s: Pos; e: Pos } | null = null;
+  /** Where to go back to after a drawing started from inside a formula. */
+  private drawReturn: { b: number; o: number; mc: MCursor } | null = null;
 
   page: HTMLElement | null = null;
 
@@ -666,6 +670,11 @@ export class Editor {
       e.preventDefault();
       return;
     }
+    if (k === 'C-d' && (this.mode === 'text' || this.mode === 'math')) {
+      this.openPalette('draw');
+      e.preventDefault();
+      return;
+    }
     let handled = true;
     switch (this.mode) {
       case 'text': handled = this.textKey(k); break;
@@ -1113,16 +1122,22 @@ export class Editor {
 
   // ── palette ──
 
-  get paletteItems(): { name: string; desc: string }[] {
+  get paletteItems(): PaletteItem[] {
     const p = this.palette;
     if (!p) return [];
     const q = p.query;
+    const draws = this.drawCommands();
+    const rankDraws = (n: number) => rank(draws.map((c) => c.name), q).slice(0, n).map((n) => draws.find((c) => c.name === n)!);
+    if (p.ctx === 'draw') return rankDraws(10);
     if (p.ctx === 'math') {
       const user = this.config.snippets.math;
       const names = [...new Set([...Object.keys(user), ...Object.keys(MATH_PALETTE)])];
-      return rank(names, q)
-        .slice(0, 8)
+      // Drawing commands join in once something is typed, after the math ones.
+      const extra = q ? rankDraws(3) : [];
+      const math = rank(names, q)
+        .slice(0, 8 - extra.length)
         .map((n) => ({ name: n, desc: user[n] !== undefined ? user[n] : describeInserter(n) }));
+      return [...math, ...extra];
     }
     const cmds = this.textCommands();
     return rank(cmds.map((c) => c.name), q)
@@ -1130,7 +1145,7 @@ export class Editor {
       .map((n) => cmds.find((c) => c.name === n)!);
   }
 
-  private openPalette(ctx: 'math' | 'text') {
+  private openPalette(ctx: 'math' | 'text' | 'draw') {
     this.palette = { ctx, query: '', sel: 0 };
     this.setMode('palette');
   }
@@ -1152,7 +1167,7 @@ export class Editor {
       case 'Down': case 'C-n': case 'C-j': p.sel = Math.min(items.length - 1, p.sel + 1); return true;
       case 'Up': case 'C-p': case 'C-k': p.sel = Math.max(0, p.sel - 1); return true;
       case 'Enter': case 'Tab': case ' ':
-        this.acceptPalette(items[p.sel]?.name);
+        this.acceptPalette(items[p.sel]);
         return true;
     }
     if (k.length === 1) {
@@ -1178,10 +1193,21 @@ export class Editor {
     return true;
   }
 
-  private acceptPalette(name: string | undefined) {
+  private acceptPalette(picked: PaletteItem | undefined) {
     const p = this.palette!;
     const q = p.query;
+    const name = picked?.name;
     this.closePalette();
+    if (p.ctx === 'draw' || picked?.draw) {
+      const draws = this.drawCommands();
+      const c = (p.ctx === 'draw' && draws.find((c) => c.name === q)) || draws.find((c) => c.name === name);
+      if (!c) return void (q && this.flash(`unknown drawing: ${q}`));
+      this.cmdSel = this.selection;
+      this.anchor = null;
+      c.run();
+      this.cmdSel = null;
+      return;
+    }
     if (p.ctx === 'math') {
       const item = this.mathItem!;
       this.checkpoint();
@@ -1215,12 +1241,19 @@ export class Editor {
   }
 
   /** Commands available from `\` / `:` outside math. Intended to become user-extensible. */
+  /** Drawing commands: in the text menu, the draw menu (Ctrl+D), and the math menu once you type. */
+  drawCommands(): PaletteEntry[] {
+    return [
+      { name: 'arrow', desc: 'draw an arrow between two things', run: () => this.startArrow(), draw: true },
+      ...MARK_KINDS.map((k) => ({ name: k, desc: MARK_DESC[k], run: () => this.startMark(k), draw: true })),
+      { name: 'drawings', desc: 'select an arrow or shape to change it', run: () => this.selectDrawingByHint(), draw: true },
+    ];
+  }
+
   textCommands(): PaletteEntry[] {
     const setKind = (kind: BlockKind) => () => { this.checkpoint(); this.blk.kind = kind; };
     return [
-      { name: 'arrow', desc: 'draw an arrow between two things', run: () => this.startArrow() },
-      ...MARK_KINDS.map((k) => ({ name: k, desc: MARK_DESC[k], run: () => this.startMark(k) })),
-      { name: 'drawings', desc: 'select an arrow or shape to change it', run: () => this.selectDrawingByHint() },
+      ...this.drawCommands(),
       { name: 'math', desc: 'inline math', run: () => this.insertMath(false) },
       { name: 'display', desc: 'display math block', run: () => this.insertMath(true) },
       { name: 'h1', desc: 'heading 1', run: setKind('h1') },
@@ -1388,8 +1421,63 @@ export class Editor {
     return { k: 'ids', b: r.s.b, ids };
   }
 
+  /** True while editing a formula (also with a menu open on top of it). */
+  get inFormula(): boolean {
+    return this.mode === 'math' || ((this.mode === 'palette' || this.mode === 'hint') && this.prevMode === 'math');
+  }
+
+  /** What a drawing command acts on right away: the math selection or the text selection. */
+  private drawTarget(): Loc | null {
+    if (this.prevMode === 'math' && this.mathItem) {
+      const r = this.msel !== null && this.msel !== this.mc.off ? M.alignRange(M.rowAt(this.mathItem.root, this.mc.path), Math.min(this.msel, this.mc.off), Math.max(this.msel, this.mc.off)) : null;
+      this.msel = null;
+      // afterwards, continue typing after the selection
+      if (r && this.drawReturn) this.drawReturn.mc.off = r[1];
+      return r ? { k: 'node', b: this.b, o: this.o, path: [...this.mc.path], i: r[0], j: r[1] - 1 } : null;
+    }
+    return this.locFromSelection(this.cmdSel ?? this.selection);
+  }
+
+  /** Where picking starts: the piece of formula at the caret, or the word at the caret. */
+  private pickStart(): Loc {
+    const item = this.prevMode === 'math' ? this.mathItem : null;
+    if (!item) return this.locFromCursor();
+    const row = M.rowAt(item.root, this.mc.path);
+    const gs = groups(row);
+    const off = this.mc.off;
+    // the thing just typed (left of the caret), else the one after it
+    const g = gs.find(([i, j]) => off - 1 >= i && off - 1 <= j) ?? gs.find(([i]) => i >= off);
+    return g ? { k: 'node', b: this.b, o: this.o, path: [...this.mc.path], i: g[0], j: g[1] } : { k: 'item', b: this.b, o: this.o };
+  }
+
+  /** Remember the formula position so finishing the drawing goes back into it. */
+  private noteDrawReturn() {
+    this.drawReturn = this.prevMode === 'math' && this.mathItem ? { b: this.b, o: this.o, mc: $state.snapshot(this.mc) as MCursor } : null;
+  }
+
+  /** Leave pick/style mode: back into the formula a drawing was started from, or to text. */
+  private endDrawing() {
+    this.styling = null;
+    this.pick = null;
+    const r = this.drawReturn;
+    this.drawReturn = null;
+    const it = r && this.doc.blocks[r.b]?.items[r.o];
+    if (r && it?.t === 'm') {
+      this.b = r.b;
+      this.o = r.o;
+      try {
+        M.rowAt(it.root, r.mc.path);
+        this.mc = r.mc;
+      } catch {
+        this.mc = { path: [], off: it.root.length };
+      }
+      this.setMode('math');
+    } else this.setMode('text');
+  }
+
   startArrow() {
-    const sel = this.locFromSelection(this.cmdSel ?? this.selection);
+    this.noteDrawReturn();
+    const sel = this.drawTarget();
     this.anchor = null;
     if (sel) {
       // Start at the selection and suggest the next thing after it as the end.
@@ -1401,17 +1489,18 @@ export class Editor {
       this.flash('arrow starts at the selection — choose where it points');
       return;
     }
-    this.pick = { phase: 'from', loc: this.locFromCursor(), purpose: 'arrow' };
+    this.pick = { phase: 'from', loc: this.pickStart(), purpose: 'arrow' };
     this.setMode('pick');
     this.flash('choose where the arrow starts: arrow keys or click · Enter to confirm');
   }
 
   /** Draw a shape around the selection, or choose what to draw it around. */
   startMark(kind: MarkKind) {
-    const sel = this.locFromSelection(this.cmdSel ?? this.selection);
+    this.noteDrawReturn();
+    const sel = this.drawTarget();
     this.anchor = null;
     if (sel) return this.addMark(kind, this.anchorIds(sel));
-    this.pick = { phase: 'from', loc: this.locFromCursor(), purpose: kind };
+    this.pick = { phase: 'from', loc: this.pickStart(), purpose: kind };
     this.setMode('pick');
     this.flash(`choose what to ${MARK_VERB[kind]} · Enter to confirm`);
   }
@@ -1474,8 +1563,7 @@ export class Editor {
     switch (k) {
       case 'Escape':
         if (pk.edit) return this.selectDrawing(pk.edit.id), (this.pick = null), true;
-        this.pick = null;
-        this.setMode('text');
+        this.endDrawing();
         return true;
       case 'Left': case 'h': move(-1); return true;
       case 'Right': case 'l': move(1); return true;
@@ -1687,7 +1775,7 @@ export class Editor {
     const dir = this.arrowGeos[a.id]?.dir ?? 1;
     const edit = (f: () => void) => { this.checkpoint('style'); f(); };
     switch (k) {
-      case 'Escape': case 'Enter': this.styling = null; this.setMode('text'); return true;
+      case 'Escape': case 'Enter': this.endDrawing(); return true;
       case 'C-z': this.styling = null; this.undo(); return true;
       case 'C-y': case 'C-S-z': this.styling = null; this.redo(); return true;
       case 'Up': case 'k': edit(() => (a.bend = round(a.bend + 0.1 * dir))); return true;
@@ -1704,8 +1792,7 @@ export class Editor {
       case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();
         this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1);
-        this.styling = null;
-        this.setMode('text');
+        this.endDrawing();
         return true;
     }
     return true;
@@ -1715,7 +1802,7 @@ export class Editor {
     const edit = (f: () => void) => { this.checkpoint('style'); f(); };
     const shape = (d: number) => edit(() => (m.kind = MARK_KINDS[(MARK_KINDS.indexOf(m.kind) + d + MARK_KINDS.length) % MARK_KINDS.length]));
     switch (k) {
-      case 'Escape': case 'Enter': this.styling = null; this.setMode('text'); return true;
+      case 'Escape': case 'Enter': this.endDrawing(); return true;
       case 'C-z': this.styling = null; this.undo(); return true;
       case 'C-y': case 'C-S-z': this.styling = null; this.redo(); return true;
       case 't': case 'Right': case 'Down': shape(1); return true;
@@ -1727,8 +1814,7 @@ export class Editor {
       case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();
         this.doc.marks.splice(this.doc.marks.indexOf(m), 1);
-        this.styling = null;
-        this.setMode('text');
+        this.endDrawing();
         return true;
     }
     return true;
