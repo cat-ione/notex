@@ -14,7 +14,7 @@
 import { tick } from 'svelte';
 import { arrowGeo, attachAt, curveThrough, defaultBend, nextSide, sideName, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
-import { besideNote, labelOffsetAt, layoutRow, measureLabel, pinnedLeader, provisional, type RowNote } from './labels';
+import { besideNote, labelOffsetAt, layoutRow, measureLabel, openMath, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
@@ -1735,7 +1735,7 @@ export class Editor {
 
   /** The box of a hand-placed note (page coordinates). */
   private pinnedBox(d: Mark | Arrow, g: MarkGeo | ArrowGeo): Rect {
-    const s = measureLabel(d.label, Infinity, this.typingLabel === d.id);
+    const s = measureLabel(d.label, Infinity, this.typingLabel === d.id, this.noteCaret(d.id));
     const c = 'bounds' in g ? { x: g.bounds.x + g.bounds.w / 2, y: g.bounds.y + g.bounds.h / 2 } : g.mid;
     return { x: c.x + d.note!.dx - s.w / 2, y: c.y + d.note!.dy - s.h / 2, w: s.w, h: s.h };
   }
@@ -1839,7 +1839,7 @@ export class Editor {
       if (t.y + t.h / 2 <= u.y + u.h * 0.6) continue;
       const shape = g.outline.r;
       const others = infos.filter((o) => o !== i).map((o) => o.g.bounds);
-      const r = besideNote(shape, measureLabel(m.label, Infinity, this.typingLabel === m.id), { left, right, obstacles: [...inkLines(i.blockEl)[i.line], ...others, ...placed] });
+      const r = besideNote(shape, measureLabel(m.label, Infinity, this.typingLabel === m.id, this.noteCaret(m.id)), { left, right, obstacles: [...inkLines(i.blockEl)[i.line], ...others, ...placed] });
       if (!r) {
         g.label = { x: shape.x + shape.w / 2, y: shape.y + shape.h + 15, below: true };
         continue;
@@ -1877,7 +1877,8 @@ export class Editor {
           // the note's box as LabelLayer draws it: hanging from y - 12 (below) or standing on y + 3 (above)
           const edge = below ? g.label.y - 12 : g.label.y + 3;
           const typing = this.typingLabel === m.id;
-          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, size: (maxW: number) => measureLabel(m.label, maxW, typing), key: typing ? `\u0000${m.label}` : m.label };
+          const at = this.noteCaret(m.id), open = at === undefined ? null : openMath(m.label, at);
+          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, size: (maxW: number) => measureLabel(m.label, maxW, typing, at), key: typing ? `\u0000${open?.[0] ?? ''}\u0000${m.label}` : m.label };
         });
         // keep off ink on this line, other shapes and notes already placed
         const mine = new Set(row.map((i) => i.m.id));
@@ -1932,7 +1933,7 @@ export class Editor {
       if (b.y < target.y - 4) items.push({ anchor: first, side: 'above', r: b });
       if (m.label) {
         // the note as LabelLayer draws it: hanging from y - 12 (below) or standing on y + 3 (above)
-        const s = measureLabel(m.label, g.label.maxW ?? Infinity, this.typingLabel === m.id);
+        const s = measureLabel(m.label, g.label.maxW ?? Infinity, this.typingLabel === m.id, this.noteCaret(m.id));
         const x = g.label.x + origin.left - s.w / 2;
         const y = g.label.below ? g.label.y - 12 + origin.top : g.label.y + 3 - s.h + origin.top;
         items.push({ anchor: g.label.below ? last : first, side: g.label.below ? 'below' : 'above', r: { x, y, w: s.w, h: s.h } });
@@ -4019,6 +4020,30 @@ export class Editor {
       lb.anchor = null;
     };
     const sel = this.labelSel();
+    // `$` comes in pairs: typed, both, the caret between; at a closing one, past it
+    const dollars = (i: number) => t.slice(0, i).match(/\$/g)?.length ?? 0;
+    if (k === '$' && !sel) {
+      if (dollars(lb.at) % 2 === 1 && t[lb.at] === '$') {
+        lb.at++;
+        lb.anchor = null;
+        return true;
+      }
+      if (dollars(lb.at) % 2 === 0) {
+        this.labelRecord('other');
+        lb.text = t.slice(0, lb.at) + '$$' + t.slice(lb.at);
+        lb.at++;
+        lb.anchor = null;
+        this.labelEdited();
+        return true;
+      }
+    }
+    // Backspace in an empty pair takes both
+    if (k === 'Backspace' && !sel && t[lb.at - 1] === '$' && t[lb.at] === '$' && dollars(lb.at - 1) % 2 === 0) {
+      this.labelRecord('other');
+      cut(lb.at - 1, lb.at + 1);
+      this.labelEdited();
+      return true;
+    }
     switch (k) {
       case 'C-z': this.labelUndo(-1); return true;
       case 'C-y': case 'C-S-z': this.labelUndo(1); return true;
@@ -4103,6 +4128,11 @@ export class Editor {
     if (lb?.text.includes('$')) this.learned('note-math');
     this.label = null;
     this.mode = 'style';
+  }
+
+  /** Where the caret is in a note being typed (undefined for any other note). */
+  private noteCaret(id: Id): number | undefined {
+    return this.typingLabel === id ? this.label?.at : undefined;
   }
 
   /** The drawing whose label is being typed. */

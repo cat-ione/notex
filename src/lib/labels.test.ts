@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { besideNote, layoutRow, pinnedLeader, renderLabel, type RowNote } from './labels';
+import { besideNote, layoutRow, noteTex, openMath, pinnedLeader, renderLabel, type RowNote } from './labels';
 
 // fake text metrics: 6px per char, 14px lines, words wrap at maxW
 function note(id: string, x: number, text: string, edge = 20): RowNote {
@@ -84,10 +84,12 @@ describe('renderLabel caret', () => {
   it('shows in an empty label', () => {
     expect(renderLabel('', { at: 0, anchor: null })).toBe(C);
   });
-  it('goes after a math part it is inside, once at a boundary', () => {
+  it('shows the math part it is inside as typed, and sits at a boundary once', () => {
     const html = renderLabel('a $x+y$ b', { at: 5, anchor: null });
     expect(html.split(C).length).toBe(2);
-    expect(html.indexOf(C)).toBeGreaterThan(html.lastIndexOf('katex'));
+    // the $…$ being edited: its characters with the caret among them, not rendered
+    expect(html).toContain(`<span class="lsrc" data-o="2">$x+${C}y$</span>`);
+    expect(html).not.toContain('katex');
     expect(renderLabel('a $x$', { at: 2, anchor: null }).startsWith(w(0, 'a ') + C)).toBe(true); // right before the math
     expect(renderLabel('a $x$', { at: 5, anchor: null }).endsWith(C)).toBe(true);
     for (let i = 0; i <= 'p $x$ q $y$'.length; i++) expect(renderLabel('p $x$ q $y$', { at: i, anchor: null }).split(C).length).toBe(2);
@@ -95,7 +97,7 @@ describe('renderLabel caret', () => {
   it('highlights the selection, a math part it touches as a whole', () => {
     expect(renderLabel('abcd', { at: 3, anchor: 1 })).toBe(w(0, `a<span class="lsel">bc</span>${C}d`));
     expect(renderLabel('abcd', { at: 1, anchor: 3 })).toBe(w(0, `a${C}<span class="lsel">bc</span>d`));
-    const m = renderLabel('a $x$ b', { at: 3, anchor: 0 });
+    const m = renderLabel('a $x$ b', { at: 6, anchor: 0 });
     expect(m.startsWith(w(0, '<span class="lsel">a </span>'))).toBe(true);
     expect(m).toMatch(/<span class="lsel"><span class="katex"/);
   });
@@ -142,5 +144,21 @@ describe('pinnedLeader', () => {
     expect(l[2]).toBeCloseTo(200); // reaches the note's left side
     expect(l[1]).toBeGreaterThan(110);
     expect(l[3]).toBeLessThan(160);
+  });
+});
+
+describe('math in notes', () => {
+  it('is typed the way math is typed on the page', () => {
+    const t = (src: string) => noteTex(src).replace(/\s+/g, '');
+    expect(t('1/pi')).toBe('\\frac{1}{\\pi}');
+    expect(t('x^2+1')).toBe('x^{2}+1');
+    expect(t('int_0^(2pi) f')).toBe('\\int_{0}^{2\\pi}f');
+    // written as LaTeX: as is
+    expect(noteTex('\\frac{a}{b}')).toBe('\\frac{a}{b}');
+  });
+  it('knows which $…$ the caret is inside', () => {
+    expect(openMath('a $x$ b', 3)).toEqual([2, 5]);
+    expect(openMath('a $x$ b', 2)).toBeNull();
+    expect(openMath('a $x$ b', 5)).toBeNull();
   });
 });

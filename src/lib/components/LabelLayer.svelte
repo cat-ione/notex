@@ -130,6 +130,12 @@
   :global(.dlabel.typing.wrapped) {
     white-space: break-spaces;
   }
+  /* the $…$ being edited, shown as typed */
+  :global(.dlabel .lsrc) {
+    font-family: var(--mono);
+    background: color-mix(in srgb, var(--ink) 12%, transparent);
+    border-radius: 2px;
+  }
   :global(.dlabel .lsel) {
     background: var(--text-sel);
     border-radius: 2px;

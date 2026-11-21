@@ -13,6 +13,35 @@
 import katex from 'katex';
 import { spread } from './marks';
 import type { Rect } from './geom';
+import type { MRow } from './model';
+import * as M from './math/edit';
+import { toLatex, type MCursor } from './math/latex';
+
+/**
+ * The LaTeX for a note's `$…$`: typed the way math is typed on the page (`1/pi`, `x^2+1`,
+ * `int_0^(2pi)`), so it comes out the same; written as LaTeX (with \ or braces), as is.
+ */
+export function noteTex(src: string): string {
+  if (/[\\{}]/.test(src)) return src;
+  const root: MRow = [];
+  const cur: MCursor = { path: [], off: 0 };
+  for (const c of src) {
+    if (c === ' ') M.space(root, cur);
+    else M.typeChar(root, cur, c);
+  }
+  return toLatex(root);
+}
+
+/** The `$…$` part of a note the caret is inside (between its dollars), if any: [start, end). */
+export function openMath(text: string, at: number): [number, number] | null {
+  let pos = 0;
+  for (const p of text.split(/(\$[^$]+\$)/)) {
+    const start = pos;
+    pos += p.length;
+    if (/^\$[^$]+\$$/.test(p) && at > start && at < pos) return [start, pos];
+  }
+  return null;
+}
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -23,8 +52,9 @@ const CARET = '<span class="lcaret"></span>';
 
 /**
  * Note text as HTML: prose with `$math$` rendered by KaTeX. While the note is being
- * typed (`edit`): a caret at offset `at` (after a $math$ part when inside one) and
- * the selection from `anchor` highlighted (a $math$ part it touches, as a whole).
+ * typed (`edit`): a caret at offset `at`, the selection from `anchor` highlighted (a
+ * $math$ part it touches, as a whole), and the $math$ part the caret is inside shown as
+ * what's typed, to see it while editing it.
  */
 export function renderLabel(text: string, edit?: { at: number; anchor: number | null }): string {
   const key = edit ? `${edit.at}:${edit.anchor}|${text}` : text;
@@ -39,7 +69,7 @@ export function renderLabel(text: string, edit?: { at: number; anchor: number | 
     html = parts.map((p) => {
       const start = pos;
       pos += p.length;
-      return /^\$[^$]+\$$/.test(p) ? wrap(katexHtml(p.slice(1, -1)), start, pos) : wrap(esc(p), start);
+      return /^\$[^$]+\$$/.test(p) ? wrap(katexHtml(noteTex(p.slice(1, -1))), start, pos) : wrap(esc(p), start);
     }).join('');
   } else {
     const { at: caret } = edit;
@@ -52,11 +82,14 @@ export function renderLabel(text: string, edit?: { at: number; anchor: number | 
         // the caret goes in the first part that holds it (after a $math$ part it is inside)
         const here = !placed && caret >= start && caret <= end && (caret < end || end === text.length || /^\$[^$]+\$$/.test(p));
         if (here) placed = true;
-        if (/^\$[^$]+\$$/.test(p)) {
-          const h = wrap(s < end && e > start ? sel(katexHtml(p.slice(1, -1))) : katexHtml(p.slice(1, -1)), start, end);
+        const math = /^\$[^$]+\$$/.test(p);
+        if (math && !(caret > start && caret < end)) {
+          const tex = katexHtml(noteTex(p.slice(1, -1)));
+          const h = wrap(s < end && e > start ? sel(tex) : tex, start, end);
           return here ? (caret === start ? CARET + h : h + CARET) : h;
         }
-        // prose, character by character: the caret before its offset, the selection wrapped
+        // prose (or the math being edited, as typed), character by character: the caret
+        // before its offset, the selection wrapped
         let out = '', open = false;
         for (let i = start; i <= end; i++) {
           const inSel = i < end && i >= s && i < e;
@@ -66,7 +99,7 @@ export function renderLabel(text: string, edit?: { at: number; anchor: number | 
           if (inSel && !open) (out += '<span class="lsel">'), (open = true);
           out += esc(text[i]);
         }
-        return wrap(out, start);
+        return math ? `<span class="lsrc" data-o="${start}">${out}</span>` : wrap(out, start);
       })
       .join('');
     if (!text) html = CARET;
@@ -82,8 +115,10 @@ const sizeCache = new Map<string, { w: number; h: number }>();
  * Size of a note as LabelLayer draws it (class `dlabel`), optionally wrapped to `maxW`.
  * `typing`: as drawn while being typed, where every space counts (a trailing one too).
  */
-export function measureLabel(text: string, maxW = Infinity, typing = false): { w: number; h: number } {
-  const key = `${maxW}|${typing ? 1 : 0}|${text}`;
+export function measureLabel(text: string, maxW = Infinity, typing = false, at?: number): { w: number; h: number } {
+  // being typed with the caret in a $…$: that part is drawn as typed (see renderLabel)
+  const open = typing && at !== undefined ? openMath(text, at) : null;
+  const key = `${maxW}|${typing ? 1 : 0}|${open?.[0] ?? ''}|${text}`;
   const hit = sizeCache.get(key);
   if (hit) return hit;
   if (!measurer) {
@@ -92,7 +127,7 @@ export function measureLabel(text: string, maxW = Infinity, typing = false): { w
     measurer.style.cssText = 'position:absolute; left:-9999px; top:0; visibility:hidden; transform:none';
     (document.querySelector('.page') ?? document.body).appendChild(measurer);
   }
-  measurer.innerHTML = renderLabel(text);
+  measurer.innerHTML = open ? renderLabel(text, { at: at!, anchor: null }) : renderLabel(text);
   measurer.style.whiteSpace = maxW === Infinity ? (typing ? 'pre' : 'nowrap') : typing ? 'break-spaces' : 'normal';
   measurer.style.width = maxW === Infinity ? 'auto' : 'max-content';
   measurer.style.maxWidth = maxW === Infinity ? 'none' : `${maxW}px`;
