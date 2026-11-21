@@ -29,7 +29,13 @@ const pathEq = (a: Step[], b: Step[]) => a.length === b.length && a.every((x, i)
 
 const isScript = (n: MNode | undefined) => n?.k === 'cmd' && !!CMDS[n.name]?.script;
 
+/** Characters that would break the surrounding LaTeX if emitted raw. */
+const MATH_ESC: Record<string, string> = {
+  '{': '\\{', '}': '\\}', '#': '\\#', '%': '\\%', '&': '\\&', $: '\\$', _: '\\_', '^': '\\hat{}', '\\': '\\backslash ', '~': '\\sim ',
+};
+
 function symLatex(v: string) {
+  if (MATH_ESC[v]) return MATH_ESC[v];
   // Separate control words from following letters: `\alpha x`.
   return /\\[a-zA-Z]+$/.test(v) ? v + ' ' : v;
 }

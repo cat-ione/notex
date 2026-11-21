@@ -8,6 +8,7 @@
 import { cmd, sym, type MCmd, type MNode, type MRow } from '../model';
 import { AUTO_REPLACE, AUTO_STRUCT, CMDS, OPENERS, type Inserter } from './defs';
 import type { MCursor, Step } from './latex';
+import { caretFor, type Parsed } from './parse';
 
 export function rowAt(root: MRow, path: Step[]): MRow {
   let r = root;
@@ -150,6 +151,19 @@ export function applyInserter(root: MRow, cur: MCursor, ins: Inserter) {
   else {
     const nodes = ins.nodes();
     nodes.forEach((n, k) => insertNode(root, cur, n, k === nodes.length - 1 ? ins.enterLast : undefined));
+  }
+}
+
+/** Insert a parsed row at the caret and put the caret where the parse says. */
+export function insertParsed(root: MRow, cur: MCursor, parsed: Parsed) {
+  const r = rowAt(root, cur.path);
+  const start = cur.off;
+  r.splice(start, 0, ...parsed.row);
+  const c = caretFor(parsed);
+  if (!c.path.length) cur.off = start + c.off;
+  else {
+    cur.path = [...cur.path, { i: start + c.path[0].i, s: c.path[0].s }, ...c.path.slice(1)];
+    cur.off = c.off;
   }
 }
 

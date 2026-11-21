@@ -18,6 +18,7 @@ import * as F from './files';
 import { measure, relTo, union, type Rect } from './geom';
 import * as M from './math/edit';
 import { CMDS, GREEK_LEADER, MATH_PALETTE } from './math/defs';
+import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type Step } from './math/latex';
 import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type Arrow, type Block, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MRow } from './model';
 
@@ -346,10 +347,8 @@ export class Editor {
     const text = e.clipboardData?.getData('text/plain') ?? '';
     e.preventDefault();
     if (this.mode === 'math') {
-      // Plain characters into math; structure-aware LaTeX paste can come later.
       this.checkpoint();
-      const item = this.mathItem!;
-      for (const c of text.replace(/\s+/g, ' ')) M.insertNode(item.root, this.mc, sym(c));
+      M.insertParsed(this.mathItem!.root, this.mc, parseLatex(text));
       this.touch();
       return;
     }
@@ -359,7 +358,7 @@ export class Editor {
     const blocks: Item[][] =
       this.clip && this.clip.text === text
         ? this.clip.blocks.map((items) => items.map(cloneItem))
-        : text.replace(/\r\n?/g, '\n').split('\n').map((line) => chars(line));
+        : text.replace(/\r\n?/g, '\n').split('\n').map(textWithMath);
     const blk = this.blk;
     const tail = blk.items.splice(this.o);
     blk.items.push(...blocks[0]);
@@ -1411,6 +1410,19 @@ const cloneItem = (it: Item): Item => (it.t === 'c' ? { ...it, id: uid() } : { .
 
 function itemsToText(items: Item[]): string {
   return items.map((it) => (it.t === 'c' ? it.ch : it.display ? `$$${toLatex(it.root)}$$` : `$${toLatex(it.root)}$`)).join('');
+}
+
+/** Plain text where `$...$` / `$$...$$` spans become math items. */
+export function textWithMath(line: string): Item[] {
+  const out: Item[] = [];
+  let last = 0;
+  for (const m of line.matchAll(/\$\$([^$]+)\$\$|\$([^$\n]+)\$/g)) {
+    out.push(...chars(line.slice(last, m.index)));
+    out.push(math(parseLatex(m[1] ?? m[2]).row, !!m[1]));
+    last = m.index! + m[0].length;
+  }
+  out.push(...chars(line.slice(last)));
+  return out;
 }
 
 /** Locate a node by id: the path to its row and its index there. */
