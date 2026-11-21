@@ -97,5 +97,6 @@ function cmdLatex(n: MCmd, path: Step[], i: number, o: Opts, inText: boolean): s
     const hasCaret = !!o.cursor && pathEq(o.cursor.path, [...path, { i, s: 0 }]);
     return (hasCaret ? CARET : '') + EMPTY;
   }
-  return def.latex(slots, n.cols);
+  const tall = n.slots.some((sl) => sl.some((x) => x.k === 'cmd' && !CMDS[x.name]?.text));
+  return def.latex(slots, n.cols, tall);
 }

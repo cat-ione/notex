@@ -8,7 +8,7 @@ import { cmd, sym, type MNode } from '../model';
 export type CmdDef = {
   slots: number;
   /** Build LaTeX given the already-rendered slot strings. */
-  latex: (s: string[], cols?: number) => string;
+  latex: (s: string[], cols?: number, tall?: boolean) => string;
   /** Left/right walk through slots in order (otherwise left/right exits). */
   linear?: boolean;
   /** Vertical slot navigation: slot -> slot. */
@@ -24,9 +24,11 @@ export type CmdDef = {
   grid?: boolean;
 };
 
+const sep = (d: string) => (/\\[a-zA-Z]+$/.test(d) ? d + ' ' : d);
 const delim = (l: string, r: string, close: string): CmdDef => ({
   slots: 1,
-  latex: ([a]) => `\\left${l}${a}\\right${r}`,
+  // Only stretch when the contents are taller than a line, so `f(x)` keeps tight spacing.
+  latex: ([a], _c, tall) => (tall ? `\\left${l}${a}\\right${r}` : `${sep(l)}${a}${sep(r)}`),
   close,
 });
 const wrap1 = (c: string): CmdDef => ({ slots: 1, latex: ([a]) => `${c}{${a}}` });
