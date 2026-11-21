@@ -47,6 +47,10 @@ Notes are `.ntx` files (Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+N). Once a note ha
 autosaves. The format is compact JSON: text is stored as plain strings and math as a tree
 (see `src/lib/format.ts`).
 
+`\export` copies the note as LaTeX, drawings included: shapes become `\boxed`, `\underline`,
+`\underbrace`, `\cancel`, `\colorbox`…, and arrows and circles are drawn with tikz over
+`\tikzmarknode`s (compile twice). The packages it needs are listed at the top.
+
 ## Customizing
 
 Ctrl+, opens settings (theme, text size, page width) and an editor for the config file. On
@@ -77,5 +81,5 @@ your own editor; changes load when you switch back to notex.
 
 - **Customization**: keymaps, user palette commands, scripting hooks.
 - **Files**: a notes sidebar / recent files, search across notes.
-- **Arrows**: multi-segment routes, endpoint side control, math labels, LaTeX export via
-  `tikzmark`.
+- **Drawing**: multi-segment arrows, endpoint side control, dragging endpoints with the mouse,
+  free-standing notes in the margin.

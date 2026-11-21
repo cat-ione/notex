@@ -13,7 +13,10 @@ export type MCursor = { path: Step[]; off: number };
 /** A selected range [s, e) of the row at `path` (aligned to base+script groups). */
 export type MSelRange = { path: Step[]; s: number; e: number };
 
-type Opts = { anchors: boolean; cursor: MCursor | null; sel: MSelRange | null };
+/** Extra LaTeX to emit right before / after particular nodes (used by export to wrap drawn-on ranges). */
+export type Wraps = { before: Map<string, string>; after: Map<string, string> };
+
+type Opts = { anchors: boolean; cursor: MCursor | null; sel: MSelRange | null; wraps?: Wraps };
 
 const SEL_OPEN = '\\htmlClass{nx-sel}{';
 const CARET = '\\htmlClass{nx-caret}{}';
@@ -27,6 +30,11 @@ const TEXT_ESC: Record<string, string> = {
 
 export function toLatex(root: MRow, anchors = false, cursor: MCursor | null = null, sel: MSelRange | null = null): string {
   return row(root, [], { anchors, cursor, sel }, false);
+}
+
+/** Plain LaTeX with `wraps` inserted around the given nodes. */
+export function toLatexWrapped(root: MRow, wraps: Wraps): string {
+  return row(root, [], { anchors: false, cursor: null, sel: null, wraps }, false);
 }
 
 const pathEq = (a: Step[], b: Step[]) => a.length === b.length && a.every((x, i) => x.i === b[i].i && x.s === b[i].s);
@@ -64,6 +72,7 @@ function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
     // A caret right before a script would steal the script from its base, so
     // emit it after the script and let the overlay position it at the script.
     if (i === off) out += isScript(n) && i > 0 ? '' : CARET;
+    out += o.wraps?.before.get(n.id) ?? '';
 
     if (n.k === 'sym' && BIG_OPS.has(n.v) && o.anchors && !text) {
       // Keep big operators and their limits in one group so limits stay attached.
@@ -91,6 +100,7 @@ function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
       const l = cmdLatex(n, path, i, o, text);
       out += o.anchors ? `\\htmlData{nx=${n.id}}{${l}}` : l;
     }
+    out += o.wraps?.after.get(n.id) ?? '';
     i++;
   }
   if (off === r.length) out += CARET;
