@@ -1,0 +1,101 @@
+// Math tree -> LaTeX.
+//
+// With `anchors` on, every node is wrapped in \htmlData{nx=<id>} so the DOM
+// that KaTeX produces can be mapped back to nodes (for the caret, hints and
+// arrow endpoints). KaTeX treats these wrappers as transparent for spacing.
+
+import type { MCmd, MNode, MRow } from '../model';
+import { BIG_OPS, CMDS } from './defs';
+
+export type Step = { i: number; s: number };
+export type MCursor = { path: Step[]; off: number };
+
+type Opts = { anchors: boolean; cursor: MCursor | null };
+
+const CARET = '\\htmlClass{nx-caret}{}';
+const CARET_PRE_SCRIPT = '\\htmlClass{nx-caret nx-caret-script}{}';
+const EMPTY = '\\htmlClass{nx-empty}{\\square}';
+
+const TEXT_ESC: Record<string, string> = {
+  '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '#': '\\#', $: '\\$', '%': '\\%', '&': '\\&',
+  _: '\\_', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}',
+};
+
+export function toLatex(root: MRow, anchors = false, cursor: MCursor | null = null): string {
+  return row(root, [], { anchors, cursor }, false);
+}
+
+const pathEq = (a: Step[], b: Step[]) => a.length === b.length && a.every((x, i) => x.i === b[i].i && x.s === b[i].s);
+
+const isScript = (n: MNode | undefined) => n?.k === 'cmd' && !!CMDS[n.name]?.script;
+
+function symLatex(v: string) {
+  // Separate control words from following letters: `\alpha x`.
+  return /\\[a-zA-Z]+$/.test(v) ? v + ' ' : v;
+}
+
+function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
+  const hasCaret = !!o.cursor && pathEq(o.cursor.path, path);
+  const off = hasCaret ? o.cursor!.off : -1;
+
+  if (r.length === 0) {
+    if (!o.anchors) return text ? '' : '{}';
+    const body = (hasCaret ? CARET : '') + (text ? '\\square' : EMPTY);
+    return hasCaret && path.length ? `\\htmlClass{nx-active-row}{${body}}` : body;
+  }
+
+  let out = '';
+  let i = 0;
+  while (i < r.length) {
+    const n = r[i];
+    // A caret right before a script would steal the script from its base, so
+    // emit it after the script and let the overlay position it at the script.
+    if (i === off) out += isScript(n) && i > 0 ? '' : CARET;
+
+    if (n.k === 'sym' && BIG_OPS.has(n.v) && o.anchors && !text) {
+      // Keep big operators and their limits in one group so limits stay attached.
+      let j = i + 1;
+      let inner = symLatex(n.v);
+      while (j < r.length && isScript(r[j])) {
+        if (j === off) inner += CARET_PRE_SCRIPT;
+        inner += cmdLatex(r[j] as MCmd, path, j, o, false);
+        j++;
+      }
+      out += `\\htmlData{nx=${n.id}}{${inner}}`;
+      i = j;
+      continue;
+    }
+
+    if (isScript(n)) {
+      const prev = r[i - 1];
+      const needBase = i === 0 || isScript(prev);
+      out += (needBase ? '{}' : '') + cmdLatex(n as MCmd, path, i, o, false);
+      if (i === off && i > 0) out += CARET_PRE_SCRIPT;
+    } else if (n.k === 'sym') {
+      const v = text ? (TEXT_ESC[n.v] ?? n.v) : symLatex(n.v);
+      out += o.anchors ? `\\htmlData{nx=${n.id}}{${v}}` : v;
+    } else {
+      const l = cmdLatex(n, path, i, o, text);
+      out += o.anchors ? `\\htmlData{nx=${n.id}}{${l}}` : l;
+    }
+    i++;
+  }
+  if (off === r.length) out += CARET;
+
+  return hasCaret && path.length && o.anchors ? `\\htmlClass{nx-active-row}{${out}}` : out;
+}
+
+function cmdLatex(n: MCmd, path: Step[], i: number, o: Opts, inText: boolean): string {
+  const def = CMDS[n.name];
+  if (!def) return `\\text{?${n.name}}`;
+  const slots = n.slots.map((sl, s) => {
+    const r = row(sl, [...path, { i, s }], o, !!def.text);
+    // Scripts have no wrapper of their own (they need a base), so the slot carries the anchor.
+    return def.script && o.anchors ? `\\htmlData{nx=${n.id}}{${r}}` : r;
+  });
+  if (def.text && n.slots[0].length === 0 && o.anchors && !inText) {
+    const hasCaret = !!o.cursor && pathEq(o.cursor.path, [...path, { i, s: 0 }]);
+    return (hasCaret ? CARET : '') + EMPTY;
+  }
+  return def.latex(slots, n.cols);
+}
