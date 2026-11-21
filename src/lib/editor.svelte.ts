@@ -12,7 +12,7 @@
 //   label   — typing an arrow label (transient)
 
 import { tick } from 'svelte';
-import { arrowGeo, defaultBend, type ArrowGeo } from './arrows';
+import { arrowGeo, defaultBend, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { docToLatex } from './export';
 import * as F from './files';
@@ -545,24 +545,27 @@ export class Editor {
       };
     } else this.pickRects = { cur: null, from: null };
 
+    // Marks (first, so arrows can attach to their outlines)
+    const mgeos: Record<Id, MarkGeo> = {};
+    const outlines = new Map<string, Outline>();
+    for (const m of this.doc.marks) {
+      const g = markGeo(m.kind, byLine(this.rectsOfIds(m.at)).map((r) => relTo(r, origin)));
+      if (!g) continue;
+      mgeos[m.id] = g;
+      if (g.outline) outlines.set(idKey(m.at), g.outline);
+    }
+    this.markGeos = mgeos;
+
     // Arrows
     const geos: Record<Id, ArrowGeo> = {};
     for (const a of this.doc.arrows) {
       const fa = rel(this.rectOfIds(a.from));
       const ta = rel(this.rectOfIds(a.to));
       if (!fa || !ta) continue;
-      const g = arrowGeo(fa, ta, a.bend);
+      const g = arrowGeo(fa, ta, a.bend, { from: outlines.get(idKey(a.from)), to: outlines.get(idKey(a.to)) });
       if (g) geos[a.id] = g;
     }
     this.arrowGeos = geos;
-
-    // Marks
-    const mgeos: Record<Id, MarkGeo> = {};
-    for (const m of this.doc.marks) {
-      const g = markGeo(m.kind, byLine(this.rectsOfIds(m.at)).map((r) => relTo(r, origin)));
-      if (g) mgeos[m.id] = g;
-    }
-    this.markGeos = mgeos;
 
     // Keep the caret in view
     this.page.querySelector('.caret')?.scrollIntoView({ block: 'nearest' });
@@ -1936,6 +1939,9 @@ const MARK_VERB: Record<MarkKind, string> = {
 };
 
 const nextInk = (c: string | undefined) => INKS[(INKS.indexOf((c ?? '') as (typeof INKS)[number]) + 1) % INKS.length] || undefined;
+
+/** Order-independent key for a set of anchor ids. */
+const idKey = (ids: Id[]) => [...ids].sort().join(' ');
 
 /** Reading order of two locations (block, then first offset). */
 function cmpLoc(a: Loc, b: Loc): number {

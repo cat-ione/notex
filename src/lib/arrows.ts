@@ -5,16 +5,23 @@ import { center, pad, type Rect } from './geom';
 
 export type ArrowGeo = { d: string; mid: { x: number; y: number }; dir: number; from: Rect; to: Rect };
 
-function rayExit(r: Rect, c: { x: number; y: number }, toward: { x: number; y: number }) {
+/** An arrow end that should touch an outline (a circled / boxed target) instead of the text. */
+export type Outline = { r: Rect; round: boolean };
+
+function rayExit(r: Rect, c: { x: number; y: number }, toward: { x: number; y: number }, round = false) {
   const dx = toward.x - c.x, dy = toward.y - c.y;
+  if (round) {
+    const t = Math.min(1, 1 / Math.hypot(dx / (r.w / 2), dy / (r.h / 2)));
+    return { x: c.x + dx * t, y: c.y + dy * t };
+  }
   const tx = dx ? r.w / 2 / Math.abs(dx) : Infinity;
   const ty = dy ? r.h / 2 / Math.abs(dy) : Infinity;
   const t = Math.min(tx, ty, 1);
   return { x: c.x + dx * t, y: c.y + dy * t };
 }
 
-export function arrowGeo(a: Rect, b: Rect, bend: number): ArrowGeo | null {
-  const pa = pad(a, 3), pb = pad(b, 3);
+export function arrowGeo(a: Rect, b: Rect, bend: number, outline: { from?: Outline; to?: Outline } = {}): ArrowGeo | null {
+  const pa = outline.from ? pad(outline.from.r, 2) : pad(a, 3), pb = outline.to ? pad(outline.to.r, 2) : pad(b, 3);
   const ca = center(pa), cb = center(pb);
   const dx = cb.x - ca.x, dy = cb.y - ca.y;
   const len = Math.hypot(dx, dy);
@@ -22,8 +29,8 @@ export function arrowGeo(a: Rect, b: Rect, bend: number): ArrowGeo | null {
   // Left-hand perpendicular in screen coordinates: positive bend arcs "up" for a rightward arrow.
   const nx = dy / len, ny = -dx / len;
   const ctrl = { x: (ca.x + cb.x) / 2 + nx * bend * len, y: (ca.y + cb.y) / 2 + ny * bend * len };
-  const p0 = rayExit(pa, ca, ctrl);
-  const p2 = rayExit(pb, cb, ctrl);
+  const p0 = rayExit(pa, ca, ctrl, outline.from?.round);
+  const p2 = rayExit(pb, cb, ctrl, outline.to?.round);
   const mid = { x: 0.25 * p0.x + 0.5 * ctrl.x + 0.25 * p2.x, y: 0.25 * p0.y + 0.5 * ctrl.y + 0.25 * p2.y };
   const f = (n: number) => n.toFixed(1);
   return { d: `M${f(p0.x)},${f(p0.y)} Q${f(ctrl.x)},${f(ctrl.y)} ${f(p2.x)},${f(p2.y)}`, mid, dir: Math.sign(dx) || 1, from: pa, to: pb };

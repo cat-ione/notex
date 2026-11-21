@@ -35,3 +35,18 @@ describe('markGeo', () => {
     expect(markGeo('circle', [r(0, 0, 50)])!.label.below).toBe(false);
   });
 });
+
+describe('arrows to outlined targets', () => {
+  it('end on the circle, not on the text inside it', async () => {
+    const { arrowGeo } = await import('./arrows');
+    const text = r(200, 0, 40, 16);
+    const circle = markGeo('circle', [text])!.outline!;
+    const g = arrowGeo(r(0, 0), text, 0, { to: circle })!;
+    const end = g.d.split(' ').pop()!.split(',').map(Number);
+    const plain = arrowGeo(r(0, 0), text, 0)!.d.split(' ').pop()!.split(',').map(Number);
+    expect(end[0]).toBeLessThan(plain[0] - 4);
+    // on the (padded) ellipse
+    const o = { cx: circle.r.x + circle.r.w / 2, cy: circle.r.y + circle.r.h / 2, rx: circle.r.w / 2 + 2, ry: circle.r.h / 2 + 2 };
+    expect(((end[0] - o.cx) / o.rx) ** 2 + ((end[1] - o.cy) / o.ry) ** 2).toBeCloseTo(1, 1);
+  });
+});

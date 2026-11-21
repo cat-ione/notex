@@ -8,7 +8,13 @@ import type { MarkKind } from './model';
 
 export const MARK_KINDS: MarkKind[] = ['box', 'circle', 'underline', 'highlight', 'brace', 'strike'];
 
-export type MarkGeo = { d: string; filled: boolean; label: { x: number; y: number; below: boolean } };
+export type MarkGeo = {
+  d: string;
+  filled: boolean;
+  label: { x: number; y: number; below: boolean };
+  /** For enclosing shapes, the outline arrows should touch. */
+  outline?: { r: Rect; round: boolean };
+};
 
 const f = (n: number) => Math.round(n * 10) / 10;
 
@@ -34,6 +40,7 @@ function shape(kind: MarkKind, r: Rect): MarkGeo {
         d: `M${f(x + c)},${f(y)} H${f(x + w - c)} Q${f(x + w)},${f(y)} ${f(x + w)},${f(y + c)} V${f(y + h - c)} Q${f(x + w)},${f(y + h)} ${f(x + w - c)},${f(y + h)} H${f(x + c)} Q${f(x)},${f(y + h)} ${f(x)},${f(y + h - c)} V${f(y + c)} Q${f(x)},${f(y)} ${f(x + c)},${f(y)} Z`,
         filled: false,
         label: { ...above, y: y - 6 },
+        outline: { r: { x, y, w, h }, round: false },
       };
     }
     case 'circle': {
@@ -45,6 +52,7 @@ function shape(kind: MarkKind, r: Rect): MarkGeo {
         d: `M${f(cx - rx)},${f(cy)} A${f(rx)},${f(ry)} 0 1 1 ${f(cx + rx)},${f(cy)} A${f(rx)},${f(ry)} 0 1 1 ${f(cx - rx)},${f(cy)}`,
         filled: false,
         label: { ...above, y: cy - ry - 6 },
+        outline: { r: { x: cx - rx, y: cy - ry, w: 2 * rx, h: 2 * ry }, round: true },
       };
     }
     case 'underline': {
