@@ -14,6 +14,7 @@
 import { tick } from 'svelte';
 import { arrowGeo, defaultBend, type ArrowGeo } from './arrows';
 import { docToLatex } from './export';
+import * as F from './files';
 import { measure, relTo, union, type Rect } from './geom';
 import * as M from './math/edit';
 import { CMDS, GREEK_LEADER, MATH_PALETTE } from './math/defs';
@@ -58,6 +59,11 @@ export class Editor {
   showHelp = $state(false);
   theme = $state<(typeof THEMES)[number]>('midnight');
 
+  /** The note's file (path is null for unsaved notes or in the browser). */
+  file = $state<{ path: string | null; name: string }>({ path: null, name: 'untitled' });
+  dirty = $state(false);
+  private edits = 0;
+
   /** Bumped on every mutation so layout-dependent overlays recompute. */
   version = $state(0);
 
@@ -84,7 +90,13 @@ export class Editor {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) this.doc = JSON.parse(saved);
-      else this.doc = welcomeDoc();
+      else (this.doc = welcomeDoc()), (this.file.name = 'welcome');
+      const f = localStorage.getItem('notex.file');
+      if (f) {
+        const j = JSON.parse(f);
+        this.file = { path: j.path ?? null, name: j.name ?? 'untitled' };
+        this.dirty = !!j.dirty;
+      }
       const t = localStorage.getItem('notex.theme');
       if (t && (THEMES as readonly string[]).includes(t)) this.theme = t as any;
     } catch {
@@ -112,13 +124,89 @@ export class Editor {
     this.msgTimer = setTimeout(() => (this.message = ''), 3500);
   }
 
-  save() {
+  /** Session backup (survives reloads/crashes) plus autosave to the note's file if it has one. */
+  async persist() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify($state.snapshot(this.doc)));
+      localStorage.setItem('notex.file', JSON.stringify({ ...this.file, dirty: this.dirty }));
     } catch {}
+    if (this.file.path && this.dirty) await this.writeTo(this.file.path, true);
+  }
+
+  private async writeTo(path: string, quiet = false) {
+    const edits = this.edits;
+    try {
+      await F.writeNote(path, $state.snapshot(this.doc) as Doc);
+      if (edits === this.edits) this.dirty = false;
+      if (!quiet) this.flash(`saved ${F.baseName(path)}`);
+      return true;
+    } catch (e) {
+      this.flash(String(e));
+      return false;
+    }
+  }
+
+  async saveNote() {
+    if (this.file.path) return this.writeTo(this.file.path);
+    return this.saveNoteAs();
+  }
+
+  async saveNoteAs() {
+    if (!F.isDesktop()) {
+      F.downloadNote(this.file.name, $state.snapshot(this.doc) as Doc);
+      this.dirty = false;
+      return true;
+    }
+    const path = await F.chooseSavePath(this.file.name);
+    if (!path) return false;
+    if (!(await this.writeTo(path))) return false;
+    this.file = { path, name: F.baseName(path) };
+    return true;
+  }
+
+  /** Untitled notes with changes would be lost; ask before replacing them. */
+  private async okToReplace(): Promise<boolean> {
+    if (!this.dirty || this.file.path) return true;
+    const msg = `"${this.file.name}" has unsaved changes. Discard them?`;
+    if (F.isDesktop()) {
+      const { ask } = await import('@tauri-apps/plugin-dialog');
+      return ask(msg, { title: 'notex', kind: 'warning', okLabel: 'Discard', cancelLabel: 'Keep' });
+    }
+    return confirm(msg);
+  }
+
+  private load(doc: Doc, file: { path: string | null; name: string }) {
+    this.doc = doc;
+    this.file = file;
+    this.dirty = false;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.b = 0;
+    this.o = 0;
+    this.anchor = null;
+    this.pick = null;
+    this.styling = null;
+    this.setMode('text');
+  }
+
+  async openNote() {
+    if (!(await this.okToReplace())) return;
+    try {
+      const r = await F.openNote();
+      if (r) this.load(r.doc, { path: r.path, name: r.name });
+    } catch (e) {
+      this.flash(`could not open: ${e}`);
+    }
+  }
+
+  async newNote() {
+    if (!(await this.okToReplace())) return;
+    this.load({ blocks: [block()], arrows: [] }, { path: null, name: 'untitled' });
   }
 
   checkpoint(kind = 'edit') {
+    this.dirty = true;
+    this.edits++;
     const now = Date.now();
     if (kind === 'type' && this.lastKind === 'type' && now - this.lastTime < 1000) {
       this.lastTime = now;
@@ -140,6 +228,8 @@ export class Editor {
     this.o = Math.min(s.o, this.blk.items.length);
     this.anchor = null;
     this.lastKind = '';
+    this.dirty = true;
+    this.edits++;
     this.setMode('text');
     this.touch();
   }
@@ -473,6 +563,17 @@ export class Editor {
     if (!k) return;
     // Let the browser fire copy/cut/paste events; those are handled separately.
     if (/^C-[cxv]$/.test(k)) return;
+    const fileKeys: Record<string, () => unknown> = {
+      'C-s': () => this.saveNote(),
+      'C-S-s': () => this.saveNoteAs(),
+      'C-o': () => this.openNote(),
+      'C-n': () => this.newNote(),
+    };
+    if (fileKeys[k] && this.mode !== 'label') {
+      e.preventDefault();
+      fileKeys[k]();
+      return;
+    }
     if (k === 'F1' || k === 'C-/') {
       this.showHelp = !this.showHelp;
       e.preventDefault();
@@ -917,8 +1018,11 @@ export class Editor {
       { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
       { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
       { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },
-      { name: 'new', desc: 'clear the document (undoable)', run: () => { this.checkpoint(); this.doc = { blocks: [block()], arrows: [] }; this.b = 0; this.o = 0; } },
-      { name: 'welcome', desc: 'load the welcome note', run: () => { this.checkpoint(); this.doc = welcomeDoc(); this.b = 0; this.o = 0; } },
+      { name: 'new', desc: 'new note  ctrl+n', run: () => this.newNote() },
+      { name: 'open', desc: 'open a note  ctrl+o', run: () => this.openNote() },
+      { name: 'save', desc: 'save  ctrl+s', run: () => this.saveNote() },
+      { name: 'saveas', desc: 'save as…  ctrl+shift+s', run: () => this.saveNoteAs() },
+      { name: 'welcome', desc: 'open the welcome note', run: async () => { if (await this.okToReplace()) this.load(welcomeDoc(), { path: null, name: 'welcome' }); } },
       { name: 'help', desc: 'toggle key reference', run: () => (this.showHelp = !this.showHelp) },
     ];
   }
@@ -1346,7 +1450,7 @@ function keyName(e: KeyboardEvent): string | null {
   let mods = '';
   if (e.ctrlKey || e.metaKey) mods += 'C-';
   if (e.altKey) mods += 'A-';
-  if (e.shiftKey && base.length > 1) mods += 'S-';
+  if (e.shiftKey) mods += 'S-';
   return mods + (base.length === 1 ? base.toLowerCase() : base);
 }
 

@@ -43,6 +43,9 @@
     <span class="keys">{HINTS[ed.mode]}</span>
   {/if}
   <span class="spacer"></span>
+  <span class="file" title={ed.file.path ?? 'not saved to a file yet'}>
+    {ed.file.name}{#if ed.dirty}<span class="dot" class:warn={!ed.file.path} in:fly={{ y: -4, duration: 150 }}>●</span>{/if}
+  </span>
   <span class="stat">{counts.words}w · {counts.maths}∑ · {counts.arrows}↗</span>
   <span class="pos">{ed.b + 1}:{ed.o + 1}</span>
 </footer>
@@ -82,4 +85,7 @@
   @keyframes blink { 50% { opacity: 0; } }
   .spacer { flex: 1; }
   .pos { color: var(--fg); }
+  .file { color: var(--fg); }
+  .dot { margin-left: 6px; font-size: 9px; color: var(--muted); vertical-align: 1px; }
+  .dot.warn { color: var(--arrow); }
 </style>

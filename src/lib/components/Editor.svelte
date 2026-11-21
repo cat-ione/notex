@@ -7,6 +7,7 @@
   import ArrowLayer from './ArrowLayer.svelte';
   import StatusLine from './StatusLine.svelte';
   import Help from './Help.svelte';
+  import { setWindowTitle } from '$lib/files';
 
   const ed = new Editor();
   let page: HTMLElement;
@@ -47,8 +48,12 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       ed.pruneArrows();
-      ed.save();
-    }, 400);
+      ed.persist();
+    }, 600);
+  });
+
+  $effect(() => {
+    setWindowTitle(`${ed.dirty ? '● ' : ''}${ed.file.name} — notex`);
   });
 
   $effect(() => {

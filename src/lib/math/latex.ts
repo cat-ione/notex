@@ -39,7 +39,7 @@ function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
   const off = hasCaret ? o.cursor!.off : -1;
 
   if (r.length === 0) {
-    if (!o.anchors) return text ? '' : '{}';
+    if (!o.anchors) return '';
     const body = (hasCaret ? CARET : '') + (text ? '\\square' : EMPTY);
     return hasCaret && path.length ? `\\htmlClass{nx-active-row}{${body}}` : body;
   }

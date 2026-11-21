@@ -227,6 +227,14 @@ export function fraction(root: MRow, cur: MCursor) {
 /** `^` / `_`: attach a script, merging into an adjacent one when possible. */
 export function script(root: MRow, cur: MCursor, kind: 'sup' | 'sub') {
   const r = rowAt(root, cur.path);
+  // `x_1^2`: at the end of a subscript, `^` adds a superscript to the same base (and vice versa).
+  const p = parentOf(root, cur);
+  const other = kind === 'sup' ? 'sub' : 'sup';
+  if (p && cur.off === r.length && r.length && (p.node.name === other || p.node.name === 'subsup')) {
+    cur.path.pop();
+    cur.off = p.step.i + 1;
+    return script(root, cur, kind);
+  }
   const prev = r[cur.off - 1];
   if (prev?.k === 'cmd') {
     if (prev.name === kind) return enter(cur, cur.off - 1, 0, true, root);
