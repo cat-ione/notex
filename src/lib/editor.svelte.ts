@@ -831,6 +831,7 @@ export class Editor {
     }
     if (e.button !== 0) return;
     e.preventDefault();
+    if (e.altKey && (this.mode === 'text' || this.mode === 'math' || this.mode === 'style' || this.mode === 'label') && this.beginAltDraw(e)) return;
     if (this.mode === 'pick') {
       const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
       const loc = id ? this.locFromId(id) : null;
@@ -1025,6 +1026,57 @@ export class Editor {
     this.touch();
   }
 
+  // ── drawing with the mouse ──
+
+  /** An Alt+drag drawing: where it started, and whether it draws a shape (Alt+Shift). */
+  private altDraw: { start: Loc; shape: boolean } | null = null;
+  /** The shape Alt+Shift+drag draws: the last one drawn. */
+  private lastMarkKind: MarkKind = 'box';
+
+  /**
+   * Alt+drag from one thing to another draws an arrow; Alt+Shift+drag across a range
+   * draws a shape around it (the kind drawn last). The pick highlights show it as it goes.
+   */
+  private beginAltDraw(e: MouseEvent): boolean {
+    const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
+    const loc = id ? this.locFromId(id) : null;
+    if (!loc) return false;
+    if (this.mode === 'label' && this.label) this.commitLabel();
+    if (this.mode === 'style' || this.mode === 'label') this.setMode('text');
+    this.styling = null;
+    this.menu = null;
+    this.noteDrawReturn();
+    this.anchor = null;
+    this.msel = null;
+    this.pick = e.shiftKey ? { phase: 'from', loc, purpose: this.lastMarkKind } : { phase: 'to', from: loc, loc, purpose: 'arrow' };
+    this.altDraw = { start: loc, shape: e.shiftKey };
+    this.setMode('pick');
+    this.touch();
+    return true;
+  }
+
+  private dragAltDraw(e: MouseEvent) {
+    const ad = this.altDraw!, pk = this.pick;
+    if (!pk) return void (this.altDraw = null);
+    const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
+    const loc = id ? this.locFromId(id) : null;
+    if (loc) pk.loc = ad.shape ? (this.spanLoc(ad.start, loc) ?? ad.start) : loc;
+    this.touch();
+  }
+
+  private endAltDraw() {
+    const ad = this.altDraw!, pk = this.pick;
+    this.altDraw = null;
+    if (!pk) return;
+    // let go where it started: no arrow (a shape around the one thing is fine)
+    if (!ad.shape && this.anchorIds(pk.loc).join() === this.anchorIds(ad.start).join()) {
+      this.endDrawing();
+      this.flash('alt+drag from one thing to another draws an arrow · alt+shift+drag draws a shape');
+      return;
+    }
+    this.withFrame(() => this.pickKey('Enter'));
+  }
+
   /** Dragging a handle of the selected arrow. */
   private handleDrag: { id: Id; part: 'from' | 'to' | 'bend' | 'start' | 'end'; fixed?: Loc } | null = null;
 
@@ -1074,7 +1126,7 @@ export class Editor {
   }
 
   mouseMove(e: MouseEvent) {
-    if (!this.handleDrag && !this.dragging && !this.labelDrag && !this.noteDrag) return;
+    if (!this.handleDrag && !this.dragging && !this.labelDrag && !this.noteDrag && !this.altDraw) return;
     this.withFrame(() => this.mouseMoveInner(e));
   }
 
@@ -1082,6 +1134,7 @@ export class Editor {
     if (this.handleDrag) return this.dragHandle(e);
     if (this.labelDrag) return this.dragLabelSel(e);
     if (this.noteDrag) return this.dragNote(e);
+    if (this.altDraw) return this.dragAltDraw(e);
     if (!this.dragging) return;
     const h = this.hitTest(e.clientX, e.clientY);
     if (!h) return;
@@ -1109,6 +1162,7 @@ export class Editor {
   }
 
   mouseUp() {
+    if (this.altDraw) this.endAltDraw();
     this.dragging = false;
     this.mathDrag = null;
     this.labelDrag = null;
@@ -2701,6 +2755,7 @@ export class Editor {
     if (!at.length) return;
     this.checkpoint();
     const m: Mark = { id: uid(), kind, at, dash: false, label: '' };
+    this.lastMarkKind = kind;
     this.doc.marks.push(m);
     this.pick = null;
     this.selectDrawing(m.id);
