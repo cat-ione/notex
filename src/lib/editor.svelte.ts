@@ -20,10 +20,10 @@ import * as F from './files';
 import * as C from './config';
 import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
 import * as M from './math/edit';
-import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
+import { AUTO_REPLACE, BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
-import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type NoteAt, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
+import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
 
@@ -2344,6 +2344,7 @@ export class Editor {
         this.openPalette('text');
         return true;
     }
+    if ((k === '^' || k === '_') && !this.selection && this.config.typing.autoMath && this.autoMath(k)) return true;
     if (k.length === 1) {
       this.checkpoint('type');
       this.deleteSelection();
@@ -2354,6 +2355,38 @@ export class Editor {
       return true;
     }
     return false;
+  }
+
+  /** A formula made by auto-math: space (, ; :) at its end goes straight back to text. */
+  private island: Id | null = null;
+
+  /**
+   * Auto-math: `^` / `_` typed right after a word in text (`x^2`, `a_n`, having forgotten
+   * the `$`) turns the word into a formula and carries on in it. One undo step.
+   */
+  private autoMath(k: '^' | '_'): boolean {
+    const items = this.blk.items;
+    let s = this.o;
+    while (s > 0 && items[s - 1].t === 'c' && /[A-Za-z0-9]/.test((items[s - 1] as Char).ch)) s--;
+    if (s === this.o) return false;
+    // a word of its own (not the tail of something like `e.g` or a URL)...
+    const before = items[s - 1];
+    if (before && !(before.t === 'c' && /[\s([{"'“‘]/.test(before.ch))) return false;
+    // ...that looks like math: x, ab, 10, x1, pi, theta (not snake_case or a file_name)
+    const w = items.slice(s, this.o).map((i) => (i as Char).ch).join('');
+    if (!(w.length <= 2 || /^\d+$/.test(w) || /^[A-Za-z]\d+$/.test(w) || /^[A-Za-z]+$/.test(w) && AUTO_REPLACE[w])) return false;
+    this.checkpoint();
+    const m = math([], false);
+    const cur: MCursor = { path: [], off: 0 };
+    for (const it of items.slice(s, this.o)) M.typeChar(m.root, cur, (it as Char).ch);
+    M.typeChar(m.root, cur, k);
+    items.splice(s, this.o - s, m);
+    this.o = s;
+    this.anchor = null;
+    this.mc = cur;
+    this.setMode('math');
+    this.island = m.id;
+    return true;
   }
 
   /** Last text snippet expansion, so an immediate Backspace can undo it. */
@@ -2429,6 +2462,7 @@ export class Editor {
   /** Leave math into text, before or after the item. */
   private exitMath(after: boolean) {
     this.o += after ? 1 : 0;
+    this.island = null;
     this.setMode('text');
   }
 
@@ -2452,6 +2486,17 @@ export class Editor {
       return true;
     }
     const text = M.inTextSlot(root, cur);
+
+    // the end of a formula made by auto-math: space (, ; :) carries on in the text
+    if (this.island === item.id && /^[ ,;:.!?]$/.test(k) && !this.mathSelRange) {
+      // (out of a script it doesn't continue first: `x^2.` but `x^1.5`)
+      M.settleAuto(root, cur, k);
+      if (!cur.path.length) {
+        this.exitMath(true);
+        return this.textKey(k);
+      }
+    }
+    if (this.island && this.island !== item.id) this.island = null;
 
     // Selection inside the formula.
     if (/^(S-(Left|Right|Up|Home|End)|C-a)$/.test(k)) {
