@@ -66,6 +66,8 @@ export type RowNote = {
   edge: number;
   /** Size of the note when wrapped to at most `maxW` (Infinity: one line). */
   size: (maxW: number) => { w: number; h: number };
+  /** Identifies the note's content (its text), for memoising layouts. */
+  key?: string;
 };
 
 export type Placed = { id: string; box: Rect; maxW: number; leader: [number, number, number, number] | null };
@@ -133,6 +135,96 @@ const grow = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, w: r.w + 2
 const area = (a: Rect, b: Rect) =>
   Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 
+/** Minimum space between two notes after tightening (spreading uses the roomier `gap`). */
+const TIGHT = 10;
+/** A leader shorter than this (vertically) reads as a stray tick, not a leader. */
+const MIN_LEAD = 10;
+
+/**
+ * What a tightened layout must never make worse: notes touching, leaders
+ * crossing or grazing notes, covering ink, leaving the column.
+ */
+function clash(placed: Placed[], o: Opts): number {
+  let c = 0;
+  const obstacles = o.obstacles ?? [];
+  for (let a = 0; a < placed.length; a++) {
+    const b = placed[a].box;
+    for (let k = a + 1; k < placed.length; k++) c += area(grow(b, TIGHT / 2), grow(placed[k].box, TIGHT / 2));
+    for (const r of obstacles) c += area(grow(b, -1), r);
+    c += (Math.max(0, o.left - b.x) + Math.max(0, b.x + b.w - o.right)) * 10;
+  }
+  const ls = placed.map((p) => p.leader).filter((l): l is NonNullable<typeof l> => !!l);
+  for (let a = 0; a < ls.length; a++) for (let b = a + 1; b < ls.length; b++) if (cross(ls[a], ls[b])) c += 1000;
+  for (const p of placed) for (const q of placed) if (p !== q && p.leader && segHitsBox(p.leader, grow(q.box, 3))) c += 1000;
+  for (const p of placed) if (p.leader) for (const r of obstacles) if (segHitsBox(p.leader, grow(r, -1))) c += 1000;
+  for (const p of placed) if (p.leader && Math.abs(p.leader[3] - p.leader[1]) < MIN_LEAD) c += 1000;
+  return c;
+}
+
+/**
+ * Pack the chosen layout a little tighter: put wrapped notes back on one line
+ * where that fits, and slide every note towards its shape as far as it can go
+ * without making anything clash. Rows and order stay as they are.
+ */
+function tighten(ns: RowNote[], placed: Placed[], o: Opts): Placed[] {
+  let cur = placed.map((p) => ({ ...p, box: { ...p.box } }));
+  let base = clash(cur, o);
+  const at = (i: number, box: Rect, maxW: number) => cur.map((q, k) => (k === i ? { ...q, box, maxW, leader: leaderFor(ns[i], box, o.below) } : q));
+  // keep order: a note may not pass its neighbours in the same row
+  const sameRow = (i: number, k: number) => Math.abs(cur[i].box.y - cur[k].box.y) < 2 || Math.abs(cur[i].box.y + cur[i].box.h - (cur[k].box.y + cur[k].box.h)) < 2;
+  const ordered = (i: number, x: number, w: number) =>
+    cur.every((q, k) => k === i || !sameRow(i, k) || (k < i ? q.box.x + q.box.w <= x : x + w <= q.box.x));
+  // the closest spot to the shape for a box of width w, scanning outward from the ideal
+  const nearest = (i: number, w: number, h: number, maxW: number, limit: number) => {
+    const ideal = ns[i].tip.x - w / 2;
+    const y = o.below ? cur[i].box.y : cur[i].box.y + cur[i].box.h - h;
+    for (let d = 0; d <= limit; d++)
+      for (const x of d ? [ideal - d, ideal + d] : [ideal]) {
+        if (!ordered(i, x, w)) continue;
+        const box = { x, y, w, h };
+        const next = at(i, box, maxW);
+        const c = clash(next, o);
+        if (c <= base + 0.5) return { next, c, d };
+      }
+    return null;
+  };
+  for (let pass = 0; pass < 3; pass++)
+    for (let i = 0; i < ns.length; i++) {
+      const p = cur[i];
+      const one = ns[i].size(Infinity);
+      // back on one line, if that fits near the shape; only a lone wrapped note in its row,
+      // so a row wrapped as a set (crowded runs) stays uniform
+      const loneWrap = cur.every((q, k) => k === i || !sameRow(i, k) || q.maxW === Infinity || q.maxW === COMFY);
+      if (p.maxW !== Infinity && one.w <= COMFY && one.h < p.box.h && loneWrap) {
+        const r = nearest(i, one.w, one.h, Infinity, one.w);
+        if (r) { cur = r.next; base = r.c; continue; }
+      }
+      const off = Math.abs(p.box.x + p.box.w / 2 - ns[i].tip.x);
+      const r = nearest(i, p.box.w, p.box.h, p.maxW, Math.ceil(off));
+      if (r && r.d < off - 0.5) (cur = r.next), (base = r.c);
+    }
+  // rows: move each (as a whole, keeping its baseline) back towards the shapes, nearest first
+  const rows = [...new Set(cur.map((q) => Math.round(o.below ? q.box.y : q.box.y + q.box.h)))].sort((a, b) => (o.below ? a - b : b - a));
+  for (const edge of rows) {
+    const idx = cur.map((_, i) => i).filter((i) => Math.round(o.below ? cur[i].box.y : cur[i].box.y + cur[i].box.h) === edge);
+    const room = Math.min(...idx.map((i) => Math.abs((o.below ? cur[i].box.y : cur[i].box.y + cur[i].box.h) - ns[i].edge)));
+    for (let d = Math.floor(room); d >= 1; d--) {
+      const dy = o.below ? -d : d;
+      const next = cur.map((q, k) => {
+        if (!idx.includes(k)) return q;
+        const box = { ...q.box, y: q.box.y + dy };
+        return { ...q, box, leader: leaderFor(ns[k], box, o.below) };
+      });
+      if (clash(next, o) <= base + 0.5) {
+        cur = next;
+        base = clash(cur, o);
+        break;
+      }
+    }
+  }
+  return cur;
+}
+
 /** How unnatural a layout looks (lower is better). */
 export function cost(notes: RowNote[], placed: Placed[], o: Opts): number {
   let c = 0;
@@ -147,7 +239,7 @@ export function cost(notes: RowNote[], placed: Placed[], o: Opts): number {
       // leaders are a cost, and flat ones look like stray underlines
       c += 8 + Math.hypot(dx, dy) * 0.25 + Math.max(0, dx * 0.7 - dy) * 1.2;
       // a leader needs room to be seen: a stub under the shape reads as no leader at all
-      c += Math.max(0, 8 - dy) * 4;
+      if (dy < MIN_LEAD) c += 80;
       for (const r of obstacles) if (segHitsBox(p.leader, grow(r, -1))) c += 40;
     }
     // extra lines from wrapping, and distance from the shape (vertical space used)
@@ -165,15 +257,54 @@ export function cost(notes: RowNote[], placed: Placed[], o: Opts): number {
   return c;
 }
 
+const memo = new Map<string, Placed[]>();
+
+/**
+ * Lay out the notes of one line and side (memoised: rows are laid out again on
+ * every edit, usually only moved). See `solveRow`.
+ */
+export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
+  if (!notes.length) return [];
+  // only obstacles near the row matter
+  const xs = notes.map((n) => n.tip.x), es = notes.map((n) => n.edge);
+  const x0 = Math.min(...xs) - 320, x1 = Math.max(...xs) + 320;
+  const y0 = o.below ? Math.min(...es) - 12 : Math.min(...es) - 160, y1 = o.below ? Math.max(...es) + 160 : Math.max(...es) + 12;
+  const obstacles = (o.obstacles ?? []).filter((r) => r.x < x1 && r.x + r.w > x0 && r.y < y1 && r.y + r.h > y0);
+  // key: everything relative to the first note's tip, rounded
+  const ox = notes[0].tip.x, oy = notes[0].edge;
+  const R = (v: number) => Math.round(v);
+  const key = notes.some((n) => n.key === undefined)
+    ? null
+    : JSON.stringify([
+        o.below, R(o.left - ox), R(o.right - ox), o.gap ?? 16,
+        notes.map((n) => [n.key, R(n.tip.x - ox), R(n.tip.y - oy), R(n.edge - oy)]),
+        obstacles.map((r) => [R(r.x - ox), R(r.y - oy), R(r.w), R(r.h)]),
+      ]);
+  const hit = key !== null ? memo.get(key) : undefined;
+  const shift = (ps: Placed[], dx: number, dy: number): Placed[] =>
+    ps.map((p) => ({
+      ...p,
+      box: { ...p.box, x: p.box.x + dx, y: p.box.y + dy },
+      leader: p.leader && [p.leader[0] + dx, p.leader[1] + dy, p.leader[2] + dx, p.leader[3] + dy],
+    }));
+  if (hit) return shift(hit, ox, oy);
+  const res = solveRow(notes, { ...o, obstacles });
+  if (key !== null) {
+    if (memo.size > 400) memo.clear();
+    memo.set(key, shift(res, -ox, -oy));
+  }
+  return res;
+}
+
 /**
  * Lay out the notes of one line and side. Candidates: one row or two
  * alternating rows; notes at natural width, wrapped greedily, or all wrapped to
- * two or three lines; each slid and dropped by a little. Returns the cheapest.
+ * two or three lines; each slid and dropped by a little. The cheapest wins and
+ * is then tightened.
  */
-export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
+function solveRow(notes: RowNote[], o: Opts): Placed[] {
   const gap = o.gap ?? 16;
   const n = notes.length;
-  if (!n) return [];
   const order = notes.map((_, i) => i).sort((a, b) => notes[a].tip.x - notes[b].tip.x);
   const ns = order.map((i) => notes[i]);
   const dir = o.below ? 1 : -1;
@@ -257,6 +388,7 @@ export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
           // (the first candidate stands in if every cost is NaN, e.g. on a detached page)
           if (best === null || c < bestCost) (bestCost = c), (best = p);
         }
+  best = tighten(ns, best!, o);
   // back to the caller's order
   const res: Placed[] = new Array(n);
   order.forEach((orig, k) => (res[orig] = best![k]));

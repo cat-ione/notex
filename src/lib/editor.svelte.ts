@@ -269,13 +269,30 @@ export class Editor {
     return this.page?.querySelector(`[data-nx="${id}"]`) ?? null;
   }
 
+  /** Measurements shared within one layout pass (the DOM doesn't change during it). */
+  private frame: { rects: Map<string, Rect[]>; ink: Map<Element, Rect[]> } | null = null;
+
+  /** Ink boxes of a block (viewport coords), measured once per layout pass. */
+  private blockInk(el: Element): Rect[] {
+    let r = this.frame?.ink.get(el);
+    if (!r) {
+      r = inkRects(el);
+      this.frame?.ink.set(el, r);
+    }
+    return r;
+  }
+
   private rectsOfIds(ids: Id[]): Rect[] {
+    const key = ids.join(' ');
+    const hit = this.frame?.rects.get(key);
+    if (hit) return hit;
     const rs: Rect[] = [];
     for (const id of ids)
       this.page?.querySelectorAll(`[data-nx="${id}"]`).forEach((e) => {
         const m = measure(e);
         if (m) rs.push(m);
       });
+    this.frame?.rects.set(key, rs);
     return rs;
   }
 
@@ -561,7 +578,17 @@ export class Editor {
   /** Recompute every DOM-dependent overlay. Called after renders and resizes. */
   layout() {
     if (!this.page) return;
-    const origin = this.page.getBoundingClientRect();
+    this.frame = { rects: new Map(), ink: new Map() };
+    try {
+      this.layoutFrame();
+    } finally {
+      this.frame = null;
+    }
+  }
+
+  private layoutFrame() {
+    const page = this.page!;
+    const origin = page.getBoundingClientRect();
     const rel = (r: Rect | null) => (r ? relTo(r, origin) : null);
 
     // Caret
@@ -619,7 +646,7 @@ export class Editor {
     this.arrowGeos = geos;
 
     // Keep the caret in view
-    this.page.querySelector('.caret')?.scrollIntoView({ block: 'nearest' });
+    page.querySelector('.caret')?.scrollIntoView({ block: 'nearest' });
   }
 
   /**
@@ -643,7 +670,7 @@ export class Editor {
       let ls = blockLines.get(el);
       if (!ls) {
         ls = [];
-        for (const r of inkRects(el).map((r) => relTo(r, origin)).sort((a, b) => a.y - b.y)) {
+        for (const r of this.blockInk(el).map((r) => relTo(r, origin)).sort((a, b) => a.y - b.y)) {
           const last = ls[ls.length - 1];
           if (last && r.y < Math.max(...last.map((q) => q.y + q.h)) - 1) last.push(r);
           else ls.push([r]);
@@ -697,7 +724,7 @@ export class Editor {
         const notes: RowNote[] = row.map(({ m, g }) => {
           // the note's box as LabelLayer draws it: hanging from y - 12 (below) or standing on y + 3 (above)
           const edge = below ? g.label.y - 12 : g.label.y + 3;
-          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, size: (maxW: number) => measureLabel(m.label, maxW) };
+          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, size: (maxW: number) => measureLabel(m.label, maxW), key: m.label };
         });
         // keep off ink on this line, other shapes and notes already placed
         const mine = new Set(row.map((i) => i.m.id));
@@ -763,7 +790,7 @@ export class Editor {
       const b = this.el(it.anchor)?.closest('.block');
       for (const e of [b, b?.previousElementSibling, b?.nextElementSibling]) if (e?.classList.contains('block')) blocks.add(e);
     }
-    const ink = [...blocks].flatMap((b) => inkRects(b));
+    const ink = [...blocks].flatMap((b) => this.blockInk(b));
     const across = (a: Rect, b: Rect) => a.x < b.x + b.w + 2 && b.x < a.x + a.w + 2;
     const mid = (e: Element | null) => {
       const r = e?.getBoundingClientRect();
