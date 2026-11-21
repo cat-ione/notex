@@ -48,6 +48,27 @@ for (let s = 0; (process.env.SCALE ?? '1') === '1' && s * 6 < files.length; s++)
   await page.screenshot({ path: `${dir}/sheet${s}.png`, fullPage: true });
 }
 
+// typing check: every scenario in one note, then type; layouts must settle (one per keystroke)
+await page.setViewportSize({ width: 1000, height: 900 });
+await page.goto(process.env.URL ?? 'http://127.0.0.1:1420/');
+await page.waitForFunction(() => window.__nx);
+await page.evaluate((scs) => window.__nx.load(scs), scenarios);
+await page.waitForTimeout(1200);
+await page.keyboard.press('Control+End');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(400);
+await page.evaluate(() => {
+  const ed = window.__nx.ed, S = (window.__typing = { layouts: 0, lat: [] });
+  const layout = ed.layout.bind(ed);
+  ed.layout = () => (S.layouts++, layout());
+  window.addEventListener('keydown', () => { const t = performance.now(); requestAnimationFrame(() => setTimeout(() => S.lat.push(performance.now() - t))); }, true);
+});
+for (const c of 'typing check') { await page.keyboard.type(c); await page.waitForTimeout(120); }
+const typing = await page.evaluate(() => window.__typing);
+typing.lat.sort((a, b) => a - b);
+const perKey = typing.layouts / 'typing check'.length;
+console.log(`typing (all scenarios in one note): median ${typing.lat[typing.lat.length >> 1].toFixed(1)}ms, max ${typing.lat[typing.lat.length - 1].toFixed(1)}ms, ${perKey.toFixed(1)} layouts per keystroke${perKey > 1.5 ? '  << layouts are not settling' : ''}`);
+
 writeFileSync(`${dir}/metrics.json`, JSON.stringify(all, null, 1));
 // summary table
 const pad = (v, n) => String(v).padStart(n);
