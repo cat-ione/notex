@@ -120,6 +120,8 @@ function cmdLatex(n: MCmd, path: Step[], i: number, o: Opts, inText: boolean): s
   const def = CMDS[n.name];
   if (!def) return `\\text{?${n.name}}`;
   const slots = n.slots.map((sl, s) => {
+    // an empty script shows its box only while the formula is being edited
+    if (def.script && !sl.length && !o.cursor) return '';
     const r = row(sl, [...path, { i, s }], o, !!def.text);
     // Scripts have no wrapper of their own (they need a base), so the slot carries the anchor.
     return def.script && o.anchors ? `\\htmlData{nx=${n.id}}{${r}}` : r;

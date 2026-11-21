@@ -49,9 +49,10 @@ export const CMDS: Record<string, CmdDef> = {
   binom: { slots: 2, latex: ([a, b]) => `\\binom{${a}}{${b}}`, down: { 0: 1 }, up: { 1: 0 } },
   sqrt: wrap1('\\sqrt'),
   root: { slots: 2, latex: ([n, a]) => `\\sqrt[${n}]{${a}}`, linear: true },
-  sup: { slots: 1, latex: ([a]) => `^{${a}}`, script: true },
-  sub: { slots: 1, latex: ([a]) => `_{${a}}`, script: true },
-  subsup: { slots: 2, latex: ([a, b]) => `_{${a}}^{${b}}`, script: true, up: { 0: 1 }, down: { 1: 0 } },
+  // (an empty script writes nothing: a limit left out is just not there)
+  sup: { slots: 1, latex: ([a]) => (a ? `^{${a}}` : ''), script: true },
+  sub: { slots: 1, latex: ([a]) => (a ? `_{${a}}` : ''), script: true },
+  subsup: { slots: 2, latex: ([a, b]) => (a ? `_{${a}}` : '') + (b ? `^{${b}}` : ''), script: true, up: { 0: 1 }, down: { 1: 0 } },
   paren: delim('(', ')', ')'),
   bracket: delim('[', ']', ']'),
   brace: delim('\\{', '\\}', '}'),

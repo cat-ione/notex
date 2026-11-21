@@ -1436,7 +1436,10 @@ export class Editor {
       const r = this.stopRect(this.b, this.o);
       const prev = this.o > 0 ? blk.items[this.o - 1] : null;
       const pr = prev?.t === 'c' ? this.el(prev.id, this.b)?.getBoundingClientRect() : null;
-      if (r) {
+      // right after a display formula: at its end, not on a line of its own below it
+      const dm = prev?.t === 'm' && prev.display ? this.el(prev.id, this.b)?.querySelector('.katex')?.getBoundingClientRect() : null;
+      if (dm) caret = { r: relTo({ x: dm.right + 3, y: dm.top, w: 2, h: dm.height }, origin), shape: 'bar' };
+      else if (r) {
         // Prefer the previous char's line when wrapping put the next item on a new line.
         const nextIsMath = blk.items[this.o]?.t === 'm';
         const useprev = pr && (blk.items[this.o]?.t !== 'c' || Math.abs(pr.top - r.top) > 4);

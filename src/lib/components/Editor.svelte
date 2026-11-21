@@ -312,6 +312,10 @@
     display: inline-block;
     width: 0;
   }
+  /* after a display formula it would get a line of its own: an empty line under every one */
+  :global(.block .math.display + .eol) {
+    position: absolute;
+  }
 
   .caret {
     position: absolute;

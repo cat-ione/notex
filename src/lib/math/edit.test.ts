@@ -108,6 +108,15 @@ describe('LaTeX-style scripts', () => {
   });
 });
 
+describe('empty scripts', () => {
+  it('write nothing, and show their box only while the formula is edited', () => {
+    const root: MRow = [{ k: 'sym', id: 's', v: '\\int' }, cmd('subsup', [[], []])];
+    expect(toLatex(root).trim()).toBe('\\int');
+    expect(toLatex(root, true)).not.toContain('nx-empty');
+    expect(toLatex(root, true, { path: [], off: 2 })).toContain('nx-empty');
+  });
+});
+
 describe('backspace', () => {
   it('undoes an auto-replacement one letter at a time', () => {
     expect(typed('alpha‹').tex).toBe('alph');
