@@ -31,6 +31,29 @@ const isText = (root: MRow, cur: MCursor) => {
 };
 export const inTextSlot = isText;
 
+const isScriptNode = (n: MNode | undefined) => n?.k === 'cmd' && !!CMDS[n.name]?.script;
+
+/**
+ * Whether the caret may stop at `off` in `row`. Not between a base and its scripts
+ * (nor between two scripts of one base): typing there would take the scripts from
+ * their base, so arrowing, clicking and selecting skip those places.
+ */
+export const isStop = (row: MRow, off: number) => !(off > 0 && isScriptNode(row[off]));
+
+/** The first offset at or after `off` that is a stop: past the scripts. */
+const pastScripts = (row: MRow, off: number) => {
+  while (!isStop(row, off)) off++;
+  return off;
+};
+
+/** Move the caret off a non-stop: into the script (forward) or to before its base (back). */
+export function toStop(root: MRow, cur: MCursor, dir: 1 | -1) {
+  while (!isStop(rowAt(root, cur.path), cur.off)) {
+    if (dir > 0) enter(cur, cur.off, 0, false, root);
+    else moveLeft(root, cur);
+  }
+}
+
 export function enter(cur: MCursor, i: number, s: number, atEnd: boolean, root: MRow) {
   cur.path.push({ i, s });
   cur.off = atEnd ? rowAt(root, cur.path).length : 0;
@@ -39,7 +62,8 @@ export function enter(cur: MCursor, i: number, s: number, atEnd: boolean, root: 
 export function exitAfter(root: MRow, cur: MCursor): boolean {
   const st = cur.path.pop();
   if (!st) return false;
-  cur.off = st.i + 1;
+  // leaving a base: past its scripts too
+  cur.off = pastScripts(rowAt(root, cur.path), st.i + 1);
   return true;
 }
 
@@ -49,6 +73,8 @@ export function moveRight(root: MRow, cur: MCursor): boolean {
     const n = r[cur.off];
     if (hasSlots(n)) enter(cur, cur.off, 0, false, root);
     else cur.off++;
+    // past a base: straight into its first script
+    toStop(root, cur, 1);
     return true;
   }
   const p = parentOf(root, cur);
@@ -56,7 +82,12 @@ export function moveRight(root: MRow, cur: MCursor): boolean {
   if (def(p.node)?.linear && p.step.s < p.node.slots.length - 1) {
     p.step.s++;
     cur.off = 0;
-  } else exitAfter(root, cur);
+  } else {
+    // out of a node; out of a script into the next script of the same base
+    cur.path.pop();
+    cur.off = p.step.i + 1;
+    toStop(root, cur, 1);
+  }
   return true;
 }
 
@@ -78,6 +109,8 @@ export function moveLeft(root: MRow, cur: MCursor): boolean {
   } else {
     cur.path.pop();
     cur.off = p.step.i;
+    // out of a script: on to before its base (or into the previous script)
+    toStop(root, cur, -1);
   }
   return true;
 }
@@ -135,6 +168,7 @@ export function prevSlot(root: MRow, cur: MCursor): boolean {
   } else {
     cur.path.pop();
     cur.off = p.step.i;
+    toStop(root, cur, -1);
   }
   return true;
 }
@@ -155,8 +189,6 @@ export function applyInserter(root: MRow, cur: MCursor, ins: Inserter) {
 }
 
 // ── selection ranges (within the caret's row) ──
-
-const isScriptNode = (n: MNode | undefined) => n?.k === 'cmd' && !!CMDS[n.name]?.script;
 
 /** Widen [s, e) so it never separates a base from its scripts. */
 export function alignRange(row: MRow, s: number, e: number): [number, number] {
@@ -239,6 +271,12 @@ export function deleteForward(root: MRow, cur: MCursor): boolean {
       enter(cur, cur.off, 0, false, root);
       return true;
     }
+    // a base with scripts: deleting it alone would hand its scripts to whatever is
+    // before it, so go into the scripts instead (as into a structure)
+    if (cur.off > 0 && isScriptNode(r[cur.off + 1])) {
+      enter(cur, cur.off + 1, 0, false, root);
+      return true;
+    }
     r.splice(cur.off, 1);
     return true;
   }
@@ -319,8 +357,9 @@ export function typeChar(root: MRow, cur: MCursor, c: string) {
   for (let d = cur.path.length - 1; d >= 0; d--) {
     const n = rowAt(root, cur.path.slice(0, d))[cur.path[d].i] as MCmd;
     if (def(n)?.close === c) {
-      cur.off = cur.path[d].i + 1;
+      const i = cur.path[d].i;
       cur.path = cur.path.slice(0, d);
+      cur.off = pastScripts(rowAt(root, cur.path), i + 1);
       return;
     }
     if (def(n)?.close) break;

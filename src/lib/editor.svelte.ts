@@ -840,8 +840,10 @@ export class Editor {
     // after a base means after its scripts too (not wedged between them)
     const row = M.rowAt(m.item.root, found.path);
     let off = found.i + (m.after ? 1 : 0);
-    if (m.after) while (off < row.length && row[off].k === 'cmd' && CMDS[(row[off] as MCmd).name]?.script) off++;
-    return { path: found.path, off };
+    if (m.after) while (!M.isStop(row, off)) off++;
+    const cur = { path: found.path, off };
+    M.toStop(m.item.root, cur, 1); // at a script's left edge: into the script
+    return cur;
   }
 
   /** A drag that started inside a formula: where, and the caret position it started at. */

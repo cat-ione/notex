@@ -79,6 +79,53 @@ describe('backspace', () => {
   });
 });
 
+describe('caret stops', () => {
+  // every row the caret visits, checked at each step
+  const walk = (keys: string) => {
+    const { root } = typed(keys);
+    const cur: MCursor = { path: [], off: 0 };
+    const seen: string[] = [];
+    const check = () => {
+      expect(M.isStop(M.rowAt(root, cur.path), cur.off), `stop at ${JSON.stringify(cur)}`).toBe(true);
+      seen.push(JSON.stringify(cur));
+    };
+    check();
+    while (M.moveRight(root, cur)) check();
+    const right = seen.length;
+    while (M.moveLeft(root, cur)) check();
+    return { root, right, back: seen.length - right };
+  };
+
+  it('never stops between a base and its scripts', () => {
+    for (const keys of ['x^2␣+1', 'x_1^2␣y', 'int0⇥1⇥f', 'sumi=1⇥n⇥a_i', '(a+b)^2', 'e^x^2']) walk(keys);
+  });
+
+  it('goes from a base straight into its script and back to before the base', () => {
+    const { root } = typed('x^2');
+    const cur: MCursor = { path: [], off: 0 };
+    M.moveRight(root, cur);
+    expect(cur).toEqual({ path: [{ i: 1, s: 0 }], off: 0 });
+    M.moveLeft(root, cur);
+    expect(cur).toEqual({ path: [], off: 0 });
+  });
+
+  it('leaves a base past its scripts', () => {
+    // inside the parens, closing them jumps past the existing square
+    const { root } = typed('(a+b)^2');
+    const cur: MCursor = { path: [{ i: 0, s: 0 }], off: 3 };
+    M.typeChar(root, cur, ')');
+    expect(cur).toEqual({ path: [], off: 2 });
+  });
+
+  it('delete before a base with scripts goes into them instead of orphaning them', () => {
+    const { root } = typed('y␣x^2');
+    const cur: MCursor = { path: [], off: 1 };
+    M.deleteForward(root, cur);
+    expect(toLatex(root)).toBe('yx^{2}');
+    expect(cur).toEqual({ path: [{ i: 2, s: 0 }], off: 0 });
+  });
+});
+
 describe('rendering', () => {
   it('anchored LaTeX renders and tags every node', () => {
     const { root } = typed('sumi=1⇥n␣x_i^2/2');
