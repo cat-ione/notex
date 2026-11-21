@@ -11,7 +11,8 @@ export const MARK_KINDS: MarkKind[] = ['box', 'circle', 'underline', 'highlight'
 export type MarkGeo = {
   d: string;
   filled: boolean;
-  label: { x: number; y: number; below: boolean };
+  /** Where the note goes; `maxW` wraps it (set by layout). */
+  label: { x: number; y: number; below: boolean; maxW?: number };
   /** For enclosing shapes, the outline arrows should touch. */
   outline?: { r: Rect; round: boolean };
   /** Extent of the drawn ink (without the label). */

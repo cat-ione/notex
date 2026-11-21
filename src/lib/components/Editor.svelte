@@ -17,6 +17,8 @@
 
   onMount(() => {
     ed.page = page;
+    // layout experiments: window.__nx (see $lib/dev)
+    if (import.meta.env.DEV) import('$lib/dev').then((d) => d.install(ed));
     const on = <K extends keyof WindowEventMap>(type: K, f: (e: WindowEventMap[K]) => void) => {
       window.addEventListener(type, f);
       return () => window.removeEventListener(type, f);
@@ -35,7 +37,11 @@
     const ro = new ResizeObserver(() => ed.layout());
     ro.observe(page);
     document.fonts?.ready.then(() => ed.layout());
+    // KaTeX loads some fonts (big delimiters, scripts) only when first used, which moves glyphs
+    const relayout = () => ed.layout();
+    document.fonts?.addEventListener('loadingdone', relayout);
     return () => {
+      document.fonts?.removeEventListener('loadingdone', relayout);
       offs.forEach((off) => off());
       ro.disconnect();
     };

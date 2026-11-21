@@ -1,34 +1,14 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
-  import katex from 'katex';
   import type { Editor } from '$lib/editor.svelte';
   import { inkVar } from '$lib/marks';
+  import { renderLabel as render } from '$lib/labels';
 
   // Labels on arrows and notes on shapes. HTML rather than SVG text so they can
   // contain $math$.
   let { ed }: { ed: Editor } = $props();
 
-  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-
-  const cache = new Map<string, string>();
-  function render(text: string): string {
-    let html = cache.get(text);
-    if (html === undefined) {
-      html = text
-        .split(/(\$[^$]+\$)/)
-        .map((part) =>
-          /^\$[^$]+\$$/.test(part)
-            ? katex.renderToString(part.slice(1, -1), { throwOnError: false, strict: 'ignore', output: 'html' })
-            : esc(part),
-        )
-        .join('');
-      if (cache.size > 200) cache.clear();
-      cache.set(text, html);
-    }
-    return html;
-  }
-
-  type L = { id: string; text: string; x: number; y: number; below: boolean; color?: string; sel: boolean; ghost: boolean };
+  type L = { id: string; text: string; x: number; y: number; below: boolean; maxW?: number; color?: string; sel: boolean; ghost: boolean };
   const labels = $derived.by(() => {
     const out: L[] = [];
     const ghost = ed.pick?.edit?.id;
@@ -45,7 +25,7 @@
       if (!g || !text) continue;
       // label.y is a text baseline: shift to the box's top (below) or bottom (above) edge
       const y = g.label.below ? g.label.y - 12 : g.label.y + 3;
-      out.push({ id: m.id, text, x: g.label.x, y, below: g.label.below, color: m.color, sel: ed.styling === m.id, ghost: ghost === m.id });
+      out.push({ id: m.id, text, x: g.label.x, y, below: g.label.below, maxW: g.label.maxW, color: m.color, sel: ed.styling === m.id, ghost: ghost === m.id });
     }
     return out;
   });
@@ -59,7 +39,8 @@
     class:sel={l.sel}
     class:ghost={l.ghost}
     class:inked={!!l.color}
-    style="left: {l.x}px; top: {l.y}px; --ink: {inkVar(l.color)}"
+    class:wrapped={!!l.maxW}
+    style="left: {l.x}px; top: {l.y}px; --ink: {inkVar(l.color)};{l.maxW ? ` max-width: ${l.maxW}px;` : ''}"
     in:fade={{ duration: 200 }}
   >
     {@html render(l.text)}
@@ -67,7 +48,8 @@
 {/each}
 
 <style>
-  .dlabel {
+  /* global: $lib/labels measures notes with an offscreen .dlabel */
+  :global(.dlabel) {
     position: absolute;
     z-index: 2;
     transform: translate(-50%, -100%);
@@ -82,16 +64,21 @@
     background: color-mix(in srgb, var(--bg) 82%, transparent);
     transition: color 160ms ease, left 120ms ease, top 120ms ease;
   }
-  .dlabel.below {
+  :global(.dlabel.wrapped) {
+    white-space: normal;
+    width: max-content;
+    text-align: center;
+  }
+  :global(.dlabel.below) {
     transform: translate(-50%, 0);
   }
-  .dlabel.sel:not(.inked) {
+  :global(.dlabel.sel:not(.inked)) {
     color: var(--accent);
   }
-  .dlabel.ghost {
+  :global(.dlabel.ghost) {
     opacity: 0.25;
   }
-  .dlabel :global(.katex) {
+  :global(.dlabel) :global(.katex) {
     font-size: 1.15em;
   }
 </style>
