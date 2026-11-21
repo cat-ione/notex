@@ -1022,9 +1022,12 @@ export class Editor {
   }
 
   private hintTargets() {
+    const view = this.page?.parentElement?.getBoundingClientRect();
     const ts = this.level0()
+      // punctuation-only words just add noise
+      .filter((l) => l.k !== 'word' || this.doc.blocks[l.b].items.slice(l.s, l.e + 1).some((i) => i.t === 'c' && /[\p{L}\p{N}]/u.test(i.ch)))
       .map((l) => ({ l, r: this.rectOfIds(this.anchorIds(l)) }))
-      .filter((t): t is { l: Loc; r: Rect } => !!t.r)
+      .filter((t): t is { l: Loc; r: Rect } => !!t.r && (!view || (t.r.y + t.r.h > view.top && t.r.y < view.bottom)))
       .map(({ l, r }) => ({ rect: r, act: () => (this.pick!.loc = l) }));
     this.showHints(ts);
   }
@@ -1130,12 +1133,16 @@ function describeInserter(name: string): string {
   return n.k === 'sym' ? n.v : `\\${n.name}`;
 }
 
+/** Prefix-free labels that stay short (vimium-style): single letters first, then pairs. */
 export function hintLabels(n: number): string[] {
-  const alpha = 'asdfghjklqwertyuiopzxcvbnm';
-  if (n <= alpha.length) return [...alpha.slice(0, n)];
-  const out: string[] = [];
-  for (const a of alpha) for (const b of alpha) if (out.length < n) out.push(a + b);
-  return out;
+  const alpha = 'asdfjklghqweruiopzxcvnmbty';
+  const out = [''];
+  let off = 0;
+  while (out.length - off < n || out.length === 1) {
+    const h = out[off++];
+    for (const c of alpha) out.push(h + c);
+  }
+  return out.slice(off, off + n).sort();
 }
 
 function welcomeDoc(): Doc {
