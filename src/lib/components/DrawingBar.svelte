@@ -45,7 +45,7 @@
     class:below={at.below}
     style="left: {at.x}px; top: {at.y}px;"
     onmousedown={down}
-    oncontextmenu={(e) => { e.preventDefault(); ed.openDrawingMenu(id, e.clientX, e.clientY); }}
+    oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(id, e.clientX, e.clientY); }}
     transition:fly={{ y: at?.below ? -4 : 4, duration: 120, easing: cubicOut }}
   >
     {#if mark}

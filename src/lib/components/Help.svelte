@@ -27,7 +27,7 @@
       ['shift+f10', 'menu of all of these'], ['\\', 'search them by name'],
     ]],
     ['mouse', [
-      ['click / right-click', 'select a drawing or note / its menu'], ['double-click', 'type its note, caret where you clicked'],
+      ['click / right-click', 'select a drawing or note / its menu'], ['right-click the page', 'copy, paste, draw on the selection, undo'], ['double-click', 'type its note, caret where you clicked'],
       ['drag a shape', 'move it onto another word or symbol'], ['drag an arrow', 'bend it through the mouse'],
       ['wheel near it', 'next shape / bend (shift: colour); keeps going till the mouse moves'], ['middle-click', 'remove it'], ['toolbar', 'over the selected drawing: one click each'],
       ['drag a note', 'move it (alt+0 puts it back)'], ["drag a shape's ends", 'cover more or less'],

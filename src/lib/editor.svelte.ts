@@ -38,7 +38,11 @@ export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
 type LabelSnap = { text: string; at: number; anchor: number | null };
-export type DrawingAction = { name: string; desc: string; keys: string[]; run: (key?: string) => void; menu?: false; keyOnly?: true };
+/**
+ * Something a menu entry, a key, a toolbar button or the palette can do. `more`: another
+ * way to do it (for tooltips); `off`: not possible right now; `sep`: a menu rule before it.
+ */
+export type DrawingAction = { name: string; desc: string; keys: string[]; run: (key?: string) => void; menu?: false; keyOnly?: true; more?: string; off?: boolean; sep?: true };
 export type PaletteItem = { name: string; desc: string; draw?: boolean };
 export type Spacer = { above?: number; below?: number };
 type Hint = { label: string; rect: Rect; act: () => void };
@@ -711,6 +715,11 @@ export class Editor {
   paste(e: ClipboardEvent) {
     const text = e.clipboardData?.getData('text/plain') ?? '';
     e.preventDefault();
+    this.pasteText(text);
+  }
+
+  /** Paste text at the caret (into the formula or note being edited, if any). */
+  private pasteText(text: string) {
     if (this.mode === 'label') {
       this.labelRecord('other');
       this.labelInsert(text.replace(/\s*\n\s*/g, ' '));
@@ -2134,17 +2143,7 @@ export class Editor {
       e.preventDefault();
       return;
     }
-    let handled = true;
-    if (this.menu) handled = this.menuKey(k);
-    else switch (this.mode) {
-      case 'text': handled = this.textKey(k); break;
-      case 'math': handled = this.mathKey(k); break;
-      case 'pick': handled = this.pickKey(k); break;
-      case 'style': handled = this.styleKey(k); break;
-      case 'hint': handled = this.hintKey(k); break;
-      case 'palette': handled = this.paletteKey(k); break;
-      case 'label': handled = this.labelKey(k); break;
-    }
+    const handled = this.menu ? this.menuKey(k) : this.runKey(k);
     // Swallow everything except a few browser/devtools keys.
     if (handled || !/^(C-S-i|F12|C-S-r)$/.test(k)) e.preventDefault();
     this.touch();
@@ -3360,9 +3359,9 @@ export class Editor {
     const m = this.doc.marks.find((x) => x.id === id);
     const edit = (f: () => void) => () => { this.checkpoint('style'); f(); };
     const note = (d: Arrow | Mark): DrawingAction =>
-      ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note ($math$ works)', keys: ['l', 'i', '"'], run: () => this.editNote() });
+      ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note ($math$ works)', keys: ['l', 'i', '"'], run: () => this.editNote(), more: 'or double-click it' });
     const remove = (f: () => void): DrawingAction =>
-      ({ name: 'delete', desc: 'remove it', keys: ['x', 'Delete', 'Backspace'], run: () => { this.checkpoint(); f(); this.endDrawing(); } });
+      ({ name: 'delete', desc: 'remove it', keys: ['x', 'Delete', 'Backspace'], run: () => { this.checkpoint(); f(); this.endDrawing(); }, more: 'or middle-click it', sep: true });
     // a note can be moved by hand: Alt+arrows (Shift: by a pixel), Alt+0 puts it back
     const d = a ?? m;
     const placing: DrawingAction[] = d?.label
@@ -3378,7 +3377,7 @@ export class Editor {
               d.note = { dx: o.dx + (dir === 'Left' ? -step : dir === 'Right' ? step : 0), dy: o.dy + (dir === 'Up' ? -step : dir === 'Down' ? step : 0) };
             },
           },
-          ...(d.note ? [{ name: 'autonote', desc: 'put the note back', keys: ['A-0'], run: () => { this.checkpoint(); delete d.note; } }] : []),
+          ...(d.note ? [{ name: 'autonote', desc: 'put the note back', keys: ['A-0'], run: () => { this.checkpoint(); delete d.note; }, more: 'it was moved by hand: drag it to move it again' }] : []),
         ]
       : [];
     const menu: DrawingAction = { name: 'menu', desc: 'this menu', keys: ['S-F10', 'ContextMenu'], run: () => this.openDrawingMenu(id), menu: false };
@@ -3387,15 +3386,15 @@ export class Editor {
       return [
         { name: 'bend', desc: 'bend one way', keys: ['Up', 'k'], run: edit(() => (a.bend = round(a.bend + 0.1 * dir()))), menu: false },
         { name: 'unbend', desc: 'bend the other way', keys: ['Down', 'j'], run: edit(() => (a.bend = round(a.bend - 0.1 * dir()))), menu: false },
-        { name: 'straight', desc: 'straighten', keys: ['0', '='], run: edit(() => (a.bend = 0)) },
+        { name: 'straight', desc: 'straighten', keys: ['0', '='], run: edit(() => (a.bend = 0)), more: 'bend it: drag its line, or the wheel near it' },
         { name: 'heads', desc: `arrowheads (${a.head === 'end' ? 'tip' : a.head})`, keys: ['t'], run: edit(() => (a.head = a.head === 'end' ? 'both' : a.head === 'both' ? 'none' : 'end')) },
         { name: 'reverse', desc: 'reverse', keys: ['r'], run: edit(() => { [a.from, a.to] = [a.to, a.from]; a.bend = -a.bend; }) },
         { name: 'dash', desc: a.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (a.dash = !a.dash)) },
         { name: 'boxes', desc: a.boxed ? 'hide the end boxes' : 'box the ends', keys: ['b'], run: edit(() => (a.boxed = !a.boxed)) },
-        { name: 'colour', desc: `colour (${a.color || 'default'})`, keys: ['c'], run: edit(() => (a.color = nextInk(a.color))) },
+        { name: 'colour', desc: `colour (${a.color || 'default'})`, keys: ['c'], run: edit(() => (a.color = nextInk(a.color))), more: 'or shift+wheel near it' },
         note(a),
-        { name: 'start', desc: 'move the start', keys: ['s'], run: () => this.retarget(a.id, 'from') },
-        { name: 'tip', desc: 'move the tip', keys: ['e'], run: () => this.retarget(a.id, 'to') },
+        { name: 'start', desc: 'move the start', keys: ['s'], run: () => this.retarget(a.id, 'from'), more: 'or drag its start dot', sep: true },
+        { name: 'tip', desc: 'move the tip', keys: ['e'], run: () => this.retarget(a.id, 'to'), more: 'or drag its tip dot' },
         ...placing,
         remove(() => this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1)),
         menu,
@@ -3404,12 +3403,12 @@ export class Editor {
     if (m) {
       const shape = (d: number) => edit(() => (m.kind = MARK_KINDS[(MARK_KINDS.indexOf(m.kind) + d + MARK_KINDS.length) % MARK_KINDS.length]));
       return [
-        { name: 'shape', desc: `next shape (${m.kind})`, keys: ['t', 'Right', 'Down'], run: shape(1) },
+        { name: 'shape', desc: `next shape (${m.kind})`, keys: ['t', 'Right', 'Down'], run: shape(1), more: 'or the wheel near it' },
         { name: 'prevshape', desc: 'previous shape', keys: ['S-t', 'T', 'Left', 'Up'], run: shape(-1), menu: false },
         { name: 'dash', desc: m.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (m.dash = !m.dash)) },
-        { name: 'colour', desc: `colour (${m.color || 'default'})`, keys: ['c'], run: edit(() => (m.color = nextInk(m.color))) },
+        { name: 'colour', desc: `colour (${m.color || 'default'})`, keys: ['c'], run: edit(() => (m.color = nextInk(m.color))), more: 'or shift+wheel near it' },
         note(m),
-        { name: 'target', desc: 'choose what it marks', keys: ['e', 'm'], run: () => this.retarget(m.id, 'at') },
+        { name: 'target', desc: 'choose what it marks', keys: ['e', 'm'], run: () => this.retarget(m.id, 'at'), more: 'or drag the shape onto it; drag its ends to cover more or less', sep: true },
         {
           name: 'resize', desc: 'cover more / less', keys: ['S-Right', 'S-Left', 'C-S-Left', 'C-S-Right'], keyOnly: true,
           run: (k) => k && this.resizeMark(m, k.startsWith('C-') ? 'start' : 'end', /Right$/.test(k) ? 1 : -1),
@@ -3452,11 +3451,79 @@ export class Editor {
 
   // ── right-click menu ──
 
-  /** The open drawing menu, at a window position. */
-  menu = $state<{ id: Id; x: number; y: number; sel: number } | null>(null);
+  /** The open right-click menu, at a window position: a drawing's (`id`), or the page's. */
+  menu = $state<{ id: Id | null; x: number; y: number; sel: number } | null>(null);
 
   get menuItems(): DrawingAction[] {
-    return this.menu ? this.drawingActions(this.menu.id).filter((a) => a.menu !== false && !a.keyOnly) : [];
+    if (!this.menu) return [];
+    return this.menu.id ? this.drawingActions(this.menu.id).filter((a) => a.menu !== false && !a.keyOnly) : this.pageActions();
+  }
+
+  /** What the page's menu offers: the clipboard, drawing on the selection, undo. */
+  pageActions(): DrawingAction[] {
+    const sel = !!this.selection || !!this.mathSelRange;
+    const what = sel ? 'the selection' : 'something';
+    const clip = (cmd: 'copy' | 'cut') => () => document.execCommand(cmd);
+    return [
+      { name: 'cut', desc: 'cut', keys: ['C-x'], run: clip('cut'), off: !sel },
+      { name: 'copy', desc: 'copy', keys: ['C-c'], run: clip('copy'), off: !sel, more: 'math is copied as LaTeX' },
+      { name: 'paste', desc: 'paste', keys: ['C-v'], run: () => void this.pasteFromClipboard() },
+      { name: 'all', desc: this.mode === 'math' ? 'select the formula' : 'select everything', keys: ['C-a'], run: () => this.runKey('C-a') },
+      { name: 'arrow', desc: sel ? 'arrow from the selection' : 'draw an arrow', keys: ['\\arrow'], run: () => this.startArrow(), more: 'or alt+drag from one thing to another', sep: true },
+      ...MARK_KINDS.map((k): DrawingAction => ({ name: k, desc: `${MARK_VERB[k]} ${what}`, keys: [`\\${k}`], run: () => this.startMark(k), more: k === this.lastMarkKind ? 'or alt+shift+drag across it' : undefined })),
+      { name: 'undo', desc: 'undo', keys: ['C-z'], run: () => this.runKey('C-z'), sep: true },
+      { name: 'redo', desc: 'redo', keys: ['C-y'], run: () => this.runKey('C-y') },
+    ];
+  }
+
+  /**
+   * Right-click on the page: its menu. Outside the selection the caret moves to the click
+   * first (inside it, the selection stays, for the menu to act on).
+   */
+  openPageMenu(e: MouseEvent) {
+    e.preventDefault();
+    this.withFrame(() => {
+      if (this.mode === 'label' && this.label) this.commitLabel();
+      if (this.mode === 'style' || this.mode === 'pick' || this.mode === 'hint') this.endDrawing();
+      if (this.mode === 'palette') this.closePalette();
+      const h = this.hitTest(e.clientX, e.clientY);
+      const s = this.selection;
+      const inSel = !!s && !!h && !h.math && cmpPos(h.pos, s.s) >= 0 && cmpPos(h.pos, s.e) <= 0;
+      const inFormula = !!h?.math && this.mode === 'math' && h.pos.b === this.b && h.pos.o === this.o && !!this.mathSelRange;
+      if (h && !inSel && !inFormula) {
+        this.anchor = null;
+        this.msel = null;
+        this.b = h.pos.b;
+        this.o = h.pos.o;
+        if (h.math) (this.mc = this.mathPos(h.math)), this.setMode('math');
+        else this.setMode('text');
+      }
+      this.menu = { id: null, x: e.clientX, y: e.clientY, sel: Math.max(0, this.pageActions().findIndex((a) => !a.off)) };
+      this.touch();
+    });
+  }
+
+  /** Paste from the clipboard (from the menu: there's no paste event to read it from). */
+  private async pasteFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      this.withFrame(() => { this.pasteText(text); this.touch(); });
+    } catch {
+      this.flash('the clipboard can\'t be read here: use ctrl+v');
+    }
+  }
+
+  /** Run a key as if it had been pressed (in the current mode). */
+  private runKey(k: string): boolean {
+    switch (this.mode) {
+      case 'text': return this.textKey(k);
+      case 'math': return this.mathKey(k);
+      case 'pick': return this.pickKey(k);
+      case 'style': return this.styleKey(k);
+      case 'hint': return this.hintKey(k);
+      case 'palette': return this.paletteKey(k);
+      case 'label': return this.labelKey(k);
+    }
   }
 
   /** Select a drawing and open its menu at (x, y), or under the drawing (from the keyboard). */
@@ -3481,6 +3548,7 @@ export class Editor {
   /** Run a menu entry (it closes first: the action may open something else). */
   runMenu(i: number) {
     const a = this.menuItems[i];
+    if (a?.off) return;
     this.menu = null;
     this.withFrame(() => {
       a?.run();
@@ -3493,17 +3561,30 @@ export class Editor {
     const items = this.menuItems;
     switch (k) {
       case 'Escape': this.menu = null; return true;
-      case 'Down': case 'j': case 'Tab': case 'C-n': mn.sel = (mn.sel + 1) % items.length; return true;
-      case 'Up': case 'k': case 'S-Tab': case 'C-p': mn.sel = (mn.sel - 1 + items.length) % items.length; return true;
-      case 'Home': mn.sel = 0; return true;
-      case 'End': mn.sel = items.length - 1; return true;
+      // (past entries that can't be used now)
+      case 'Down': case 'j': case 'Tab': case 'C-n': mn.sel = this.menuStep(mn.sel, 1); return true;
+      case 'Up': case 'k': case 'S-Tab': case 'C-p': mn.sel = this.menuStep(mn.sel, -1); return true;
+      case 'Home': mn.sel = this.menuStep(-1, 1); return true;
+      case 'End': mn.sel = this.menuStep(items.length, -1); return true;
       case 'Enter': case ' ': this.runMenu(mn.sel); return true;
     }
-    // an entry's own key runs it straight away
+    // an entry's own key runs it straight away (any other key closes the menu and does its thing)
     const i = items.findIndex((a) => a.keys.includes(k));
     if (i >= 0) this.runMenu(i);
-    else this.menu = null;
+    else {
+      this.menu = null;
+      return this.runKey(k);
+    }
     return true;
+  }
+
+  private menuStep(from: number, d: 1 | -1): number {
+    const items = this.menuItems, n = items.length;
+    for (let k = 1; k <= n; k++) {
+      const i = (((from + d * k) % n) + n) % n;
+      if (!items[i].off) return i;
+    }
+    return Math.max(0, from);
   }
 
   /** Start typing the selected drawing's note. */

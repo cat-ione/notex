@@ -35,6 +35,11 @@
       on('mousemove', (e) => ed.mouseMove(e)),
       on('mouseup', () => ed.mouseUp()),
       on('wheel', (e) => ed.wheel(e)),
+      // no browser menu (Back, Reload, Inspect…): the page and drawings have their own;
+      // text fields keep theirs, for spelling and the like
+      on('contextmenu', (e) => {
+        if (!(e.target as Element | null)?.closest?.('input, textarea, [contenteditable="true"]')) e.preventDefault();
+      }),
       // Pick up config edits made in an external editor.
       on('focus', () => isDesktop() && ed.loadConfig()),
     ];
@@ -95,7 +100,7 @@
   <DrawingMenu {ed} />
   <Tooltip {ed} />
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="scroller" onmousedown={(e) => ed.mouseDown(e)} onscroll={() => ed.scrolled()}>
+  <div class="scroller" onmousedown={(e) => ed.mouseDown(e)} oncontextmenu={(e) => ed.openPageMenu(e)} onscroll={() => ed.scrolled()}>
     <div class="page" bind:this={page}>
       <MarkLayer {ed} under />
       {#if ed.mathFrame}

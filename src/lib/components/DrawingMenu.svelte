@@ -3,8 +3,9 @@
   import { cubicOut } from 'svelte/easing';
   import { keyLabel, type Editor } from '$lib/editor.svelte';
 
-  // Right-click menu for a drawing: its actions, each with the key that does the same
-  // in style mode (Shift+F10 opens it from the keyboard).
+  // The right-click menu: a drawing's actions (Shift+F10 opens it from the keyboard), or
+  // the page's (clipboard, drawing on the selection, undo). Each entry shows its key; its
+  // tooltip, any other way to do it.
   let { ed }: { ed: Editor } = $props();
 
   let el = $state<HTMLDivElement>();
@@ -28,15 +29,18 @@
     transition:fly={{ y: -4, duration: 120, easing: cubicOut }}
   >
     {#each ed.menuItems as a, i (a.name)}
+      {#if a.sep && i > 0}<div class="rule"></div>{/if}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <div
         class="opt"
         class:sel={i === ed.menu.sel}
+        class:off={a.off}
         class:danger={a.name === 'delete'}
-        onmouseenter={() => ed.menu && (ed.menu.sel = i)}
+        data-tip={a.more}
+        onmouseenter={() => ed.menu && !a.off && (ed.menu.sel = i)}
         onclick={() => ed.runMenu(i)}
       >
-        <span class="name">{a.desc}</span><span class="key">{keyLabel(a.keys[0])}</span>
+        <span class="name">{a.desc}</span><kbd>{keyLabel(a.keys[0])}</kbd>
       </div>
     {/each}
   </div>
@@ -62,11 +66,31 @@
     justify-content: space-between;
     gap: 24px;
     padding: 2px 10px;
+    align-items: center;
     color: var(--fg);
     cursor: pointer;
   }
-  .opt .key {
+  kbd {
+    padding: 0 4px;
+    font-family: inherit;
+    font-size: 10.5px;
+    line-height: 1.4;
     color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+  .opt.sel kbd {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  }
+  .opt.off {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .rule {
+    height: 1px;
+    margin: 4px 8px;
+    background: var(--border);
   }
   .opt.sel {
     background: var(--sel-bg);
