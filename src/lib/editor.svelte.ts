@@ -37,6 +37,7 @@ export type Loc =
 export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
+export type DrawingAction = { name: string; desc: string; keys: string[]; run: () => void; menu?: false };
 export type PaletteItem = { name: string; desc: string; draw?: boolean };
 export type Spacer = { above?: number; below?: number };
 type Hint = { label: string; rect: Rect; act: () => void };
@@ -70,7 +71,7 @@ export class Editor {
   mc = $state<MCursor>({ path: [], off: 0 });
 
   /** `draw` is the drawing menu (Ctrl+D), available from text and math. */
-  palette = $state<{ ctx: 'math' | 'text' | 'draw'; query: string; sel: number } | null>(null);
+  palette = $state<{ ctx: 'math' | 'text' | 'draw' | 'style'; query: string; sel: number } | null>(null);
   /** Choosing a target: for an arrow (two phases) or a mark (one). */
   pick = $state<{ phase: 'from' | 'to'; loc: Loc; from?: Loc; purpose: 'arrow' | MarkKind; edit?: { id: Id; end: 'from' | 'to' | 'at' } } | null>(null);
   styling = $state<Id | null>(null);
@@ -2114,6 +2115,13 @@ export class Editor {
     const draws = this.drawCommands();
     const rankDraws = (n: number) => rank(draws.map((c) => c.name), q).slice(0, n).map((n) => draws.find((c) => c.name === n)!);
     if (p.ctx === 'draw') return rankDraws(10);
+    if (p.ctx === 'style') {
+      const acts = this.styling ? this.drawingActions(this.styling) : [];
+      return rank(acts.map((c) => c.name), q).slice(0, 10).map((n) => {
+        const c = acts.find((c) => c.name === n)!;
+        return { name: c.name, desc: `${c.desc}  ${keyLabel(c.keys[0])}` };
+      });
+    }
     if (p.ctx === 'math') {
       const user = this.config.snippets.math;
       const names = [...new Set([...Object.keys(user), ...Object.keys(MATH_PALETTE)])];
@@ -2130,7 +2138,7 @@ export class Editor {
       .map((n) => cmds.find((c) => c.name === n)!);
   }
 
-  private openPalette(ctx: 'math' | 'text' | 'draw') {
+  private openPalette(ctx: 'math' | 'text' | 'draw' | 'style') {
     this.palette = { ctx, query: '', sel: 0 };
     this.setMode('palette');
   }
@@ -2183,6 +2191,13 @@ export class Editor {
     const q = p.query;
     const name = picked?.name;
     this.closePalette();
+    if (p.ctx === 'style') {
+      const acts = this.styling ? this.drawingActions(this.styling) : [];
+      const c = acts.find((c) => c.name === q) ?? acts.find((c) => c.name === name);
+      if (c) c.run();
+      else if (q) this.flash(`unknown: ${q}`);
+      return;
+    }
     if (p.ctx === 'draw' || picked?.draw) {
       const draws = this.drawCommands();
       const c = (p.ctx === 'draw' && draws.find((c) => c.name === q)) || draws.find((c) => c.name === name);
@@ -2753,57 +2768,71 @@ export class Editor {
     this.selectDrawing(edit.id);
   }
 
+  /**
+   * What can be done to a drawing: one table for its keys in style mode, the right-click
+   * menu, the style palette (`\`) and the key hints, so they always agree. `menu: false`
+   * keeps an entry out of the menu (a step that only makes sense repeated from the keys).
+   */
+  drawingActions(id: Id): DrawingAction[] {
+    const a = this.doc.arrows.find((x) => x.id === id);
+    const m = this.doc.marks.find((x) => x.id === id);
+    const edit = (f: () => void) => () => { this.checkpoint('style'); f(); };
+    const note = (d: Arrow | Mark): DrawingAction =>
+      ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note ($math$ works)', keys: ['l', 'i', '"'], run: () => this.editNote() });
+    const remove = (f: () => void): DrawingAction =>
+      ({ name: 'delete', desc: 'remove it', keys: ['x', 'Delete', 'Backspace'], run: () => { this.checkpoint(); f(); this.endDrawing(); } });
+    if (a) {
+      const dir = () => this.arrowGeos[a.id]?.dir ?? 1;
+      return [
+        { name: 'bend', desc: 'bend one way', keys: ['Up', 'k'], run: edit(() => (a.bend = round(a.bend + 0.1 * dir()))), menu: false },
+        { name: 'unbend', desc: 'bend the other way', keys: ['Down', 'j'], run: edit(() => (a.bend = round(a.bend - 0.1 * dir()))), menu: false },
+        { name: 'straight', desc: 'straighten', keys: ['0', '='], run: edit(() => (a.bend = 0)) },
+        { name: 'heads', desc: `arrowheads (${a.head === 'end' ? 'tip' : a.head})`, keys: ['t'], run: edit(() => (a.head = a.head === 'end' ? 'both' : a.head === 'both' ? 'none' : 'end')) },
+        { name: 'reverse', desc: 'reverse', keys: ['r'], run: edit(() => { [a.from, a.to] = [a.to, a.from]; a.bend = -a.bend; }) },
+        { name: 'dash', desc: a.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (a.dash = !a.dash)) },
+        { name: 'boxes', desc: a.boxed ? 'hide the end boxes' : 'box the ends', keys: ['b'], run: edit(() => (a.boxed = !a.boxed)) },
+        { name: 'colour', desc: `colour (${a.color || 'default'})`, keys: ['c'], run: edit(() => (a.color = nextInk(a.color))) },
+        note(a),
+        { name: 'start', desc: 'move the start', keys: ['s'], run: () => this.retarget(a.id, 'from') },
+        { name: 'tip', desc: 'move the tip', keys: ['e'], run: () => this.retarget(a.id, 'to') },
+        remove(() => this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1)),
+      ];
+    }
+    if (m) {
+      const shape = (d: number) => edit(() => (m.kind = MARK_KINDS[(MARK_KINDS.indexOf(m.kind) + d + MARK_KINDS.length) % MARK_KINDS.length]));
+      return [
+        { name: 'shape', desc: `next shape (${m.kind})`, keys: ['t', 'Right', 'Down'], run: shape(1) },
+        { name: 'prevshape', desc: 'previous shape', keys: ['S-t', 'T', 'Left', 'Up'], run: shape(-1), menu: false },
+        { name: 'dash', desc: m.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (m.dash = !m.dash)) },
+        { name: 'colour', desc: `colour (${m.color || 'default'})`, keys: ['c'], run: edit(() => (m.color = nextInk(m.color))) },
+        note(m),
+        { name: 'target', desc: 'choose what it marks', keys: ['e', 'm'], run: () => this.retarget(m.id, 'at') },
+        remove(() => this.doc.marks.splice(this.doc.marks.indexOf(m), 1)),
+      ];
+    }
+    return [];
+  }
+
   private styleKey(k: string): boolean {
-    const mk = this.stylingMark;
-    if (mk) return this.markKey(mk, k);
-    const a = this.doc.arrows.find((x) => x.id === this.styling);
-    if (!a) { this.setMode('text'); return true; }
-    const dir = this.arrowGeos[a.id]?.dir ?? 1;
-    const edit = (f: () => void) => { this.checkpoint('style'); f(); };
+    const id = this.styling;
+    const acts = id ? this.drawingActions(id) : [];
+    if (!acts.length) { this.setMode('text'); return true; }
     switch (k) {
       case 'Escape': case 'Enter': this.endDrawing(); return true;
       case 'C-z': this.styling = null; this.undo(); return true;
       case 'C-y': case 'C-S-z': this.styling = null; this.redo(); return true;
-      case 'Up': case 'k': edit(() => (a.bend = round(a.bend + 0.1 * dir))); return true;
-      case 'Down': case 'j': edit(() => (a.bend = round(a.bend - 0.1 * dir))); return true;
-      case '0': case '=': edit(() => (a.bend = 0)); return true;
-      case 'r': edit(() => { [a.from, a.to] = [a.to, a.from]; a.bend = -a.bend; }); return true;
-      case 't': edit(() => (a.head = a.head === 'end' ? 'both' : a.head === 'both' ? 'none' : 'end')); return true;
-      case 'd': edit(() => (a.dash = !a.dash)); return true;
-      case 'b': edit(() => (a.boxed = !a.boxed)); return true;
-      case 'c': edit(() => (a.color = nextInk(a.color))); return true;
-      case 's': this.retarget(a.id, 'from'); return true;
-      case 'e': this.retarget(a.id, 'to'); return true;
-      case 'l': case 'i': case '"': this.label = { text: a.label, at: a.label.length, anchor: null }; this.setMode('label'); return true;
-      case 'x': case 'Delete': case 'Backspace':
-        this.checkpoint();
-        this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1);
-        this.endDrawing();
-        return true;
+      case '\\': case ':': this.openPalette('style'); return true;
     }
+    acts.find((x) => x.keys.includes(k))?.run();
     return true;
   }
 
-  private markKey(m: Mark, k: string): boolean {
-    const edit = (f: () => void) => { this.checkpoint('style'); f(); };
-    const shape = (d: number) => edit(() => (m.kind = MARK_KINDS[(MARK_KINDS.indexOf(m.kind) + d + MARK_KINDS.length) % MARK_KINDS.length]));
-    switch (k) {
-      case 'Escape': case 'Enter': this.endDrawing(); return true;
-      case 'C-z': this.styling = null; this.undo(); return true;
-      case 'C-y': case 'C-S-z': this.styling = null; this.redo(); return true;
-      case 't': case 'Right': case 'Down': shape(1); return true;
-      case 'S-t': case 'T': case 'Left': case 'Up': shape(-1); return true;
-      case 'd': edit(() => (m.dash = !m.dash)); return true;
-      case 'c': edit(() => (m.color = nextInk(m.color))); return true;
-      case 'e': case 'm': this.retarget(m.id, 'at'); return true;
-      case 'l': case 'i': case '"': this.label = { text: m.label, at: m.label.length, anchor: null }; this.setMode('label'); return true;
-      case 'x': case 'Delete': case 'Backspace':
-        this.checkpoint();
-        this.doc.marks.splice(this.doc.marks.indexOf(m), 1);
-        this.endDrawing();
-        return true;
-    }
-    return true;
+  /** Start typing the selected drawing's note. */
+  private editNote(at?: number) {
+    const d = this.doc.arrows.find((x) => x.id === this.styling) ?? this.stylingMark;
+    if (!d) return;
+    this.label = { text: d.label, at: at ?? d.label.length, anchor: null };
+    this.setMode('label');
   }
 
   private labelKey(k: string): boolean {
@@ -3002,6 +3031,15 @@ export function findNode(row: MRow, id: Id, path: Step[] = []): { path: Step[]; 
   return null;
 }
 const round = (n: number) => Math.round(n * 100) / 100;
+
+/** A key as the help shows it: `S-F10` → `shift+f10`, `Delete` → `del`. */
+export function keyLabel(k: string): string {
+  const mods: Record<string, string> = { C: 'ctrl', S: 'shift', A: 'alt' };
+  const parts = k.split('-');
+  const key = parts.pop()!;
+  const names: Record<string, string> = { Delete: 'del', Backspace: 'bksp', Escape: 'esc', Up: '↑', Down: '↓', Left: '←', Right: '→', ContextMenu: 'menu' };
+  return [...parts.map((p) => mods[p] ?? p), names[key] ?? (key.length > 1 ? key.toLowerCase() : key)].join('+');
+}
 
 /** Group each node with the scripts that follow it. */
 export function groups(row: MRow): [number, number][] {

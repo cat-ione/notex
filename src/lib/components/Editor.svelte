@@ -77,7 +77,7 @@
 
 
   const editingMath = (b: number, o: number) => ed.inFormula && ed.b === b && ed.o === o;
-  const SIGIL = { math: 'ƒ', text: '❯', draw: '✎' };
+  const SIGIL = { math: 'ƒ', text: '❯', draw: '✎', style: '✎' };
 </script>
 
 <!-- Invisible line spacers that make room for drawings, and probes marking the
