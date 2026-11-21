@@ -32,6 +32,10 @@
   --mode-text: #7aa2f7;
   --mode-math: #bb9af7;
   --mode-arrow: #e0af68;
+  --ink-red: #f7768e;
+  --ink-green: #9ece6a;
+  --ink-blue: #7dcfff;
+  --ink-purple: #bb9af7;
 }
 
 [data-theme='phosphor'] {
@@ -59,6 +63,10 @@
   --mode-text: #39ff6a;
   --mode-math: #5ee7ff;
   --mode-arrow: #ff9f43;
+  --ink-red: #ff5f5f;
+  --ink-green: #b6ff8a;
+  --ink-blue: #5ee7ff;
+  --ink-purple: #d7a6ff;
   --prose: var(--mono);
 }
 [data-theme='phosphor'] body {
@@ -91,6 +99,10 @@
   --mode-text: #3b5bdb;
   --mode-math: #862e9c;
   --mode-arrow: #c2410c;
+  --ink-red: #c92a2a;
+  --ink-green: #2b8a3e;
+  --ink-blue: #1971c2;
+  --ink-purple: #862e9c;
 }
 
 * {

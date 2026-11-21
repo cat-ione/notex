@@ -29,9 +29,14 @@ export type Arrow = {
   dash: boolean;
   boxed: boolean;
   label: string;
+  color?: string;
 };
 
-export type Doc = { blocks: Block[]; arrows: Arrow[] };
+/** A shape drawn around / under a run of text or math. */
+export type MarkKind = 'box' | 'circle' | 'underline' | 'highlight' | 'brace' | 'strike';
+export type Mark = { id: Id; kind: MarkKind; at: Id[]; dash: boolean; label: string; color?: string };
+
+export type Doc = { blocks: Block[]; arrows: Arrow[]; marks: Mark[] };
 
 const prefix = Math.random().toString(36).slice(2, 6);
 let counter = 0;

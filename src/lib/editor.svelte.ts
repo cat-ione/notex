@@ -13,15 +13,16 @@
 
 import { tick } from 'svelte';
 import { arrowGeo, defaultBend, type ArrowGeo } from './arrows';
+import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
-import { measure, relTo, union, type Rect } from './geom';
+import { byLine, measure, relTo, union, type Rect } from './geom';
 import * as M from './math/edit';
 import { CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
-import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type Arrow, type Block, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MRow } from './model';
+import { allIds, block, ch, chars, cloneRow, cmd, math, sym, uid, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MRow } from './model';
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
 
@@ -29,7 +30,8 @@ export type Loc =
   | { k: 'word'; b: number; s: number; e: number }
   | { k: 'item'; b: number; o: number }
   | { k: 'node'; b: number; o: number; path: Step[]; i: number; j: number }
-  | { k: 'block'; b: number };
+  | { k: 'block'; b: number }
+  | { k: 'ids'; b: number; ids: Id[] };
 
 export type Pos = { b: number; o: number };
 
@@ -41,7 +43,7 @@ type Snap = { doc: Doc; b: number; o: number };
 const STORAGE_KEY = 'notex.doc.v1';
 
 export class Editor {
-  doc = $state<Doc>({ blocks: [block()], arrows: [] });
+  doc = $state<Doc>({ blocks: [block()], arrows: [], marks: [] });
   mode = $state<Mode>('text');
   /** Block index and item offset of the text caret (0..items.length). */
   b = $state(0);
@@ -52,7 +54,8 @@ export class Editor {
   mc = $state<MCursor>({ path: [], off: 0 });
 
   palette = $state<{ ctx: 'math' | 'text'; query: string; sel: number } | null>(null);
-  pick = $state<{ phase: 'from' | 'to'; loc: Loc; from?: Loc } | null>(null);
+  /** Choosing a target: for an arrow (two phases) or a mark (one). */
+  pick = $state<{ phase: 'from' | 'to'; loc: Loc; from?: Loc; purpose: 'arrow' | MarkKind } | null>(null);
   styling = $state<Id | null>(null);
   hints = $state<{ list: Hint[]; typed: string } | null>(null);
   label = $state<{ text: string } | null>(null);
@@ -74,6 +77,9 @@ export class Editor {
   caret = $state<{ r: Rect; shape: 'bar' | 'math' } | null>(null);
   pickRects = $state<{ cur: Rect | null; from: Rect | null }>({ cur: null, from: null });
   arrowGeos = $state<Record<Id, ArrowGeo>>({});
+  markGeos = $state<Record<Id, MarkGeo>>({});
+  /** Text selection captured when a command was run from the palette. */
+  private cmdSel: { s: Pos; e: Pos } | null = null;
 
   page: HTMLElement | null = null;
 
@@ -92,7 +98,7 @@ export class Editor {
   constructor() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) this.doc = JSON.parse(saved);
+      if (saved) this.doc = { marks: [], ...JSON.parse(saved) };
       else (this.doc = welcomeDoc()), (this.file.name = 'welcome');
       const f = localStorage.getItem('notex.file');
       if (f) {
@@ -202,7 +208,7 @@ export class Editor {
 
   async newNote() {
     if (!(await this.okToReplace())) return;
-    this.load({ blocks: [block()], arrows: [] }, { path: null, name: 'untitled' });
+    this.load({ blocks: [block()], arrows: [], marks: [] }, { path: null, name: 'untitled' });
   }
 
   checkpoint(kind = 'edit') {
@@ -249,15 +255,18 @@ export class Editor {
     return this.page?.querySelector(`[data-nx="${id}"]`) ?? null;
   }
 
-  private rectOfIds(ids: Id[]): Rect | null {
-    if (!this.page) return null;
+  private rectsOfIds(ids: Id[]): Rect[] {
     const rs: Rect[] = [];
     for (const id of ids)
-      this.page.querySelectorAll(`[data-nx="${id}"]`).forEach((e) => {
+      this.page?.querySelectorAll(`[data-nx="${id}"]`).forEach((e) => {
         const m = measure(e);
         if (m) rs.push(m);
       });
-    return union(rs);
+    return rs;
+  }
+
+  private rectOfIds(ids: Id[]): Rect | null {
+    return union(this.rectsOfIds(ids));
   }
 
   /** Viewport rect of the caret stop before item `o` of block `b` (or end of block). */
@@ -547,6 +556,14 @@ export class Editor {
     }
     this.arrowGeos = geos;
 
+    // Marks
+    const mgeos: Record<Id, MarkGeo> = {};
+    for (const m of this.doc.marks) {
+      const g = markGeo(m.kind, byLine(this.rectsOfIds(m.at)).map((r) => relTo(r, origin)));
+      if (g) mgeos[m.id] = g;
+    }
+    this.markGeos = mgeos;
+
     // Keep the caret in view
     this.page.querySelector('.caret')?.scrollIntoView({ block: 'nearest' });
   }
@@ -816,7 +833,6 @@ export class Editor {
         this.insertMath(false);
         return true;
       case '\\':
-        this.anchor = null;
         this.openPalette('text');
         return true;
     }
@@ -1153,8 +1169,12 @@ export class Editor {
       return;
     }
     const c = this.textCommands().find((c) => c.name === (this.textCommands().some((c) => c.name === q) ? q : name));
+    // Drawing commands act on the selection, if any; everything else just drops it.
+    this.cmdSel = this.selection;
+    this.anchor = null;
     if (c) c.run();
     else if (q) this.flash(`unknown command: ${q}`);
+    this.cmdSel = null;
   }
 
   /** Commands available from `\` / `:` outside math. Intended to become user-extensible. */
@@ -1162,7 +1182,8 @@ export class Editor {
     const setKind = (kind: BlockKind) => () => { this.checkpoint(); this.blk.kind = kind; };
     return [
       { name: 'arrow', desc: 'draw an arrow between two things', run: () => this.startArrow() },
-      { name: 'arrows', desc: 'select an existing arrow', run: () => this.selectArrowByHint() },
+      ...MARK_KINDS.map((k) => ({ name: k, desc: MARK_DESC[k], run: () => this.startMark(k) })),
+      { name: 'drawings', desc: 'select an arrow or shape to change it', run: () => this.selectDrawingByHint() },
       { name: 'math', desc: 'inline math', run: () => this.insertMath(false) },
       { name: 'display', desc: 'display math block', run: () => this.insertMath(true) },
       { name: 'h1', desc: 'heading 1', run: setKind('h1') },
@@ -1249,7 +1270,7 @@ export class Editor {
       const d = JSON.parse(await navigator.clipboard.readText());
       if (!Array.isArray(d.blocks)) throw 0;
       this.checkpoint();
-      this.doc = { blocks: d.blocks, arrows: d.arrows ?? [] };
+      this.doc = { blocks: d.blocks, arrows: d.arrows ?? [], marks: d.marks ?? [] };
       this.b = 0;
       this.o = 0;
       this.touch();
@@ -1287,6 +1308,7 @@ export class Editor {
     switch (l.k) {
       case 'block': return [blk.id];
       case 'word': return blk.items.slice(l.s, l.e + 1).map((i) => i.id);
+      case 'ids': return l.ids;
       case 'item': return [blk.items[l.o].id];
       case 'node': {
         const m = blk.items[l.o] as MathItem;
@@ -1309,10 +1331,77 @@ export class Editor {
     return l0.find((l) => l.b >= this.b) ?? l0[0] ?? { k: 'block', b: this.b };
   }
 
+  /** A Loc for a text selection, trimmed of surrounding spaces. */
+  private locFromSelection(r: { s: Pos; e: Pos } | null): Loc | null {
+    if (!r) return null;
+    const ids: Id[] = [];
+    for (let b = r.s.b; b <= r.e.b; b++) {
+      const items = this.doc.blocks[b].items;
+      const from = b === r.s.b ? r.s.o : 0, to = b === r.e.b ? r.e.o : items.length;
+      ids.push(...items.slice(from, to).filter((i) => !isSpace(i)).map((i) => i.id));
+    }
+    if (!ids.length) return null;
+    if (r.s.b === r.e.b) {
+      const items = this.doc.blocks[r.s.b].items;
+      let s = r.s.o, e = r.e.o - 1;
+      while (s < e && isSpace(items[s])) s++;
+      while (e > s && isSpace(items[e])) e--;
+      return { k: 'word', b: r.s.b, s, e };
+    }
+    return { k: 'ids', b: r.s.b, ids };
+  }
+
   startArrow() {
-    this.pick = { phase: 'from', loc: this.locFromCursor() };
+    const sel = this.locFromSelection(this.cmdSel ?? this.selection);
+    this.anchor = null;
+    if (sel) {
+      // Start at the selection and suggest the next thing after it as the end.
+      const ids = this.anchorIds(sel);
+      const l0 = this.level0();
+      const next = l0.find((l) => cmpLoc(l, sel) > 0 && !this.anchorIds(l).some((i) => ids.includes(i)));
+      this.pick = { phase: 'to', from: sel, loc: next ?? l0[0] ?? sel, purpose: 'arrow' };
+      this.setMode('pick');
+      this.flash('arrow starts at the selection — choose where it points');
+      return;
+    }
+    this.pick = { phase: 'from', loc: this.locFromCursor(), purpose: 'arrow' };
     this.setMode('pick');
     this.flash('choose where the arrow starts: arrow keys or click · Enter to confirm');
+  }
+
+  /** Draw a shape around the selection, or choose what to draw it around. */
+  startMark(kind: MarkKind) {
+    const sel = this.locFromSelection(this.cmdSel ?? this.selection);
+    this.anchor = null;
+    if (sel) return this.addMark(kind, this.anchorIds(sel));
+    this.pick = { phase: 'from', loc: this.locFromCursor(), purpose: kind };
+    this.setMode('pick');
+    this.flash(`choose what to ${MARK_VERB[kind]} · Enter to confirm`);
+  }
+
+  private addMark(kind: MarkKind, at: Id[]) {
+    if (!at.length) return;
+    this.checkpoint();
+    const m: Mark = { id: uid(), kind, at, dash: false, label: '' };
+    this.doc.marks.push(m);
+    this.pick = null;
+    this.selectDrawing(m.id);
+    this.flash(`${kind} drawn — t changes the shape, c the colour, l adds a note`);
+  }
+
+  /** Enter style mode for an arrow or mark. */
+  selectDrawing(id: Id) {
+    this.anchor = null;
+    this.hints = null;
+    this.palette = null;
+    this.label = null;
+    this.styling = id;
+    this.setMode('style');
+  }
+
+  /** The mark being styled, if the selected drawing is a mark. */
+  get stylingMark(): Mark | undefined {
+    return this.styling ? this.doc.marks.find((m) => m.id === this.styling) : undefined;
   }
 
   private sameLoc(a: Loc, b: Loc) {
@@ -1357,9 +1446,10 @@ export class Editor {
       case 'C-Home': if (l0.length) pk.loc = l0[0]; return true;
       case 'C-End': if (l0.length) pk.loc = l0[l0.length - 1]; return true;
       case 'Enter': case ' ':
-        if (pk.phase === 'from') {
+        if (pk.purpose !== 'arrow') this.addMark(pk.purpose, this.anchorIds(l));
+        else if (pk.phase === 'from') {
           const next = l0[idx + 1] ?? l;
-          this.pick = { phase: 'to', from: l, loc: idx >= 0 ? next : l };
+          this.pick = { phase: 'to', from: l, loc: idx >= 0 ? next : l, purpose: 'arrow' };
           this.flash('now choose where it points');
         } else this.finishArrow();
         return true;
@@ -1500,12 +1590,16 @@ export class Editor {
   }
 
   private styleKey(k: string): boolean {
+    const mk = this.stylingMark;
+    if (mk) return this.markKey(mk, k);
     const a = this.doc.arrows.find((x) => x.id === this.styling);
     if (!a) { this.setMode('text'); return true; }
     const dir = this.arrowGeos[a.id]?.dir ?? 1;
     const edit = (f: () => void) => { this.checkpoint('style'); f(); };
     switch (k) {
       case 'Escape': case 'Enter': this.styling = null; this.setMode('text'); return true;
+      case 'C-z': this.styling = null; this.undo(); return true;
+      case 'C-y': case 'C-S-z': this.styling = null; this.redo(); return true;
       case 'Up': case 'k': edit(() => (a.bend = round(a.bend + 0.1 * dir))); return true;
       case 'Down': case 'j': edit(() => (a.bend = round(a.bend - 0.1 * dir))); return true;
       case '0': case '=': edit(() => (a.bend = 0)); return true;
@@ -1513,6 +1607,7 @@ export class Editor {
       case 't': edit(() => (a.head = a.head === 'end' ? 'both' : a.head === 'both' ? 'none' : 'end')); return true;
       case 'd': edit(() => (a.dash = !a.dash)); return true;
       case 'b': edit(() => (a.boxed = !a.boxed)); return true;
+      case 'c': edit(() => (a.color = nextInk(a.color))); return true;
       case 'l': case 'i': case '"': this.label = { text: a.label }; this.setMode('label'); return true;
       case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();
@@ -1524,9 +1619,31 @@ export class Editor {
     return true;
   }
 
+  private markKey(m: Mark, k: string): boolean {
+    const edit = (f: () => void) => { this.checkpoint('style'); f(); };
+    const shape = (d: number) => edit(() => (m.kind = MARK_KINDS[(MARK_KINDS.indexOf(m.kind) + d + MARK_KINDS.length) % MARK_KINDS.length]));
+    switch (k) {
+      case 'Escape': case 'Enter': this.styling = null; this.setMode('text'); return true;
+      case 'C-z': this.styling = null; this.undo(); return true;
+      case 'C-y': case 'C-S-z': this.styling = null; this.redo(); return true;
+      case 't': case 'Right': case 'Down': shape(1); return true;
+      case 'S-t': case 'T': case 'Left': case 'Up': shape(-1); return true;
+      case 'd': edit(() => (m.dash = !m.dash)); return true;
+      case 'c': edit(() => (m.color = nextInk(m.color))); return true;
+      case 'l': case 'i': case '"': this.label = { text: m.label }; this.setMode('label'); return true;
+      case 'x': case 'Delete': case 'Backspace':
+        this.checkpoint();
+        this.doc.marks.splice(this.doc.marks.indexOf(m), 1);
+        this.styling = null;
+        this.setMode('text');
+        return true;
+    }
+    return true;
+  }
+
   private labelKey(k: string): boolean {
     const lb = this.label!;
-    const a = this.doc.arrows.find((x) => x.id === this.styling);
+    const a = this.doc.arrows.find((x) => x.id === this.styling) ?? this.stylingMark;
     switch (k) {
       case 'Escape': this.label = null; this.mode = 'style'; return true;
       case 'Enter':
@@ -1561,16 +1678,21 @@ export class Editor {
     this.showHints(ts);
   }
 
-  selectArrowByHint() {
+  selectDrawingByHint() {
     if (!this.page) return;
     const origin = this.page.getBoundingClientRect();
-    const ts = this.doc.arrows
-      .filter((a) => this.arrowGeos[a.id])
-      .map((a) => {
-        const m = this.arrowGeos[a.id].mid;
-        return { rect: { x: m.x + origin.left - 6, y: m.y + origin.top - 8, w: 12, h: 16 }, act: () => { this.styling = a.id; this.mode = 'style'; this.prevMode = 'style'; } };
-      });
-    if (!ts.length) return this.flash('no arrows');
+    const at = (p: { x: number; y: number }, id: Id) => ({
+      rect: { x: p.x + origin.left - 6, y: p.y + origin.top - 8, w: 12, h: 16 },
+      act: () => this.selectDrawing(id),
+    });
+    const ts = [
+      ...this.doc.arrows.filter((a) => this.arrowGeos[a.id]).map((a) => at(this.arrowGeos[a.id].mid, a.id)),
+      ...this.doc.marks.flatMap((m) => {
+        const r = this.rectOfIds(m.at);
+        return r ? [at({ x: r.x - origin.left, y: r.y - origin.top }, m.id)] : [];
+      }),
+    ];
+    if (!ts.length) return this.flash('nothing drawn yet');
     this.prevMode = 'text';
     this.showHints(ts);
   }
@@ -1591,11 +1713,13 @@ export class Editor {
     return true;
   }
 
-  /** Remove arrows whose endpoints were deleted. */
-  pruneArrows() {
+  /** Remove arrows and marks whose targets were deleted. */
+  pruneDrawings() {
     const ids = allIds(this.doc);
     const keep = this.doc.arrows.filter((a) => a.from.some((i) => ids.has(i)) && a.to.some((i) => ids.has(i)));
     if (keep.length !== this.doc.arrows.length) this.doc.arrows = keep;
+    const marks = this.doc.marks.filter((m) => m.at.some((i) => ids.has(i)));
+    if (marks.length !== this.doc.marks.length) this.doc.marks = marks;
   }
 
   async afterRender() {
@@ -1729,13 +1853,36 @@ function welcomeDoc(): Doc {
       P('type $ to start math. inside, try x^2, a/b, sqrt, sum, ->, alpha, or ;a. press $ again (or →) to get back to text.', 'li'),
       P('type \\ to open commands. \\arrow draws an arrow: pick the start with the arrow keys or a click, then the end.', 'li'),
       P('while choosing, Shift+↑ grabs the bigger expression, Shift+↓ goes inside it, Tab shows jump labels.', 'li'),
-      P('after drawing, ↑↓ bend the arrow; t, d, b and l change heads, dashes, boxes and the label.', 'li'),
+      P('after drawing, ↑↓ bend the arrow; t, d, c and l change heads, dashes, colour and the label.', 'li'),
+      P('select some words and type \\circle, \\box, \\underline, \\highlight or \\brace to mark them up. click any drawing to change it.', 'li'),
     ],
     arrows: [],
+    marks: [],
   };
   // An example arrow: from the normalizing constant to the "normalized" word.
   const frac = eq.root[3];
   const word = b1.items.slice(-11, -1).map((i) => i.id);
   doc.arrows.push({ id: uid(), from: [frac.id], to: word, bend: 0.5, head: 'end', dash: true, boxed: false, label: 'makes total mass 1' });
+  doc.marks.push({ id: uid(), kind: 'brace', at: [lhs.id], dash: false, label: 'total probability', color: 'blue' });
   return doc;
+}
+
+const MARK_DESC: Record<MarkKind, string> = {
+  box: 'draw a box around something',
+  circle: 'circle something',
+  underline: 'underline something',
+  highlight: 'highlight something',
+  brace: 'brace under something, with a note',
+  strike: 'strike something out',
+};
+const MARK_VERB: Record<MarkKind, string> = {
+  box: 'box', circle: 'circle', underline: 'underline', highlight: 'highlight', brace: 'put a brace under', strike: 'strike out',
+};
+
+const nextInk = (c: string | undefined) => INKS[(INKS.indexOf((c ?? '') as (typeof INKS)[number]) + 1) % INKS.length] || undefined;
+
+/** Reading order of two locations (block, then first offset). */
+function cmpLoc(a: Loc, b: Loc): number {
+  const off = (l: Loc) => (l.k === 'word' ? l.s : l.k === 'item' || l.k === 'node' ? l.o : 0);
+  return a.b - b.b || off(a) - off(b);
 }

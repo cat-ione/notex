@@ -46,3 +46,15 @@ export const relTo = (r: Rect, origin: DOMRect): Rect => ({ x: r.x - origin.left
 export const center = (r: Rect) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
 
 export const pad = (r: Rect, p: number): Rect => ({ x: r.x - p, y: r.y - p, w: r.w + 2 * p, h: r.h + 2 * p });
+
+/** Merge rects into one rect per visual line (rects whose vertical centres overlap a line join it). */
+export function byLine(rs: Rect[]): Rect[] {
+  const lines: Rect[][] = [];
+  for (const r of [...rs].sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2))) {
+    const cy = r.y + r.h / 2;
+    const line = lines.find((l) => l.some((q) => cy >= q.y && cy <= q.y + q.h));
+    if (line) line.push(r);
+    else lines.push([r]);
+  }
+  return lines.map((l) => union(l)!);
+}

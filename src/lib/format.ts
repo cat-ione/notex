@@ -6,17 +6,19 @@
 //
 //   { format: 'notex', version: 1,
 //     blocks: [{ kind, content: ['plain text', { m: MRow, id, d?: 1 }, ...] }],
-//     arrows: [{ from: ['c0.4', 'c0.5', '<math node id>'], to: [...], ... }] }
+//     arrows: [{ from: ['c0.4', 'c0.5', '<math node id>'], to: [...], ... }],
+//     marks: [{ kind: 'circle', at: [...], ... }] }
 //
 // Anchor forms: `c<block>.<offset>` a character, `b<block>` a whole block,
 // anything else a math item / math node id.
 
-import { block, ch, type Arrow, type Block, type BlockKind, type Doc, type Id, type Item, type MRow } from './model';
+import { block, ch, type Arrow, type Mark, type Block, type BlockKind, type Doc, type Id, type Item, type MRow } from './model';
 
 type Content = string | { m: MRow; id: Id; d?: 1 };
 type FileBlock = { kind: BlockKind; content: Content[] };
 type FileArrow = Omit<Arrow, 'id'>;
-export type NoteFile = { format: 'notex'; version: 1; blocks: FileBlock[]; arrows: FileArrow[] };
+type FileMark = Omit<Mark, 'id'>;
+export type NoteFile = { format: 'notex'; version: 1; blocks: FileBlock[]; arrows: FileArrow[]; marks?: FileMark[] };
 
 export function encode(doc: Doc): NoteFile {
   const where = new Map<Id, string>();
@@ -38,7 +40,10 @@ export function encode(doc: Doc): NoteFile {
   });
   const mapIds = (ids: Id[]) => ids.map((id) => where.get(id) ?? id);
   const arrows = doc.arrows.map(({ id: _id, ...a }) => ({ ...a, from: mapIds(a.from), to: mapIds(a.to) }));
-  return { format: 'notex', version: 1, blocks, arrows };
+  const marks = doc.marks.map(({ id: _id, ...m }) => ({ ...m, at: mapIds(m.at) }));
+  const file: NoteFile = { format: 'notex', version: 1, blocks, arrows };
+  if (marks.length) file.marks = marks;
+  return file;
 }
 
 export function decode(file: NoteFile): Doc {
@@ -59,7 +64,8 @@ export function decode(file: NoteFile): Doc {
   };
   let n = 0;
   const arrows: Arrow[] = file.arrows.map((a) => ({ ...a, id: `a${Date.now().toString(36)}${n++}`, from: a.from.map(resolve), to: a.to.map(resolve) }));
-  return { blocks, arrows };
+  const marks: Mark[] = (file.marks ?? []).map((m) => ({ ...m, id: `k${Date.now().toString(36)}${n++}`, at: m.at.map(resolve) }));
+  return { blocks, arrows, marks };
 }
 
 export function serialize(doc: Doc): string {
@@ -72,5 +78,5 @@ export function deserialize(text: string): Doc {
   // Raw in-memory documents (older saves, clipboard JSON).
   const doc = data?.doc ?? data;
   if (!doc || !Array.isArray(doc.blocks)) throw new Error('not a notex note');
-  return { blocks: doc.blocks, arrows: doc.arrows ?? [] };
+  return { blocks: doc.blocks, arrows: doc.arrows ?? [], marks: doc.marks ?? [] };
 }

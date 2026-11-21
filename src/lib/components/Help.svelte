@@ -13,13 +13,14 @@
       ['\\name', 'any LaTeX command'], ['space / tab', 'leave box / next box'],
       ['& enter', 'matrix: new column / row'], ['shift+← → / ctrl+a', 'select (grows out of boxes)'], ['/  (  \\cmd', 'wrap the selection'], ['$  →  esc', 'back to text'],
     ]],
-    ['drawing arrows  (\\arrow)', [
+    ['drawing  (\\arrow  \\circle  \\box …)', [
+      ['select, then \\cmd', 'draw on the selection right away'],
       ['← → ↑ ↓  or click', 'choose a word or symbol'], ['shift+↑ / shift+↓', 'whole expression / inside it'],
       ['shift+← →', 'extend over neighbours'], ['home  end', 'first / last on the line'], ['tab', 'jump labels'], ['enter', 'confirm start, then end'],
     ]],
-    ['styling arrows  (\\arrows to reselect)', [
-      ['↑ ↓', 'bend'], ['0', 'straight'], ['t', 'arrowheads'], ['d', 'dashed'], ['b', 'box the ends'],
-      ['l', 'label'], ['r', 'reverse'], ['del', 'remove'],
+    ['changing a drawing  (click it, or \\drawings)', [
+      ['↑ ↓', 'bend an arrow'], ['0', 'straight'], ['t', 'arrowheads / next shape'], ['d', 'dashed'], ['b', 'box the ends'],
+      ['c', 'colour'], ['l', 'label / note'], ['r', 'reverse'], ['del', 'remove'],
     ]],
   ];
 </script>

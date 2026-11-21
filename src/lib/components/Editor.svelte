@@ -5,6 +5,7 @@
   import { Editor } from '$lib/editor.svelte';
   import MathView from './MathView.svelte';
   import ArrowLayer from './ArrowLayer.svelte';
+  import MarkLayer from './MarkLayer.svelte';
   import StatusLine from './StatusLine.svelte';
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
@@ -51,7 +52,7 @@
     ed.version;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      ed.pruneArrows();
+      ed.pruneDrawings();
       ed.persist();
     }, 600);
   });
@@ -68,6 +69,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroller" onmousedown={(e) => ed.mouseDown(e)}>
     <div class="page" bind:this={page}>
+      <MarkLayer {ed} under />
       {#each ed.doc.blocks as blk, b (blk.id)}
         <div class="block {blk.kind}" class:current={ed.b === b} data-nx={blk.id}>
           {#each blk.items as it, o (it.id)}
@@ -80,6 +82,7 @@
         </div>
       {/each}
 
+      <MarkLayer {ed} />
       <ArrowLayer {ed} />
 
       {#if ed.caret}
@@ -158,6 +161,8 @@
     font-family: var(--prose);
     font-size: var(--font-size, 16px);
     line-height: 2.1;
+    /* own stacking context so highlights (z-index -1) sit behind the text, not behind the page */
+    isolation: isolate;
   }
   .block {
     white-space: pre-wrap;

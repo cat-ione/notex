@@ -14,6 +14,7 @@ function sample(): Doc {
       { id: 'a1', from: [frac.id], to: word, bend: 0.3, head: 'end', dash: true, boxed: false, label: 'hi' },
       { id: 'a2', from: [b1.id], to: [m.id], bend: -0.2, head: 'both', dash: false, boxed: true, label: '' },
     ],
+    marks: [{ id: 'k1', kind: 'circle', at: [b0.items[0].id, b0.items[1].id, frac.id], dash: false, label: 'look', color: 'red' }],
   };
 }
 
@@ -45,6 +46,21 @@ describe('note format', () => {
     expect(a2.from).toEqual([back.blocks[1].id]);
     expect(a2.to).toEqual([b0[4].id]);
     expect(a1).toMatchObject({ bend: 0.3, head: 'end', dash: true, label: 'hi' });
+  });
+
+  it('re-attaches marks', () => {
+    const doc = sample();
+    const back = decode(encode(doc));
+    const b0 = back.blocks[0].items;
+    expect(back.marks[0]).toMatchObject({ kind: 'circle', label: 'look', color: 'red' });
+    expect(back.marks[0].at).toEqual([b0[0].id, b0[1].id, doc.marks[0].at[2]]);
+  });
+
+  it('omits marks when there are none and reads files without them', () => {
+    const doc = { ...sample(), marks: [] };
+    const f = encode(doc);
+    expect('marks' in f).toBe(false);
+    expect(decode(f).marks).toEqual([]);
   });
 
   it('still reads raw in-memory documents', () => {

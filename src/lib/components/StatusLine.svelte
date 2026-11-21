@@ -5,13 +5,14 @@
   let { ed }: { ed: Editor } = $props();
 
   const LABEL: Record<string, string> = {
-    text: 'TEXT', math: 'MATH', pick: 'ARROW', style: 'ARROW', hint: 'JUMP', palette: 'CMD', label: 'LABEL',
+    text: 'TEXT', math: 'MATH', pick: 'DRAW', style: 'DRAW', hint: 'JUMP', palette: 'CMD', label: 'LABEL',
   };
   const HINTS: Record<string, string> = {
     text: '$ math · \\ commands · F1 help',
     math: '/ fraction · ^ _ scripts · \\ commands · tab next box · $ or esc back to text',
     pick: '←→↑↓ move · shift+↑↓ bigger / smaller · shift+←→ extend · tab jump labels · enter choose · esc cancel',
-    style: '↑↓ bend · t heads · d dashed · b boxes · l label · r reverse · del remove · enter done',
+    style: '↑↓ bend · t heads · d dashed · b boxes · c colour · l label · r reverse · del remove · enter done',
+    mark: '←→ or t shape · d dashed · c colour · l note · del remove · enter done',
     hint: 'type a label to jump · esc cancel',
     palette: 'enter accept · ↑↓ choose · esc cancel',
     label: 'enter save · esc cancel',
@@ -27,7 +28,7 @@
         else if (!inWord) { words++; inWord = true; }
       }
     }
-    return { words, maths, arrows: ed.doc.arrows.length };
+    return { words, maths, drawings: ed.doc.arrows.length + ed.doc.marks.length };
   });
 </script>
 
@@ -40,13 +41,13 @@
   {:else if ed.message}
     <span class="msg" in:fly={{ x: -8, duration: 160 }}>{ed.message}</span>
   {:else}
-    <span class="keys">{HINTS[ed.mode]}</span>
+    <span class="keys">{HINTS[ed.mode === 'style' && ed.stylingMark ? 'mark' : ed.mode]}</span>
   {/if}
   <span class="spacer"></span>
   <span class="file" title={ed.file.path ?? 'not saved to a file yet'}>
     {ed.file.name}{#if ed.dirty}<span class="dot" class:warn={!ed.file.path} in:fly={{ y: -4, duration: 150 }}>●</span>{/if}
   </span>
-  <span class="stat">{counts.words}w · {counts.maths}∑ · {counts.arrows}↗</span>
+  <span class="stat">{counts.words}w · {counts.maths}∑ · {counts.drawings}↗</span>
   <span class="pos">{ed.b + 1}:{ed.o + 1}</span>
 </footer>
 

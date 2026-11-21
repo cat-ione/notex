@@ -21,7 +21,7 @@ pnpm check         # type-check
   wrapped in `\htmlData{nx=<id>}`. KaTeX treats these as transparent for spacing, so the
   output looks normal but every glyph maps back to a node. That mapping drives the caret,
   jump labels and arrow endpoints.
-- **Arrows** anchor to *ids*, not to positions, so they follow their endpoints as you edit.
+- **Arrows and shapes** anchor to *ids*, not to positions, so they follow their endpoints as you edit.
   Geometry is recomputed from the DOM after each render (`src/lib/arrows.ts`).
 - **Editor** (`src/lib/editor.svelte.ts`): ordinary text editing by default; focused modes only
   for math, choosing arrow endpoints and styling arrows.
@@ -35,8 +35,9 @@ Ctrl+C/X/V (math survives copy/paste), Ctrl+Z/Y, Ctrl+←/→ by word. On top of
 |--------|------|
 | text   | `$` math (`$$` centered block) · `\` or Ctrl+K commands · `# ` `## ` `- ` block shortcuts |
 | math   | `/` fraction from previous operand · `^ _` · `( [ {` · `"` text · `;a` greek · `sum int lim sqrt` · `-> => <= oo xx` · `\name` any command · space leaves a box · Tab next box · `&`/Enter grow matrix · `$`, → or Esc back to text · click anywhere inside a formula · Shift+←/→ selects (growing out of boxes), Ctrl+A all; `/`, `(` or a `\command` wraps the selection; copy gives `$LaTeX$` |
-| `\arrow` | arrow keys or click to choose · Shift+↑/↓ whole expression / inside it · Shift+←/→ extend · Tab jump labels · Enter confirm (start, then end) |
-| arrow style | ↑/↓ bend · `0` straight · `t` heads · `d` dashed · `b` box ends · `l` label · `r` reverse · Del remove · Enter done. `\arrows` reselects one |
+| `\arrow` | arrow keys or click to choose · Shift+↑/↓ whole expression / inside it · Shift+←/→ extend · Tab jump labels · Enter confirm (start, then end). With text selected, the arrow starts there |
+| shapes | `\circle` `\box` `\underline` `\highlight` `\brace` `\strike`: choose the target like an arrow end, or select text first to draw on it at once |
+| changing drawings | click one, or `\drawings`. Arrows: ↑/↓ bend · `0` straight · `t` heads · `b` box ends · `r` reverse. Shapes: `t` or ←/→ next shape. Both: `d` dashed · `c` colour · `l` label · Del remove · Enter done |
 
 Arrow picking also accepts `hjkl`/`HJKL` for people who like them.
 
@@ -76,7 +77,5 @@ your own editor; changes load when you switch back to notex.
 
 - **Customization**: keymaps, user palette commands, scripting hooks.
 - **Files**: a notes sidebar / recent files, search across notes.
-- **Drawing**: shapes (boxes, circles, brackets, highlights) that anchor to text and math like
-  arrows do, placed with the mouse or the keyboard.
 - **Arrows**: multi-segment routes, endpoint side control, math labels, LaTeX export via
   `tikzmark`.

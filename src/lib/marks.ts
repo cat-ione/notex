@@ -1,0 +1,75 @@
+// Geometry for marks: shapes drawn around / under a run of text or math.
+//
+// Every mark is a single SVG path so it can be "drawn in" with the same
+// stroke animation as arrows.
+
+import { union, type Rect } from './geom';
+import type { MarkKind } from './model';
+
+export const MARK_KINDS: MarkKind[] = ['box', 'circle', 'underline', 'highlight', 'brace', 'strike'];
+
+export type MarkGeo = { d: string; filled: boolean; label: { x: number; y: number; below: boolean } };
+
+const f = (n: number) => Math.round(n * 10) / 10;
+
+/** Geometry for a mark over `lines` (one rect per visual line the target spans). */
+export function markGeo(kind: MarkKind, lines: Rect[]): MarkGeo | null {
+  if (!lines.length) return null;
+  if (kind === 'underline' || kind === 'strike' || kind === 'highlight') {
+    // Line-based marks follow the text across line wraps.
+    const parts = lines.map((r) => shape(kind, r));
+    return { d: parts.map((p) => p.d).join(' '), filled: parts[0].filled, label: parts[parts.length - 1].label };
+  }
+  return shape(kind, union(lines)!);
+}
+
+function shape(kind: MarkKind, r: Rect): MarkGeo {
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  const below = { x: cx, y: r.y + r.h + 16, below: true };
+  const above = { x: cx, y: r.y - 8, below: false };
+  switch (kind) {
+    case 'box': {
+      const p = 3, x = r.x - p, y = r.y - p, w = r.w + 2 * p, h = r.h + 2 * p, c = 4;
+      return {
+        d: `M${f(x + c)},${f(y)} H${f(x + w - c)} Q${f(x + w)},${f(y)} ${f(x + w)},${f(y + c)} V${f(y + h - c)} Q${f(x + w)},${f(y + h)} ${f(x + w - c)},${f(y + h)} H${f(x + c)} Q${f(x)},${f(y + h)} ${f(x)},${f(y + h - c)} V${f(y + c)} Q${f(x)},${f(y)} ${f(x + c)},${f(y)} Z`,
+        filled: false,
+        label: { ...above, y: y - 6 },
+      };
+    }
+    case 'circle': {
+      // Smallest-ish ellipse through the padded rect's corners.
+      const hw = r.w / 2 + 2, hh = r.h / 2 + 2;
+      const rx = hw + Math.max(6, Math.min(16, hw * 0.25));
+      const ry = hh / Math.sqrt(1 - (hw * hw) / (rx * rx));
+      return {
+        d: `M${f(cx - rx)},${f(cy)} A${f(rx)},${f(ry)} 0 1 1 ${f(cx + rx)},${f(cy)} A${f(rx)},${f(ry)} 0 1 1 ${f(cx - rx)},${f(cy)}`,
+        filled: false,
+        label: { ...above, y: cy - ry - 6 },
+      };
+    }
+    case 'underline': {
+      const y = r.y + r.h + 2;
+      return { d: `M${f(r.x)},${f(y)} H${f(r.x + r.w)}`, filled: false, label: { ...below, y: y + 14 } };
+    }
+    case 'strike':
+      return { d: `M${f(r.x - 2)},${f(cy)} H${f(r.x + r.w + 2)}`, filled: false, label: above };
+    case 'highlight': {
+      const x = r.x - 2, y = r.y, w = r.w + 4, h = r.h;
+      return { d: `M${f(x)},${f(y)} H${f(x + w)} V${f(y + h)} H${f(x)} Z`, filled: true, label: above };
+    }
+    case 'brace': {
+      // Horizontal curly brace under the target, tip pointing down.
+      const y = r.y + r.h + 3, d = Math.min(8, Math.max(5, r.w / 10)), x0 = r.x, x1 = r.x + r.w, m = cx;
+      return {
+        d: `M${f(x0)},${f(y)} Q${f(x0)},${f(y + d / 2)} ${f(x0 + d)},${f(y + d / 2)} H${f(m - d)} Q${f(m)},${f(y + d / 2)} ${f(m)},${f(y + d)} Q${f(m)},${f(y + d / 2)} ${f(m + d)},${f(y + d / 2)} H${f(x1 - d)} Q${f(x1)},${f(y + d / 2)} ${f(x1)},${f(y)}`,
+        filled: false,
+        label: { ...below, y: y + d + 13 },
+      };
+    }
+  }
+}
+
+/** Colours a drawing can take; '' is the theme's arrow colour. */
+export const INKS = ['', 'red', 'green', 'blue', 'purple'] as const;
+export type Ink = (typeof INKS)[number];
+export const inkVar = (c: string | undefined) => (c ? `var(--ink-${c})` : 'var(--arrow)');
