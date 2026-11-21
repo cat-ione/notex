@@ -12,8 +12,18 @@
   const labels = $derived.by(() => {
     const out: L[] = [];
     const ghost = ed.pick?.edit?.id;
-    // While a label is being typed, show the draft in place.
-    const draft = (id: string, text: string) => (ed.mode === 'label' && ed.label && ed.styling === id ? ed.label.text + '▏' : text);
+    // While a label is being typed, show the draft in place with its caret (after a
+    // $math$ part when the caret is inside one, so the math still renders)
+    const draft = (id: string, text: string) => {
+      if (ed.mode !== 'label' || !ed.label || ed.styling !== id) return text;
+      const t = ed.label.text;
+      let at = ed.label.at;
+      if ((t.slice(0, at).match(/\$/g)?.length ?? 0) % 2) {
+        const close = t.indexOf('$', at);
+        at = close < 0 ? t.length : close + 1;
+      }
+      return t.slice(0, at) + '▏' + t.slice(at);
+    };
     for (const a of ed.doc.arrows) {
       const g = ed.arrowGeos[a.id];
       const text = draft(a.id, a.label);

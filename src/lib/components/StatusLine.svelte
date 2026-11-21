@@ -33,7 +33,7 @@
     <span class="mode m-{ed.mode}" in:fly={{ y: 6, duration: 160 }}>{LABEL[ed.mode]}</span>
   {/key}
   {#if ed.mode === 'label' && ed.label}
-    <span class="input">label: {ed.label.text}<span class="blink">▏</span></span>
+    <span class="input">label: {ed.label.text.slice(0, ed.label.at)}<span class="blink">▏</span>{ed.label.text.slice(ed.label.at)}</span>
   {:else if ed.message}
     <span class="msg" in:fly={{ x: -8, duration: 160 }}>{ed.message}</span>
   {:else}

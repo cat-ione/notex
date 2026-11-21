@@ -75,7 +75,8 @@ export class Editor {
   pick = $state<{ phase: 'from' | 'to'; loc: Loc; from?: Loc; purpose: 'arrow' | MarkKind; edit?: { id: Id; end: 'from' | 'to' | 'at' } } | null>(null);
   styling = $state<Id | null>(null);
   hints = $state<{ list: Hint[]; typed: string } | null>(null);
-  label = $state<{ text: string } | null>(null);
+  /** The label being typed for the selected drawing, with the caret position in it. */
+  label = $state<{ text: string; at: number } | null>(null);
   message = $state('');
   showHelp = $state(false);
   config = $state<C.Config>(C.DEFAULT_CONFIG);
@@ -699,6 +700,11 @@ export class Editor {
   paste(e: ClipboardEvent) {
     const text = e.clipboardData?.getData('text/plain') ?? '';
     e.preventDefault();
+    if (this.mode === 'label') {
+      this.labelInsert(text.replace(/\s*\n\s*/g, ' '));
+      this.touch();
+      return;
+    }
     if (this.mode === 'math') {
       this.checkpoint();
       const range = this.mathSelRange;
@@ -2732,7 +2738,7 @@ export class Editor {
       case 'c': edit(() => (a.color = nextInk(a.color))); return true;
       case 's': this.retarget(a.id, 'from'); return true;
       case 'e': this.retarget(a.id, 'to'); return true;
-      case 'l': case 'i': case '"': this.label = { text: a.label }; this.setMode('label'); return true;
+      case 'l': case 'i': case '"': this.label = { text: a.label, at: a.label.length }; this.setMode('label'); return true;
       case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();
         this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1);
@@ -2754,7 +2760,7 @@ export class Editor {
       case 'd': edit(() => (m.dash = !m.dash)); return true;
       case 'c': edit(() => (m.color = nextInk(m.color))); return true;
       case 'e': case 'm': this.retarget(m.id, 'at'); return true;
-      case 'l': case 'i': case '"': this.label = { text: m.label }; this.setMode('label'); return true;
+      case 'l': case 'i': case '"': this.label = { text: m.label, at: m.label.length }; this.setMode('label'); return true;
       case 'x': case 'Delete': case 'Backspace':
         this.checkpoint();
         this.doc.marks.splice(this.doc.marks.indexOf(m), 1);
@@ -2774,10 +2780,43 @@ export class Editor {
         this.label = null;
         this.mode = 'style';
         return true;
-      case 'Backspace': lb.text = lb.text.slice(0, -1); return true;
     }
-    if (k.length === 1) lb.text += k;
+    // a single-line text field: caret moves, deletes and typing at the caret
+    const t = lb.text;
+    const wordBack = (i: number) => {
+      while (i > 0 && /\s/.test(t[i - 1])) i--;
+      while (i > 0 && !/\s/.test(t[i - 1])) i--;
+      return i;
+    };
+    const wordFwd = (i: number) => {
+      while (i < t.length && /\s/.test(t[i])) i++;
+      while (i < t.length && !/\s/.test(t[i])) i++;
+      return i;
+    };
+    const cut = (from: number, to: number) => {
+      lb.text = t.slice(0, from) + t.slice(to);
+      lb.at = from;
+    };
+    switch (k) {
+      case 'Left': lb.at = Math.max(0, lb.at - 1); return true;
+      case 'Right': lb.at = Math.min(t.length, lb.at + 1); return true;
+      case 'C-Left': lb.at = wordBack(lb.at); return true;
+      case 'C-Right': lb.at = wordFwd(lb.at); return true;
+      case 'Home': case 'Up': lb.at = 0; return true;
+      case 'End': case 'Down': lb.at = t.length; return true;
+      case 'Backspace': if (lb.at > 0) cut(lb.at - 1, lb.at); return true;
+      case 'C-Backspace': cut(wordBack(lb.at), lb.at); return true;
+      case 'Delete': if (lb.at < t.length) cut(lb.at, lb.at + 1); return true;
+      case 'C-Delete': cut(lb.at, wordFwd(lb.at)); return true;
+    }
+    if (k.length === 1) this.labelInsert(k);
     return true;
+  }
+
+  private labelInsert(s: string) {
+    const lb = this.label!;
+    lb.text = lb.text.slice(0, lb.at) + s + lb.text.slice(lb.at);
+    lb.at += s.length;
   }
 
   // ───────────────────────── hints ─────────────────────────
