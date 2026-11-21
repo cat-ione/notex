@@ -64,10 +64,7 @@
     color: var(--muted);
     opacity: 0.7;
   }
-  .math :global(.nx-sel) {
-    background: var(--text-sel);
-    border-radius: 2px;
-  }
+  /* (the selection is drawn by the editor as a box over the selected part's full height) */
   .math :global(.nx-active-row) {
     background: var(--active-row);
     border-radius: 2px;

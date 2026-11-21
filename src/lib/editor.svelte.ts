@@ -18,7 +18,7 @@ import { layoutRow, measureLabel, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
-import { byLine, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
+import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
 import * as M from './math/edit';
 import { CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
 import { parseLatex } from './math/parse';
@@ -740,7 +740,18 @@ export class Editor {
     if (mel && this.page.contains(mel)) {
       const pos = this.findItem(mel.getAttribute('data-nx')!);
       if (pos) {
-        const node = hit!.closest('[data-nx]');
+        // KaTeX stacks empty layout boxes over glyphs (a fraction's rows, say), so the
+        // element under the pointer may be the whole structure: take the smallest node
+        // whose box contains the point
+        let node = hit!.closest('[data-nx]');
+        let area = Infinity;
+        for (const e of mel.querySelectorAll('[data-nx]')) {
+          const r = e.getBoundingClientRect();
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && r.width * r.height < area) {
+            area = r.width * r.height;
+            node = e;
+          }
+        }
         const id = node && node !== mel ? node.getAttribute('data-nx') : null;
         const r = node?.getBoundingClientRect();
         return { pos, math: { item: this.doc.blocks[pos.b].items[pos.o] as MathItem, id, after: !r || x > r.left + r.width / 2 } };
@@ -808,11 +819,11 @@ export class Editor {
       this.msel = null;
       this.b = h.pos.b;
       this.o = h.pos.o;
-      const found = h.math.id ? findNode(h.math.item.root, h.math.id) : null;
-      this.mc = found
-        ? { path: found.path, off: found.i + (h.math.after ? 1 : 0) }
-        : { path: [], off: h.math.after ? h.math.item.root.length : 0 };
+      this.mc = this.mathPos(h.math);
       this.setMode('math');
+      // dragging from here selects inside the formula
+      this.mathDrag = { b: h.pos.b, o: h.pos.o, from: { path: [...this.mc.path], off: this.mc.off } };
+      this.dragging = true;
       return;
     }
     this.moveTo(h.pos, e.shiftKey);
@@ -820,6 +831,40 @@ export class Editor {
     this.dragging = true;
     this.goalX = null;
     this.setMode('text');
+  }
+
+  /** The caret position inside a formula for a hit. */
+  private mathPos(m: { item: MathItem; id: Id | null; after: boolean }): MCursor {
+    const found = m.id ? findNode(m.item.root, m.id) : null;
+    return found
+      ? { path: found.path, off: found.i + (m.after ? 1 : 0) }
+      : { path: [], off: m.after ? m.item.root.length : 0 };
+  }
+
+  /** A drag that started inside a formula: where, and the caret position it started at. */
+  private mathDrag: { b: number; o: number; from: MCursor } | null = null;
+
+  /**
+   * Select from the drag's start to `to` inside the formula. Both ends are taken to
+   * the deepest row containing both: an end inside a structure (a fraction, a root…)
+   * there stands for the whole structure, as with Shift+arrows growing out of a box.
+   */
+  private dragMathSel(from: MCursor, to: MCursor) {
+    const root = this.mathItem!.root;
+    let d = 0;
+    while (d < from.path.length && d < to.path.length && from.path[d].i === to.path[d].i && from.path[d].s === to.path[d].s) d++;
+    const span = (c: MCursor): [number, number] => (c.path.length > d ? [c.path[d].i, c.path[d].i + 1] : [c.off, c.off]);
+    const [a0, a1] = span(from), [b0, b1] = span(to);
+    const forward = b0 > a0 || (b0 === a0 && b1 >= a1 && to.off >= from.off);
+    const row = M.rowAt(root, from.path.slice(0, d));
+    // a base takes its scripts along
+    const grow = (e: number) => {
+      while (e < row.length && row[e].k === 'cmd' && CMDS[(row[e] as MCmd).name]?.script) e++;
+      return e;
+    };
+    this.mc = { path: from.path.slice(0, d), off: forward ? grow(Math.max(a1, b1)) : Math.min(a0, b0) };
+    this.msel = forward ? Math.min(a0, b0) : grow(Math.max(a1, b1));
+    if (this.msel === this.mc.off) this.msel = null;
   }
 
   /** Dragging a handle of the selected arrow. */
@@ -858,6 +903,21 @@ export class Editor {
     if (!this.dragging) return;
     const h = this.hitTest(e.clientX, e.clientY);
     if (!h) return;
+    const md = this.mathDrag;
+    if (md) {
+      if (h.math && h.pos.b === md.b && h.pos.o === md.o) {
+        // still inside the formula: select inside it
+        this.dragMathSel(md.from, this.mathPos(h.math));
+        this.touch();
+        return;
+      }
+      // out of it: select text, the formula as a whole
+      this.mathDrag = null;
+      this.msel = null;
+      const forward = cmpPos(h.pos, md) > 0;
+      this.anchor = { b: md.b, o: forward ? md.o : md.o + 1 };
+      this.setMode('text');
+    }
     // Dragging over math selects the whole item.
     const forward = !this.anchor || cmpPos(h.pos, this.anchor) >= 0;
     const p = h.math ? { b: h.pos.b, o: h.pos.o + (forward ? 1 : 0) } : h.pos;
@@ -868,6 +928,7 @@ export class Editor {
 
   mouseUp() {
     this.dragging = false;
+    this.mathDrag = null;
     const hd = this.handleDrag;
     this.handleDrag = null;
     if (hd && hd.part !== 'bend' && this.pick?.edit) {
@@ -916,7 +977,7 @@ export class Editor {
       }
     }
     this.caret = caret;
-    this.selRects = this.selectionRects(origin);
+    this.selRects = [...this.selectionRects(origin), ...this.mathSelRects(origin)];
 
     // Pick highlights
     if (this.pick) {
@@ -1377,16 +1438,34 @@ export class Editor {
   private selectionRects(origin: DOMRect): Rect[] {
     const r = this.selection;
     if (!r) return [];
-    const first = this.stopEl(r.s.b, r.s.o);
-    const lastBlk = this.doc.blocks[r.e.b];
-    const last = r.e.o > 0 ? this.el(lastBlk.items[r.e.o - 1].id, r.e.b) : null;
-    if (!first) return [];
+    // runs of text by their line boxes, formulas by their whole box (a range's rects
+    // only cover a formula's text line, not what sticks out above and below)
+    const rects: DOMRect[] = [];
     const range = sharedRange();
-    range.setStartBefore(first);
-    if (last) range.setEndAfter(last);
-    else range.setEndBefore(this.stopEl(r.e.b, 0) ?? first);
+    const run = (b: number, o0: number, o1: number) => {
+      const a = this.stopEl(b, o0), z = this.el(this.doc.blocks[b].items[o1 - 1].id, b);
+      if (!a || !z) return;
+      range.setStartBefore(a);
+      range.setEndAfter(z);
+      rects.push(...range.getClientRects());
+    };
+    for (let b = r.s.b; b <= r.e.b; b++) {
+      const items = this.doc.blocks[b].items;
+      const o1 = b === r.e.b ? r.e.o : items.length;
+      let start = b === r.s.b ? r.s.o : 0;
+      for (let o = start; o <= o1; o++) {
+        if (o < o1 && items[o].t !== 'm') continue;
+        if (o > start) run(b, start, o);
+        if (o < o1) {
+          const m = this.el(items[o].id, b);
+          if (m) rects.push(m.getBoundingClientRect());
+        }
+        start = o + 1;
+      }
+    }
+    releaseRange();
     const lines: Rect[] = [];
-    for (const q of range.getClientRects()) {
+    for (const q of rects) {
       if (!q.width || !q.height) continue;
       const line = lines.find((l) => Math.abs(l.y - q.top) < 4 || (q.top < l.y + l.h - 4 && q.bottom > l.y + 4));
       if (line) {
@@ -1397,8 +1476,20 @@ export class Editor {
         line.h = y1 - line.y;
       } else lines.push({ x: q.left, y: q.top, w: q.width, h: q.height });
     }
-    releaseRange();
     return lines.map((l) => relTo(l, origin));
+  }
+
+  /**
+   * The selection inside the formula being edited, as one box around what is selected
+   * (its glyphs and its line box): a background on the selected group would only
+   * cover the line box, not a fraction's or a sum's full height.
+   */
+  private mathSelRects(origin: DOMRect): Rect[] {
+    const item = this.mathSelRange ? this.mathItem : null;
+    const sel = item ? this.el(item.id, this.b)?.querySelector('.nx-sel') : null;
+    if (!sel) return [];
+    const box = union([fromDOM(sel.getBoundingClientRect()), ...inkRects(sel)].filter((r) => r.w || r.h));
+    return box ? [relTo({ x: box.x - 1, y: box.y - 1, w: box.w + 2, h: box.h + 2 }, origin)] : [];
   }
 
   /** The element at caret stop (b, o): the item there, or the end-of-line marker. */

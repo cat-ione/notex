@@ -13,7 +13,7 @@ export const union = (rs: Rect[]): Rect | null => {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 };
 
-const fromDOM = (r: DOMRect): Rect => ({ x: r.left, y: r.top, w: r.width, h: r.height });
+export const fromDOM = (r: DOMRect): Rect => ({ x: r.left, y: r.top, w: r.width, h: r.height });
 const INK = 'svg, .frac-line, .rule, .overline-line, .underline-line, .hline';
 
 /**
