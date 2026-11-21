@@ -37,6 +37,27 @@
       </g>
     {/if}
   {/each}
+  <!-- the selected shape's ends: drag to cover more or less -->
+  {#if !under && ed.mode === 'style' && ed.markEnds}
+    {@const me = ed.markEnds}
+    {@const mk = ed.doc.marks.find((x) => x.id === me.id)}
+    {#each [['start', me.a], ['end', me.b]] as const as [part, p] (part)}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <rect
+        class="handle"
+        style="--ink: {inkVar(mk?.color)}"
+        x={p.x - 2.5}
+        y={p.y - 6}
+        width="5"
+        height="12"
+        rx="2"
+        onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.beginMarkResize(me.id, part); }}
+        in:fade={{ duration: 120 }}
+      >
+        <title>drag to cover more or less ({part === 'end' ? 'shift' : 'ctrl+shift'}+← → from the keyboard)</title>
+      </rect>
+    {/each}
+  {/if}
 </svg>
 
 <style>
@@ -90,6 +111,16 @@
     stroke-width: 1;
     stroke-dasharray: 2 2;
     opacity: 0.7;
+  }
+  .handle {
+    fill: var(--bg);
+    stroke: var(--ink);
+    stroke-width: 1.5;
+    pointer-events: all;
+    cursor: ew-resize;
+  }
+  .handle:hover {
+    fill: var(--ink);
   }
   .ghost {
     opacity: 0.25;

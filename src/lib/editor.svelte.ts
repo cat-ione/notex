@@ -911,6 +911,9 @@ export class Editor {
 
   // ── notes and the mouse ──
 
+  /** Where the selected shape's resize handles go (page coordinates). */
+  markEnds = $state<{ id: Id; a: { x: number; y: number }; b: { x: number; y: number } } | null>(null);
+
   /** The drawing under the mouse (its outline or its note), highlighted with its note. */
   hovered = $state<Id | null>(null);
 
@@ -1023,7 +1026,7 @@ export class Editor {
   }
 
   /** Dragging a handle of the selected arrow. */
-  private handleDrag: { id: Id; part: 'from' | 'to' | 'bend' } | null = null;
+  private handleDrag: { id: Id; part: 'from' | 'to' | 'bend' | 'start' | 'end'; fixed?: Loc } | null = null;
 
   beginHandleDrag(id: Id, part: 'from' | 'to' | 'bend') {
     const a = this.doc.arrows.find((x) => x.id === id);
@@ -1033,8 +1036,30 @@ export class Editor {
     else this.retarget(id, part);
   }
 
+  /** Start dragging one end of the selected shape: the other end stays where it is. */
+  beginMarkResize(id: Id, end: 'start' | 'end') {
+    const m = this.doc.marks.find((x) => x.id === id);
+    if (!m) return;
+    const l = this.locForIds(m.at);
+    if (l.k !== 'word' && l.k !== 'node') return this.flash('this shape can be changed with e (choose what it marks)');
+    this.checkpoint();
+    this.handleDrag = { id, part: end, fixed: this.edgeUnit(l, end === 'end' ? 'start' : 'end') };
+  }
+
   private dragHandle(e: MouseEvent) {
     const hd = this.handleDrag!;
+    if (hd.part === 'start' || hd.part === 'end') {
+      const m = this.doc.marks.find((x) => x.id === hd.id);
+      const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
+      const loc = id ? this.locFromId(id) : null;
+      const span = m && loc && hd.fixed ? this.spanLoc(hd.fixed, loc) : null;
+      if (m && span) {
+        const ids = this.anchorIds(span);
+        if (ids.join() !== m.at.join()) m.at = ids;
+      }
+      this.touch();
+      return;
+    }
     const a = this.doc.arrows.find((x) => x.id === hd.id);
     if (!a || !this.page) return;
     if (hd.part === 'bend') {
@@ -1200,6 +1225,15 @@ export class Editor {
       }, settling ? 16 : 200);
     }
     for (const m of this.doc.marks) if (mgeos[m.id]?.outline) outlines.set(idKey(m.at), mgeos[m.id].outline!);
+    // the selected shape's ends, for its resize handles
+    const sm = this.styling && mgeos[this.styling] && lines[this.styling]?.length ? this.styling : null;
+    if (sm) {
+      const g = mgeos[sm], ls = lines[sm], o = g.outline?.r;
+      const first = ls[0], last = ls[ls.length - 1];
+      this.markEnds = o && ls.length === 1
+        ? { id: sm, a: { x: o.x, y: o.y + o.h / 2 }, b: { x: o.x + o.w, y: o.y + o.h / 2 } }
+        : { id: sm, a: { x: first.x - 2, y: first.y + first.h / 2 }, b: { x: last.x + last.w + 2, y: last.y + last.h / 2 } };
+    } else if (this.markEnds) this.markEnds = null;
     this.markGeos = mgeos;
     this.makeRoom(mgeos, origin, active, near);
 
@@ -2809,6 +2843,77 @@ export class Editor {
     return l;
   }
 
+  /** The words of a block (as pick targets). */
+  private wordsIn(b: number): Extract<Loc, { k: 'word' }>[] {
+    return this.level0().filter((x): x is Extract<Loc, { k: 'word' }> => x.k === 'word' && x.b === b);
+  }
+
+  /** The first / last single target (a word, a math group) of a range. */
+  private edgeUnit(l: Loc, end: 'start' | 'end'): Loc {
+    if (l.k === 'word') {
+      const ws = this.wordsIn(l.b).filter((w) => w.s >= l.s && w.e <= l.e);
+      return (end === 'start' ? ws[0] : ws[ws.length - 1]) ?? l;
+    }
+    if (l.k === 'node') {
+      const gs = groups(M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path));
+      const g = gs.find(([i, j]) => (end === 'start' ? l.i : l.j) >= i && (end === 'start' ? l.i : l.j) <= j);
+      return g ? { ...l, i: g[0], j: g[1] } : l;
+    }
+    return l;
+  }
+
+  /**
+   * The range from one target to another: words of one block (no math between them),
+   * or pieces of one formula (in the deepest row holding both; an end inside a structure
+   * stands for the structure). Null when they can't make one range.
+   */
+  private spanLoc(a: Loc, b: Loc): Loc | null {
+    if (a.k === 'word' && b.k === 'word' && a.b === b.b) {
+      const s = Math.min(a.s, b.s), e = Math.max(a.e, b.e);
+      return this.doc.blocks[a.b].items.slice(s, e + 1).some((i) => i.t === 'm') ? null : { k: 'word', b: a.b, s, e };
+    }
+    if (a.k === 'node' && b.k === 'node' && a.b === b.b && a.o === b.o) {
+      let d = 0;
+      while (d < a.path.length && d < b.path.length && a.path[d].i === b.path[d].i && a.path[d].s === b.path[d].s) d++;
+      const path = a.path.slice(0, d);
+      const gs = groups(M.rowAt((this.doc.blocks[a.b].items[a.o] as MathItem).root, path));
+      const span = (l: typeof a): [number, number] => (l.path.length > d ? [l.path[d].i, l.path[d].i] : [l.i, l.j]);
+      const lo = Math.min(span(a)[0], span(b)[0]), hi = Math.max(span(a)[1], span(b)[1]);
+      const gi = gs.find(([x, y]) => lo >= x && lo <= y), gj = gs.find(([x, y]) => hi >= x && hi <= y);
+      return gi && gj ? { k: 'node', b: a.b, o: a.o, path, i: gi[0], j: gj[1] } : null;
+    }
+    return null;
+  }
+
+  /** Move one end of a shape by one target: out (grow) or in (shrink, down to one target). */
+  private resizeMark(m: Mark, end: 'start' | 'end', d: 1 | -1) {
+    const l = this.locForIds(m.at);
+    let next: Loc | null = null;
+    if (l.k === 'word') {
+      const ws = this.wordsIn(l.b);
+      const free = (s: number, e: number) => !this.doc.blocks[l.b].items.slice(s, e + 1).some((i) => i.t === 'm');
+      if (end === 'end') {
+        const w = d > 0 ? ws.find((w) => w.s > l.e) : ws.findLast((w) => w.e < l.e && w.s >= l.s);
+        if (w && (d < 0 || free(l.e, w.e))) next = { ...l, e: w.e };
+      } else {
+        const w = d < 0 ? ws.findLast((w) => w.e < l.s) : ws.find((w) => w.s > l.s && w.e <= l.e);
+        if (w && (d > 0 || free(w.s, l.s))) next = { ...l, s: w.s };
+      }
+    } else if (l.k === 'node') {
+      const gs = groups(M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path));
+      if (end === 'end') {
+        const g = d > 0 ? gs.find(([i]) => i > l.j) : gs.findLast(([, j]) => j < l.j && j >= l.i);
+        if (g) next = { ...l, j: g[1] };
+      } else {
+        const g = d < 0 ? gs.findLast(([, j]) => j < l.i) : gs.find(([i]) => i > l.i && i <= l.j);
+        if (g) next = { ...l, i: g[0] };
+      }
+    } else return this.flash('change what this shape marks with e');
+    if (!next) return;
+    this.checkpoint('style');
+    m.at = this.anchorIds(next);
+  }
+
   private extendLoc(l: Loc, d: 1 | -1): Loc {
     if (l.k === 'node') {
       const row = M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path);
@@ -2890,6 +2995,15 @@ export class Editor {
     if (exact) return exact;
     const first = ids.length ? this.locFromId(ids[0]) : null;
     if (first && this.anchorIds(first).join() === key) return first;
+    // several pieces of one formula (or words of one line): the range they make
+    if (first && ids.length > 1) {
+      let span: Loc | null = first;
+      for (const id of ids.slice(1)) {
+        const l = this.locFromId(id);
+        span = span && l ? this.spanLoc(span, l) : null;
+      }
+      if (span && this.anchorIds(span).join() === key) return span;
+    }
     const pos = ids.map((id) => this.findItem(id));
     if (pos.length && pos.every((p) => p && p.b === pos[0]!.b)) {
       const os = pos.map((p) => p!.o);
@@ -2987,6 +3101,10 @@ export class Editor {
         { name: 'colour', desc: `colour (${m.color || 'default'})`, keys: ['c'], run: edit(() => (m.color = nextInk(m.color))) },
         note(m),
         { name: 'target', desc: 'choose what it marks', keys: ['e', 'm'], run: () => this.retarget(m.id, 'at') },
+        {
+          name: 'resize', desc: 'cover more / less', keys: ['S-Right', 'S-Left', 'C-S-Left', 'C-S-Right'], keyOnly: true,
+          run: (k) => k && this.resizeMark(m, k.startsWith('C-') ? 'start' : 'end', /Right$/.test(k) ? 1 : -1),
+        },
         ...placing,
         remove(() => this.doc.marks.splice(this.doc.marks.indexOf(m), 1)),
         menu,
