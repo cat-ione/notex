@@ -1067,6 +1067,8 @@ export class Editor {
 
   /** A press on a note: a drag from it moves the note. */
   private noteDrag: { id: Id; x: number; y: number; moved: boolean; from?: NoteAt } | null = null;
+  /** The note being dragged (it follows the mouse directly, without easing). */
+  draggedNote = $state<Id | null>(null);
 
   /** The note element for a drawing (not the offscreen one notes are measured with). */
   private noteEl(id: Id): HTMLElement | null {
@@ -1384,6 +1386,7 @@ export class Editor {
       nd.moved = true;
       nd.from = from;
       this.dragBusy = true;
+      this.draggedNote = nd.id;
       this.checkpoint();
     }
     d.note = { dx: Math.round(nd.from!.dx + e.clientX - nd.x), dy: Math.round(nd.from!.dy + e.clientY - nd.y) };
@@ -1546,6 +1549,7 @@ export class Editor {
     this.dragging = false;
     this.mathDrag = null;
     this.noteDrag = null;
+    this.draggedNote = null;
     this.bodyDrag = null;
     this.dragBusy = false;
     const hd = this.handleDrag;

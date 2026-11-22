@@ -53,6 +53,7 @@
     class:typing={l.noting}
     class:noting={l.noting}
     class:pinned={l.pinned}
+    class:dragged={ed.draggedNote === l.id}
     class:live
     class:hover={ed.hovered === l.id}
     onmousedown={(e) => { if (e.button > 1) return; e.stopPropagation(); e.preventDefault(); ed.noteDown(l.id, e); }}
@@ -114,6 +115,10 @@
   :global(.dlabel.live.hover) {
     background: color-mix(in srgb, var(--ink) 14%, var(--bg));
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 45%, transparent);
+  }
+  /* dragged: on the mouse, not easing after it */
+  :global(.dlabel.dragged) {
+    transition: none;
   }
   :global(.dlabel.pinned) {
     transform: translate(-50%, -50%);
