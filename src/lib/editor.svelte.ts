@@ -2549,6 +2549,8 @@ export class Editor {
       if (this.pendingStyle) this.pendingStyle.at = { b: this.b, o: this.o };
       if (k === ' ') this.markdownShortcut();
       if (k === '*') this.emphasisShortcut();
+      // a word typed is an undo step (not the whole run of typing since the last pause)
+      if (k === ' ') this.lastKind = '';
       this.textSnippet();
       return true;
     }
@@ -2838,6 +2840,15 @@ export class Editor {
         }
         return true;
       case 'Delete': this.checkpoint('type'); M.deleteForward(root, cur); return true;
+      // a whole piece (as Ctrl+arrows move); at the edge of a box, as Backspace / Delete
+      case 'C-Backspace': case 'C-Delete': {
+        const d = k === 'C-Delete' ? 1 : -1;
+        const to = { path: [...cur.path], off: cur.off };
+        if (cur.off === (d > 0 ? M.rowAt(root, cur.path).length : 0) || !M.wordMove(root, to, d)) return this.mathKey(d > 0 ? 'Delete' : 'Backspace');
+        this.checkpoint();
+        M.takeRange(root, cur, Math.min(cur.off, to.off), Math.max(cur.off, to.off));
+        return true;
+      }
       case 'Enter':
         if (M.gridNext(root, cur, 'row')) return true;
         this.exitMath(true);
@@ -2858,6 +2869,7 @@ export class Editor {
         return true;
       case ' ':
         M.space(root, cur);
+        this.lastKind = ''; // (an undo step ends with the word)
         return true;
       case ';': this.pending = ';'; return true;
       case '\\': this.openPalette('math'); return true;
