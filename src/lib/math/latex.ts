@@ -12,7 +12,13 @@ export type Step = { i: number; s: number };
  * A caret in a formula. `auto`: LaTeX-style script slots being typed into, innermost last
  * (see settleAuto in ./edit): where each is, and whether it was opened with `(` / `{`.
  */
-export type MCursor = { path: Step[]; off: number; auto?: { path: Step[]; grouped: boolean }[] };
+export type MCursor = {
+  path: Step[];
+  off: number;
+  auto?: { path: Step[]; grouped: boolean }[];
+  /** The node a space was typed after: auto-replacements don't reach back past it (`x in`). */
+  brk?: string | null;
+};
 
 /** A selected range [s, e) of the row at `path` (aligned to base+script groups). */
 export type MSelRange = { path: Step[]; s: number; e: number };

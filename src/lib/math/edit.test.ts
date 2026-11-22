@@ -273,3 +273,32 @@ describe('Ctrl+arrows in math', () => {
     expect(cur.off).toBe(3);
   });
 });
+
+describe('typing the way notes are written', () => {
+  it.each([
+    // a space ends a word: no ξ out of `x in`
+    ['x in RR', 'x\\in \\mathbb{R}'],
+    ['A uu B nn C', 'A\\cup B\\cap C'],
+    ['A sube B', 'A\\subseteq B'],
+    ['neg p and q', '\\neg p\\text{ and }q'],
+    // a space doesn't leave an empty box
+    ['x^n / n!', '\\frac{x^{n}}{n!}'],
+    ['del f / del x', '\\frac{\\partial f}{\\partial x}'],
+    ['sqrt 2', '\\sqrt{2}'],
+    // brackets right after a root, an accent or a fraction bar group without showing
+    ['sqrt(v+1)', '\\sqrt{v+1}'],
+    ['1/(2pi)', '\\frac{1}{2\\pi }'],
+    ['vec(a+b)', '\\vec{a+b}'],
+    // accents and more names
+    ['vec v', '\\vec{v}'],
+    ['hat x + bar z', '\\hat{x}+\\overline{z}'],
+    ['hbar omega', '\\hbar \\omega'],
+    ['1/sin x + 1', '\\frac{1}{\\sin x}+1'],
+    ['1/2 + 1', '\\frac{1}{2}+1'],
+    ['-del vec B / del t', '-\\frac{\\partial \\vec{B}}{\\partial t}'],
+    // a subscript's letters are an index
+    ['a_ij + b', 'a_{ij}+b'],
+  ])('%s → %s', (keys, tex) => {
+    expect(typed(keys.replace(/ /g, '␣')).tex).toBe(tex);
+  });
+});

@@ -254,11 +254,27 @@ for (const f of 'sgn rank span'.split(' ')) AUTO_REPLACE[f] = `\\operatorname{${
 for (const g of 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi pi sigma upsilon phi chi psi omega rho tau Gamma Delta Theta Lambda Xi Pi Sigma Phi Psi Omega infty'.split(' '))
   AUTO_REPLACE[g] = '\\' + g;
 
+// sets, logic, physics and the like, by name
+Object.assign(AUTO_REPLACE, {
+  in: '\\in', notin: '\\notin', sub: '\\subset', sube: '\\subseteq', supset: '\\supset', supe: '\\supseteq',
+  uu: '\\cup', nn: '\\cap', neg: '\\neg', hbar: '\\hbar', nabla: '\\nabla', ell: '\\ell', emptyset: '\\emptyset',
+  cdot: '\\cdot', circ: '\\circ', perp: '\\perp', equiv: '\\equiv', propto: '\\propto', oplus: '\\oplus', otimes: '\\otimes',
+  // words between formulas' pieces
+  and: '\\text{ and }', or: '\\text{ or }',
+});
+
+/** Names that take what follows (sin x, del f): a space after one separates words, not a box's end. */
+export const TAKES_ARG = new Set('sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh log ln exp det dim ker deg arg gcd max min sup inf Pr sgn rank span del grad nabla neg'.split(' '));
+
 /** Big operators that, with LaTeX-style scripts, become the bare symbol (limits come from `_` / `^`). */
 export const BARE_OPS: Record<string, string> = { sum: '\\sum', prod: '\\prod', int: '\\int', lim: '\\lim' };
 
 /** Auto-replacements that produce structure (big operators with limits). */
 export const AUTO_STRUCT: Record<string, Inserter> = {
+  vec: MATH_PALETTE.vec,
+  hat: MATH_PALETTE.hat,
+  bar: MATH_PALETTE.bar,
+  tilde: MATH_PALETTE.tilde,
   sum: MATH_PALETTE.sum,
   prod: MATH_PALETTE.prod,
   int: MATH_PALETTE.int,

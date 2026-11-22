@@ -6,7 +6,7 @@
 // returning false at the root boundary lets the caller exit the math item.
 
 import { cmd, sym, type MCmd, type MNode, type MRow } from '../model';
-import { AUTO_REPLACE, AUTO_STRUCT, BARE_OPS, CMDS, OPENERS, type Inserter } from './defs';
+import { AUTO_REPLACE, AUTO_STRUCT, BARE_OPS, CMDS, OPENERS, TAKES_ARG, type Inserter } from './defs';
 import type { MCursor, Step } from './latex';
 import { caretFor, parseLatex, type Parsed } from './parse';
 
@@ -354,6 +354,9 @@ export function fraction(root: MRow, cur: MCursor) {
       while (start > 0 && r[start - 1].k === 'sym' && OPERAND.test((r[start - 1] as any).v) && !NOT_OPERAND.has((r[start - 1] as any).v))
         start--;
   }
+  // a name that takes what follows comes along with it (del vec B / del t)
+  const takes = (n: MNode | undefined) => n?.k === 'sym' && !!n.src && TAKES_ARG.has(n.src);
+  while (start > 0 && start < cur.off && takes(r[start - 1])) start--;
   let num = r.splice(start, cur.off - start);
   // (a+b)/c -> \frac{a+b}{c}
   if (num.length === 1 && num[0].k === 'cmd' && num[0].name === 'paren') num = num[0].slots[0];
@@ -414,8 +417,8 @@ export function setLatexScripts(on: boolean) {
 const samePath = (a: Step[], b: Step[]) => a.length === b.length && a.every((x, i) => x.i === b[i].i && x.s === b[i].s);
 const startsWith = (p: Step[], pre: Step[]) => pre.length <= p.length && pre.every((x, i) => x.i === p[i].i && x.s === p[i].s);
 
-/** Does typing `c` continue the one thing in a LaTeX-style script slot? */
-function continues(slot: MRow, c: string): boolean {
+/** Does typing `c` continue the one thing in a LaTeX-style script slot? (`sub`: a subscript) */
+function continues(slot: MRow, c: string, sub = false): boolean {
   const pieces = slot.map((n) => (n.k === 'sym' ? (n.src ?? n.v) : null));
   if (pieces.some((p) => p === null)) return false; // a structure is one thing
   const body = pieces.join('').replace(/^[-+]/, '');
@@ -423,6 +426,8 @@ function continues(slot: MRow, c: string): boolean {
   if (/^[0-9.]+$/.test(body)) return /[0-9.]/.test(c);
   // letters: only while they could still become a symbol (`alpha`, `infty`, a snippet)
   if (/^[a-zA-Z]+$/.test(body) && /^[a-zA-Z]$/.test(c)) {
+    // a subscript's letters are an index: a_ij
+    if (sub && body.length < 3) return true;
     const w = body + c;
     return [AUTO_REPLACE, AUTO_STRUCT, BARE_OPS, userSnippets].some((t) => Object.keys(t).some((k) => k.startsWith(w)));
   }
@@ -464,7 +469,9 @@ export function settleAuto(root: MRow, cur: MCursor, c: string): boolean {
       top.grouped = true;
       return true;
     }
-    if (!slot.length || continues(slot, c)) break;
+    const p = parentOf(root, cur);
+    const sub = !!p && (p.node.name === 'sub' || (p.node.name === 'subsup' && p.step.s === 0));
+    if (!slot.length || continues(slot, c, sub)) break;
     exitAfter(root, cur);
     stack.pop();
   }
@@ -474,12 +481,25 @@ export function settleAuto(root: MRow, cur: MCursor, c: string): boolean {
 
 /** Space: leave the box you're in, but not brackets (spaces there mean nothing) or a `^(…)` group. */
 export function space(root: MRow, cur: MCursor): boolean {
+  const r = rowAt(root, cur.path);
+  // staying put: the space still ends a word (`x in` is not ξ n)
+  const stay = () => ((cur.brk = r[cur.off - 1]?.id ?? null), true);
   const top = cur.auto?.[cur.auto.length - 1];
-  if (top?.grouped && samePath(top.path, cur.path)) return true;
+  if (top?.grouped && samePath(top.path, cur.path)) return stay();
   const p = parentOf(root, cur);
-  if (p && def(p.node)?.close) return true;
+  if (p && def(p.node)?.close) return stay();
+  // an empty box (a denominator, a root, an accent) isn't left by a space: `x / y`, `sqrt 2`
+  // (an empty limit or script is: that's how one is skipped)
+  if (p && !r.length && !def(p.node)?.script) return true;
+  if (!p) return stay(), false;
+  // after a name that takes what follows (1/sin x, del f / del x): between words
+  const prev = r[cur.off - 1];
+  if (!def(p.node)?.script && prev?.k === 'sym' && prev.src && TAKES_ARG.has(prev.src)) return stay();
   return exitAfter(root, cur);
 }
+
+/** Structures whose empty box takes `(…)` as a group, brackets not shown: sqrt(x+1), 1/(2pi). */
+const GROUPING = new Set(['frac', 'sqrt', 'root', 'vec', 'hat', 'bar', 'tilde', 'dot', 'ddot', 'cancel']);
 
 /** Type a character, applying structure keys and auto-replacements. */
 export function typeChar(root: MRow, cur: MCursor, c: string) {
@@ -489,6 +509,14 @@ export function typeChar(root: MRow, cur: MCursor, c: string) {
     return;
   }
   if (latexScripts && settleAuto(root, cur, c)) return;
+  if (latexScripts && (c === '(' || c === '{')) {
+    const p = parentOf(root, cur);
+    if (p && GROUPING.has(p.node.name) && !rowAt(root, cur.path).length && !cur.auto?.some((a) => samePath(a.path, cur.path))) {
+      cur.auto ??= [];
+      cur.auto.push({ path: cur.path.map((s) => ({ ...s })), grouped: true });
+      return;
+    }
+  }
   if (c === '/') return fraction(root, cur);
   if (c === '^' || c === '_') {
     script(root, cur, c === '^' ? 'sup' : 'sub');
@@ -536,7 +564,7 @@ function autoReplace(root: MRow, cur: MCursor) {
   let s = '';
   for (let k = 1; k <= cur.off && k <= longestTrigger; k++) {
     const n = r[cur.off - k];
-    if (n.k !== 'sym') break;
+    if (n.k !== 'sym' || (cur.brk && n.id === cur.brk)) break;
     const piece = n.src ?? (n.v.startsWith('\\') && n.v.length > 1 ? null : n.v);
     if (piece == null) break;
     s = piece + s;
