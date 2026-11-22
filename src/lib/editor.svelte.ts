@@ -21,7 +21,7 @@ import * as F from './files';
 import * as C from './config';
 import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
 import * as M from './math/edit';
-import { AUTO_REPLACE, BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS } from './math/defs';
+import { BARE_OPS, BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { allIds, block, ch, chars, cloneRow, cmd, isListKind, MAX_INDENT, math, sym, uid, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
@@ -2575,7 +2575,7 @@ export class Editor {
     if (before && !(before.t === 'c' && /[\s([{"'“‘]/.test(before.ch))) return false;
     // ...that looks like math: x, ab, 10, x1, pi, theta (not snake_case or a file_name)
     const w = items.slice(s, this.o).map((i) => (i as Char).ch).join('');
-    if (!(w.length <= 2 || /^\d+$/.test(w) || /^[A-Za-z]\d+$/.test(w) || /^[A-Za-z]+$/.test(w) && AUTO_REPLACE[w])) return false;
+    if (!(w.length <= 2 || /^\d+$/.test(w) || /^[A-Za-z]\d+$/.test(w) || /^[A-Za-z]+$/.test(w) && M.isSubstitution(w))) return false;
     this.checkpoint();
     const m = math([], false);
     const cur: MCursor = { path: [], off: 0 };
@@ -2899,9 +2899,24 @@ export class Editor {
       M.typeChar(root, cur, k);
       if (cur.auto?.some((a) => a.grouped)) this.learned('script-group');
       else if (/^[a-zA-Z0-9]$/.test(k) && (cur.auto?.length ?? 0) < scripts) this.tip('script-group', 'x^(ab) puts more than one thing up (or down)');
+      if (/^[a-zA-Z]$/.test(k)) this.nameTip(root, cur);
       return true;
     }
     return false;
+  }
+
+  /** Typed a name that a switched-off substitution group knows (alpha, sqrt, sin): say how to get it. */
+  private nameTip(root: MRow, cur: MCursor) {
+    const r = M.rowAt(root, cur.path);
+    let w = '';
+    for (let i = cur.off - 1; i >= 0 && w.length <= 8; i--) {
+      const n = r[i];
+      if (n.k !== 'sym' || n.src || !/^[a-zA-Z]$/.test(n.v)) break;
+      w = n.v + w;
+    }
+    if (w.length < 3 || M.isSubstitution(w)) return;
+    const g = SUB_GROUPS.find((g) => !g.template && g.subs[w] !== undefined && !this.config.typing.substitutions[g.id]);
+    if (g) this.tip('sub-names', `\\${w} for the symbol, or switch on ${g.label} in settings › substitutions`, 2);
   }
 
   /** Anchor offset of a selection inside the formula (same row as the caret). */
@@ -3085,7 +3100,10 @@ export class Editor {
         M.takeRange(item.root, this.mc, range.s, range.e);
       }
       M.settleAuto(item.root, this.mc, '\\');
+      this.learned('sub-names');
       if (key && user[key] !== undefined) M.insertParsed(item.root, this.mc, parseLatex(user[key]));
+      // a big operator as typing makes one: limits from _ / ^ (LaTeX-style scripts), or empty ones to fill
+      else if (key && this.config.typing.latexScripts && BARE_OPS[key]) M.insertNode(item.root, this.mc, sym(BARE_OPS[key]));
       else if (key && MATH_PALETTE[key]) M.applyInserter(item.root, this.mc, MATH_PALETTE[key]);
       else if (q) M.insertNode(item.root, this.mc, sym('\\' + q));
       return;
@@ -3152,6 +3170,7 @@ export class Editor {
     C.applyConfig(c);
     M.setMathSnippets(c.snippets.math);
     M.setLatexScripts(c.typing.latexScripts);
+    M.setSubstitutions(c.typing.substitutions);
     this.geoEpoch++; // sizes may have changed
     this.touch();
   }

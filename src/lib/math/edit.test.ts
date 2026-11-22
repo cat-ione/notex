@@ -4,6 +4,11 @@ import type { MRow } from '../model';
 import * as M from './edit';
 import { toLatex, type MCursor } from './latex';
 import { cmd } from '../model';
+import { SUB_GROUPS } from './defs';
+
+const allSubs = Object.fromEntries(SUB_GROUPS.map((g) => [g.id, true]));
+// most tests type names (alpha, sum, sqrt…): every substitution group on
+M.setSubstitutions(allSubs);
 
 /** Type a string into an empty formula. `‹` = backspace, `←`/`→` = left/right, `␣` = space, `⇥` = tab. */
 function typed(keys: string) {
@@ -300,5 +305,42 @@ describe('typing the way notes are written', () => {
     ['a_ij + b', 'a_{ij}+b'],
   ])('%s → %s', (keys, tex) => {
     expect(typed(keys.replace(/ /g, '␣')).tex).toBe(tex);
+  });
+});
+
+describe('substitutions', () => {
+  it('only symbols made of keys by default: names stay letters', () => {
+    M.setSubstitutions({});
+    try {
+      expect(typed('a->b').tex).toBe(String.raw`a\to b`);
+      expect(typed('x<=y').tex).toBe(String.raw`x\le y`);
+      expect(typed('pi').tex).toBe('pi');
+      expect(typed('sin').tex).toBe('sin');
+      expect(typed('x␣in␣A').tex).toBe('xinA');
+      expect(typed('x^alpha').tex).toBe('x^{a}lpha');
+    } finally {
+      M.setSubstitutions(allSubs);
+    }
+  });
+  it('each group on its own', () => {
+    M.setSubstitutions({ greek: true });
+    try {
+      expect(typed('pi').tex).toBe(String.raw`\pi`);
+      expect(typed('sin').tex).toBe('sin');
+    } finally {
+      M.setSubstitutions(allSubs);
+    }
+  });
+  it("the user's own win, with every group off", () => {
+    M.setSubstitutions({ symbols: false });
+    M.setMathSnippets({ RR: String.raw`\mathbb{R}` });
+    try {
+      expect(typed('RR').tex).toBe(String.raw`\mathbb{R}`);
+      expect(typed('->').tex).toBe('->');
+      expect(M.isSubstitution('RR')).toBe(true);
+    } finally {
+      M.setMathSnippets({});
+      M.setSubstitutions(allSubs);
+    }
   });
 });

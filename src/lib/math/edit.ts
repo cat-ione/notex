@@ -6,7 +6,7 @@
 // returning false at the root boundary lets the caller exit the math item.
 
 import { cmd, sym, type MCmd, type MNode, type MRow } from '../model';
-import { AUTO_REPLACE, AUTO_STRUCT, BARE_OPS, CMDS, OPENERS, TAKES_ARG, type Inserter } from './defs';
+import { CMDS, MATH_PALETTE, OPENERS, SUB_DEFAULTS, SUB_GROUPS, TAKES_ARG, type Inserter } from './defs';
 import type { MCursor, Step } from './latex';
 import { caretFor, parseLatex, type Parsed } from './parse';
 
@@ -355,8 +355,7 @@ export function fraction(root: MRow, cur: MCursor) {
         start--;
   }
   // a name that takes what follows comes along with it (del vec B / del t)
-  const takes = (n: MNode | undefined) => n?.k === 'sym' && !!n.src && TAKES_ARG.has(n.src);
-  while (start > 0 && start < cur.off && takes(r[start - 1])) start--;
+  while (start > 0 && start < cur.off && takesArg(r[start - 1])) start--;
   let num = r.splice(start, cur.off - start);
   // (a+b)/c -> \frac{a+b}{c}
   if (num.length === 1 && num[0].k === 'cmd' && num[0].name === 'paren') num = num[0].slots[0];
@@ -412,7 +411,29 @@ export function exitStructure(root: MRow, cur: MCursor): boolean {
 let latexScripts = true;
 export function setLatexScripts(on: boolean) {
   latexScripts = on;
+  buildSubs();
 }
+
+/** The substitutions on now: the groups switched on (big operators as LaTeX-style scripts want them). */
+let subs: Record<string, string | Inserter | { template: string }> = {};
+let groupsOn: Record<string, boolean> = { ...SUB_DEFAULTS };
+function buildSubs() {
+  subs = {};
+  for (const g of SUB_GROUPS)
+    if (groupsOn[g.id])
+      for (const [k, v] of Object.entries(g.subs))
+        subs[k] = g.id === 'operators' && !latexScripts ? MATH_PALETTE[k] : g.template ? { template: v as string } : v;
+}
+buildSubs();
+export function setSubstitutions(on: Record<string, boolean>) {
+  groupsOn = { ...SUB_DEFAULTS, ...on };
+  buildSubs();
+}
+/** Would typing `w` in math turn into something (a substitution on now, or the user's own)? */
+export const isSubstitution = (w: string) => subs[w] !== undefined || userSnippets[w] !== undefined;
+
+/** A name that takes what follows (sin x, del f), typed or from `\`. */
+const takesArg = (n: MNode | undefined) => n?.k === 'sym' && TAKES_ARG.has(n.src ?? n.v.replace(/^\\/, ''));
 
 const samePath = (a: Step[], b: Step[]) => a.length === b.length && a.every((x, i) => x.i === b[i].i && x.s === b[i].s);
 const startsWith = (p: Step[], pre: Step[]) => pre.length <= p.length && pre.every((x, i) => x.i === p[i].i && x.s === p[i].s);
@@ -429,7 +450,7 @@ function continues(slot: MRow, c: string, sub = false): boolean {
     // a subscript's letters are an index: a_ij
     if (sub && body.length < 3) return true;
     const w = body + c;
-    return [AUTO_REPLACE, AUTO_STRUCT, BARE_OPS, userSnippets].some((t) => Object.keys(t).some((k) => k.startsWith(w)));
+    return [subs, userSnippets].some((t) => Object.keys(t).some((k) => k.startsWith(w)));
   }
   return false;
 }
@@ -494,7 +515,7 @@ export function space(root: MRow, cur: MCursor): boolean {
   if (!p) return stay(), false;
   // after a name that takes what follows (1/sin x, del f / del x): between words
   const prev = r[cur.off - 1];
-  if (!def(p.node)?.script && prev?.k === 'sym' && prev.src && TAKES_ARG.has(prev.src)) return stay();
+  if (!def(p.node)?.script && takesArg(prev)) return stay();
   return exitAfter(root, cur);
 }
 
@@ -568,20 +589,20 @@ function autoReplace(root: MRow, cur: MCursor) {
     const piece = n.src ?? (n.v.startsWith('\\') && n.v.length > 1 ? null : n.v);
     if (piece == null) break;
     s = piece + s;
-    if (userSnippets[s] !== undefined || AUTO_REPLACE[s] || AUTO_STRUCT[s] || (latexScripts && BARE_OPS[s])) best = { k, key: s };
+    if (userSnippets[s] !== undefined || subs[s] !== undefined) best = { k, key: s };
   }
   if (!best) return;
   r.splice(cur.off - best.k, best.k);
   cur.off -= best.k;
-  const user = userSnippets[best.key];
-  if (user !== undefined) {
-    const parsed = parseLatex(user);
+  const v = subs[best.key];
+  const template = userSnippets[best.key] ?? (typeof v === 'object' && 'template' in v ? v.template : undefined);
+  if (template !== undefined) {
+    const parsed = parseLatex(template);
     // A single symbol keeps its trigger so backspace / longer triggers still work.
     if (parsed.row.length === 1 && parsed.row[0].k === 'sym' && !parsed.cursor) insertNode(root, cur, sym(parsed.row[0].v, best.key));
     else insertParsed(root, cur, parsed);
-  } else if (AUTO_REPLACE[best.key]) insertNode(root, cur, sym(AUTO_REPLACE[best.key], best.key));
-  else if (latexScripts && BARE_OPS[best.key]) insertNode(root, cur, sym(BARE_OPS[best.key], best.key));
-  else applyInserter(root, cur, AUTO_STRUCT[best.key]);
+  } else if (typeof v === 'string') insertNode(root, cur, sym(v, best.key));
+  else applyInserter(root, cur, v as Inserter);
 }
 
 /** `&` / Enter inside a grid: move to the next cell, growing the grid at the edge. */

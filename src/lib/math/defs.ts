@@ -222,70 +222,99 @@ for (const g of 'alpha beta gamma delta epsilon varepsilon zeta eta theta varthe
   MATH_PALETTE[g] = s('\\' + g);
 
 /**
- * Auto-replacements applied while typing in math, matched against the
- * trailing typed characters. Longest match wins, so `theta` beats `eta`.
+ * Substitutions while typing in math, in groups that can each be switched on or off
+ * (config `typing.substitutions`). Matched against the trailing typed characters; the
+ * longest match wins, so `theta` beats `eta`. A string is the LaTeX of one symbol; an
+ * Inserter makes structure. Everything here can also be had as a `\` command
+ * (`\alpha`, `\in`, `\sin`, `\sqrt`), so only the symbols made of keys are on at first:
+ * names typed as letters are just letters unless their group is switched on.
  */
-export const AUTO_REPLACE: Record<string, string> = {
-  '->': '\\to',
-  '-->': '\\longrightarrow',
-  '<-': '\\leftarrow',
-  '|->': '\\mapsto',
-  '=>': '\\implies',
-  '<=>': '\\iff',
-  '<=': '\\le',
-  '>=': '\\ge',
-  '!=': '\\ne',
-  '~~': '\\approx',
-  '~=': '\\cong',
-  '+-': '\\pm',
-  '-+': '\\mp',
-  '**': '\\cdot',
-  xx: '\\times',
-  oo: '\\infty',
-  '...': '\\dots',
-  AA: '\\forall',
-  EE: '\\exists',
-  del: '\\partial',
-  grad: '\\nabla',
-};
-for (const f of 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh log ln exp det dim ker deg arg gcd max min sup inf Pr liminf limsup'.split(' '))
-  AUTO_REPLACE[f] = '\\' + f;
-for (const f of 'sgn rank span'.split(' ')) AUTO_REPLACE[f] = `\\operatorname{${f}}`;
-for (const g of 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi pi sigma upsilon phi chi psi omega rho tau Gamma Delta Theta Lambda Xi Pi Sigma Phi Psi Omega infty'.split(' '))
-  AUTO_REPLACE[g] = '\\' + g;
+export type SubGroup = { id: string; label: string; example: string; on: boolean; subs: Record<string, string | Inserter>; template?: true };
 
-// sets, logic, physics and the like, by name
-Object.assign(AUTO_REPLACE, {
-  in: '\\in', notin: '\\notin', sub: '\\subset', sube: '\\subseteq', supset: '\\supset', supe: '\\supseteq',
-  uu: '\\cup', nn: '\\cap', neg: '\\neg', hbar: '\\hbar', nabla: '\\nabla', ell: '\\ell', emptyset: '\\emptyset',
-  cdot: '\\cdot', circ: '\\circ', perp: '\\perp', equiv: '\\equiv', propto: '\\propto', oplus: '\\oplus', otimes: '\\otimes',
-  // words between formulas' pieces
-  and: '\\text{ and }', or: '\\text{ or }',
-});
+const names = (list: string, tex = (n: string) => '\\' + n) => Object.fromEntries(list.split(' ').map((n) => [n, tex(n)]));
+
+export const SUB_GROUPS: SubGroup[] = [
+  {
+    id: 'symbols',
+    label: 'symbols from keys',
+    example: '->  <=  !=  +-  ...  **',
+    on: true,
+    subs: {
+      '->': '\\to', '-->': '\\longrightarrow', '<-': '\\leftarrow', '|->': '\\mapsto', '=>': '\\implies', '<=>': '\\iff',
+      '<=': '\\le', '>=': '\\ge', '!=': '\\ne', '~~': '\\approx', '~=': '\\cong', '+-': '\\pm', '-+': '\\mp', '**': '\\cdot', '...': '\\dots',
+    },
+  },
+  {
+    id: 'greek',
+    label: 'greek letters by name',
+    example: 'alpha  pi  Omega',
+    on: false,
+    subs: names('alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi pi sigma upsilon phi chi psi omega rho tau Gamma Delta Theta Lambda Xi Pi Sigma Phi Psi Omega'),
+  },
+  {
+    id: 'functions',
+    label: 'functions by name',
+    example: 'sin  log  max  det',
+    on: false,
+    subs: {
+      ...names('sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh log ln exp det dim ker deg arg gcd max min sup inf Pr liminf limsup'),
+      ...names('sgn rank span', (n) => `\\operatorname{${n}}`),
+    },
+  },
+  // (as the bare symbol with LaTeX-style scripts, with empty limits otherwise: see edit.ts)
+  { id: 'operators', label: 'big operators by name', example: 'sum  int  prod  lim', on: false, subs: names('sum prod int lim') },
+  {
+    id: 'structures',
+    label: 'roots and accents by name',
+    example: 'sqrt  vec  hat  bar',
+    on: false,
+    subs: { sqrt: MATH_PALETTE.sqrt, vec: MATH_PALETTE.vec, hat: MATH_PALETTE.hat, bar: MATH_PALETTE.bar, tilde: MATH_PALETTE.tilde },
+  },
+  {
+    id: 'doubled',
+    label: 'doubled letters',
+    example: 'RR  NN  oo  xx  AA  uu',
+    on: false,
+    subs: {
+      RR: MATH_PALETTE.R, NN: MATH_PALETTE.N, ZZ: MATH_PALETTE.Z, QQ: MATH_PALETTE.Q, CC: MATH_PALETTE.C,
+      oo: '\\infty', xx: '\\times', AA: '\\forall', EE: '\\exists', uu: '\\cup', nn: '\\cap',
+    },
+  },
+  {
+    id: 'named',
+    label: 'other symbols by name',
+    example: 'in  sub  infty  del  cdot',
+    on: false,
+    subs: {
+      ...names('in notin supset neg hbar nabla ell emptyset cdot circ perp equiv propto oplus otimes infty'),
+      sub: '\\subset', sube: '\\subseteq', supe: '\\supseteq', del: '\\partial', grad: '\\nabla',
+    },
+  },
+  { id: 'words', label: 'and / or as words', example: 'and  or', on: false, subs: { and: '\\text{ and }', or: '\\text{ or }' } },
+  // LaTeX templates, as the user's own substitutions are (`#`: where the caret goes)
+  {
+    id: 'shorthands',
+    label: 'shorthands',
+    example: 'eps  pd  dd  inv  TT  norm',
+    on: false,
+    template: true,
+    subs: { eps: '\\varepsilon', norm: '\\left\\| # \\right\\|', pd: '\\frac{\\partial #}{\\partial }', dd: '\\frac{d #}{d }', inv: '^{-1}', TT: '^{\\top}' },
+  },
+];
+
+/** Which groups are on when the config says nothing. */
+export const SUB_DEFAULTS: Record<string, boolean> = Object.fromEntries(SUB_GROUPS.map((g) => [g.id, g.on]));
+
+// every name a group knows is also a `\` command (\sin, \sgn, \sube…)
+for (const g of SUB_GROUPS)
+  for (const [k, v] of Object.entries(g.subs))
+    if (/^[a-zA-Z]+$/.test(k) && !MATH_PALETTE[k] && !g.template) MATH_PALETTE[k] = typeof v === 'string' ? s(v) : v;
 
 /** Names that take what follows (sin x, del f): a space after one separates words, not a box's end. */
-export const TAKES_ARG = new Set('sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh log ln exp det dim ker deg arg gcd max min sup inf Pr sgn rank span del grad nabla neg'.split(' '));
+export const TAKES_ARG = new Set('sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh log ln exp det dim ker deg arg gcd max min sup inf Pr sgn rank span del grad nabla partial neg'.split(' '));
 
 /** Big operators that, with LaTeX-style scripts, become the bare symbol (limits come from `_` / `^`). */
 export const BARE_OPS: Record<string, string> = { sum: '\\sum', prod: '\\prod', int: '\\int', lim: '\\lim' };
-
-/** Auto-replacements that produce structure (big operators with limits). */
-export const AUTO_STRUCT: Record<string, Inserter> = {
-  vec: MATH_PALETTE.vec,
-  hat: MATH_PALETTE.hat,
-  bar: MATH_PALETTE.bar,
-  tilde: MATH_PALETTE.tilde,
-  sum: MATH_PALETTE.sum,
-  prod: MATH_PALETTE.prod,
-  int: MATH_PALETTE.int,
-  lim: MATH_PALETTE.lim,
-  sqrt: MATH_PALETTE.sqrt,
-  RR: MATH_PALETTE.R,
-  NN: MATH_PALETTE.N,
-  ZZ: MATH_PALETTE.Z,
-  QQ: MATH_PALETTE.Q,
-  CC: MATH_PALETTE.C,
-};
 
 /** `;` + letter → greek (cdlatex-style). */
 export const GREEK_LEADER: Record<string, string> = {

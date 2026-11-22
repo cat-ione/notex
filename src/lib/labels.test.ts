@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { besideNote, layoutRow, noteItems, noteTex, noteText, pinnedLeader, renderLabel, type RowNote } from './labels';
 import type { Item } from './model';
+import { setSubstitutions } from './math/edit';
+import { SUB_GROUPS } from './math/defs';
+
+// notes' math is typed with names (pi, int): every substitution group on
+setSubstitutions(Object.fromEntries(SUB_GROUPS.map((g) => [g.id, true])));
 
 // fake text metrics: 6px per char, 14px lines, words wrap at maxW
 function note(id: string, x: number, text: string, edge = 20): RowNote {

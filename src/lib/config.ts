@@ -4,6 +4,7 @@
 // there is something to edit). Browser: localStorage.
 
 import { isDesktop } from './files';
+import { SUB_DEFAULTS } from './math/defs';
 
 export type ThemeDef = { base?: string; colors: Record<string, string> };
 
@@ -14,7 +15,7 @@ export type Config = {
   pageWidth: number;
   fonts: { prose: string; mono: string };
   /**
-   * Snippets expand as you type their trigger.
+   * Your own substitutions, made as you type their trigger (they win over the built-in ones).
    * math: trigger → LaTeX (`#` marks where the caret goes).
    * text: trigger → replacement text (may contain $math$).
    */
@@ -30,6 +31,8 @@ export type Config = {
     latexScripts: boolean;
     /** Text: `x^2` or `a_n` typed in prose turns into math. */
     autoMath: boolean;
+    /** Built-in math substitutions, by group (see SUB_GROUPS): `alpha` → α only if `greek` is on. */
+    substitutions: Record<string, boolean>;
   };
 };
 
@@ -41,14 +44,7 @@ export const DEFAULT_CONFIG: Config = {
   pageWidth: 820,
   fonts: { prose: '', mono: '' },
   snippets: {
-    math: {
-      eps: '\\varepsilon',
-      norm: '\\left\\| # \\right\\|',
-      pd: '\\frac{\\partial #}{\\partial }',
-      dd: '\\frac{d #}{d }',
-      inv: '^{-1}',
-      TT: '^{\\top}',
-    },
+    math: {},
     text: {
       '->': '→',
       '=>': '⇒',
@@ -63,7 +59,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   css: '',
   tips: true,
-  typing: { latexScripts: true, autoMath: true },
+  typing: { latexScripts: true, autoMath: true, substitutions: { ...SUB_DEFAULTS } },
 };
 
 const LOCAL_KEY = 'notex.config';
@@ -76,13 +72,22 @@ export function withDefaults(user: Partial<Config> | null | undefined): Config {
     ...u,
     fonts: { ...DEFAULT_CONFIG.fonts, ...(u.fonts ?? {}) },
     snippets: {
-      math: u.snippets?.math ?? DEFAULT_CONFIG.snippets.math,
+      math: oldDefaults(u.snippets?.math) ? {} : (u.snippets?.math ?? DEFAULT_CONFIG.snippets.math),
       text: u.snippets?.text ?? DEFAULT_CONFIG.snippets.text,
     },
     themes: u.themes ?? DEFAULT_CONFIG.themes,
-    typing: { ...DEFAULT_CONFIG.typing, ...(u.typing ?? {}) },
+    typing: {
+      ...DEFAULT_CONFIG.typing,
+      ...(u.typing ?? {}),
+      substitutions: { ...SUB_DEFAULTS, ...(u.typing?.substitutions ?? {}) },
+    },
   };
 }
+
+/** The math snippets configs used to start with, now the built-in `shorthands` group (off). */
+const OLD_DEFAULT_MATH = ['TT', 'dd', 'eps', 'inv', 'norm', 'pd'];
+const oldDefaults = (m: Record<string, string> | undefined) =>
+  !!m && Object.keys(m).sort().join(' ') === OLD_DEFAULT_MATH.join(' ') && m.eps === '\\varepsilon' && m.TT === '^{\\top}';
 
 export const configToText = (c: Config) => JSON.stringify(c, null, 2) + '\n';
 
