@@ -19,6 +19,19 @@
   const ed = new Editor();
   let page: HTMLElement;
 
+  // The caret stays solid while it moves (typing, arrows, clicks) and blinks once it rests.
+  let caretResting = $state(true);
+  let restTimer: ReturnType<typeof setTimeout> | undefined;
+  // (a relayout that leaves it where it was is not a move)
+  const caretAt = $derived(ed.caret ? `${ed.caret.r.x} ${ed.caret.r.y} ${ed.caret.r.h} ${ed.caret.shape}` : '');
+  $effect(() => {
+    void caretAt;
+    caretResting = false;
+    clearTimeout(restTimer);
+    restTimer = setTimeout(() => (caretResting = true), 600);
+    return () => clearTimeout(restTimer);
+  });
+
   onMount(() => {
     ed.page = page;
     // layout experiments: window.__nx (see $lib/dev)
@@ -154,6 +167,7 @@
       {#if ed.caret}
         <div
           class="caret {ed.caret.shape}"
+          class:resting={caretResting}
           style="transform: translate({ed.caret.r.x}px, {ed.caret.r.y}px); width: {ed.caret.r.w}px; height: {ed.caret.r.h}px;"
         ></div>
       {/if}
@@ -400,11 +414,12 @@
   }
   .caret.bar {
     background: var(--caret);
-    animation: blink 1.1s steps(1) infinite 0.5s;
   }
   .caret.math {
     background: var(--accent);
-    animation: blink 1.1s steps(1) infinite 0.5s;
+  }
+  .caret.resting {
+    animation: blink 1.1s steps(1) infinite;
   }
   @keyframes blink {
     50% {
