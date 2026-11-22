@@ -16,6 +16,7 @@ import { arrowGeo, attachAt, curveThrough, defaultBend, nextSide, sideName, type
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
+import { inlineItems, parsePaste, type PastedBlock } from './paste';
 import * as F from './files';
 import * as C from './config';
 import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
@@ -791,18 +792,22 @@ export class Editor {
     if (this.mode !== 'text') return;
     this.checkpoint();
     this.deleteSelection();
-    const blocks: Item[][] =
-      this.clip && this.clip.text === text
-        ? this.clip.blocks.map((items) => items.map(cloneItem))
-        : text.replace(/\r\n?/g, '\n').split('\n').map(textWithMath);
+    // our own copy comes back as it was; anything else is read for its math and markdown
+    const blocks: PastedBlock[] =
+      this.clip && this.clip.text === text ? this.clip.blocks.map((items) => ({ kind: 'p', items: items.map(cloneItem) })) : parsePaste(text);
     const blk = this.blk;
+    // pasted onto an empty line: it takes the first pasted line's kind (a heading, a list item)
+    if (!blk.items.length && blocks.length > 1 && this.b !== NOTE_B) {
+      blk.kind = blocks[0].kind;
+      if (blocks[0].indent) blk.indent = blocks[0].indent;
+    }
     const tail = blk.items.splice(this.o);
-    blk.items.push(...blocks[0]);
+    blk.items.push(...blocks[0].items);
     if (blocks.length === 1) {
-      this.o += blocks[0].length;
+      this.o += blocks[0].items.length;
       blk.items.push(...tail);
     } else {
-      const rest = blocks.slice(1).map((items) => block(items));
+      const rest = blocks.slice(1).map((p) => Object.assign(block(p.items, p.kind), p.indent ? { indent: p.indent } : {}));
       const last = rest[rest.length - 1];
       this.o = last.items.length;
       last.items.push(...tail);
@@ -4371,17 +4376,7 @@ function itemsToText(items: Item[]): string {
 }
 
 /** Plain text where `$...$` / `$$...$$` spans become math items. */
-export function textWithMath(line: string): Item[] {
-  const out: Item[] = [];
-  let last = 0;
-  for (const m of line.matchAll(/\$\$([^$]+)\$\$|\$([^$\n]+)\$/g)) {
-    out.push(...chars(line.slice(last, m.index)));
-    out.push(math(parseLatex(m[1] ?? m[2]).row, !!m[1]));
-    last = m.index! + m[0].length;
-  }
-  out.push(...chars(line.slice(last)));
-  return out;
-}
+export const textWithMath = inlineItems;
 
 /** Locate a node by id: the path to its row and its index there. */
 export function findNode(row: MRow, id: Id, path: Step[] = []): { path: Step[]; i: number } | null {
