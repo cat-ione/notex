@@ -932,6 +932,9 @@ export class Editor {
     if (this.note) this.commitNote();
     this.styling = null;
     this.hints = null;
+    // clicking again on the spot selects more: a word, the paragraph, everything (in a
+    // formula: the piece clicked, the formula, its paragraph)
+    if (e.detail >= 2 && !e.shiftKey && this.multiClick(h, e.detail)) return;
     if (h.math && !e.shiftKey) {
       this.anchor = null;
       this.msel = null;
@@ -949,6 +952,63 @@ export class Editor {
     this.dragging = true;
     this.goalX = null;
     this.setMode('text');
+  }
+
+  /** Select by repeated clicks (see mouseDownInner): `n` clicks at `h`. */
+  private multiClick(h: { pos: Pos; math?: { item: MathItem; id: Id | null; after: boolean } }, n: number): boolean {
+    const b = h.pos.b, blk = this.doc.blocks[b];
+    if (!blk) return false;
+    this.dragging = false;
+    this.mathDrag = null;
+    const select = (s: Pos, e: Pos) => {
+      this.anchor = s;
+      this.b = e.b;
+      this.o = e.o;
+      this.goalX = null;
+      this.setMode('text');
+    };
+    const paragraph = () => select({ b, o: 0 }, { b, o: blk.items.length });
+    if (h.math) {
+      if (n >= 4) return paragraph(), true;
+      const item = h.math.item;
+      this.anchor = null;
+      this.b = b;
+      this.o = h.pos.o;
+      if (n === 3) {
+        this.mc = { path: [], off: item.root.length };
+        this.setMode('math');
+        this.msel = 0;
+        return true;
+      }
+      // the piece clicked: its group (with its scripts) in its row
+      const f = h.math.id ? findNode(item.root, h.math.id) : null;
+      const cur = this.mathPos(h.math);
+      const path = f ? f.path : cur.path, i = f ? f.i : Math.max(0, cur.off - 1);
+      const g = groups(M.rowAt(item.root, path)).find(([s, e]) => i >= s && i <= e);
+      if (!g) return false;
+      this.mc = { path: [...path], off: g[1] + 1 };
+      this.setMode('math');
+      this.msel = g[0];
+      return true;
+    }
+    if (n >= 4) {
+      const last = this.doc.blocks.length - 1;
+      return select({ b: 0, o: 0 }, { b: last, o: this.doc.blocks[last].items.length }), true;
+    }
+    if (n === 3) return paragraph(), true;
+    // the word (or the run of spaces) clicked; just past a word's end, that word
+    const items = blk.items;
+    const word = (it?: Item) => it?.t === 'c' && !isSpace(it);
+    const space = (it?: Item) => !!it && isSpace(it);
+    let a = h.pos.o;
+    if (!word(items[a]) && word(items[a - 1])) a--;
+    const kind = word(items[a]) ? word : space(items[a]) ? space : null;
+    if (!kind) return false;
+    let z = a;
+    while (a > 0 && kind(items[a - 1])) a--;
+    while (z < items.length && kind(items[z])) z++;
+    select({ b, o: a }, { b, o: z });
+    return true;
   }
 
   /** The caret position inside a formula for a hit. */
@@ -2476,6 +2536,7 @@ export class Editor {
       if (st.i) c.i = true;
       this.blk.items.splice(this.o, 0, c);
       this.o++;
+      if (this.b !== NOTE_B) this.growAnchors(this.blk.items, this.o - 1);
       if (this.pendingStyle) this.pendingStyle.at = { b: this.b, o: this.o };
       if (k === ' ') this.markdownShortcut();
       if (k === '*') this.emphasisShortcut();
@@ -2576,6 +2637,34 @@ export class Editor {
     // what's typed next is plain again
     const st = this.typingStyle();
     this.pendingStyle = { ...st, [L === 2 ? 'b' : 'i']: false, at: { b: this.b, o: this.o } };
+  }
+
+  /**
+   * A letter typed onto a word a drawing is on (before it, after it, or inside it, with no
+   * space between) joins it: the shape or arrow end covers the longer word, not the old
+   * edges. A space starts a new word, which drawings leave alone.
+   */
+  private growAnchors(items: Item[], o: number) {
+    const c = items[o];
+    if (c.t !== 'c' || isSpace(c)) return;
+    const word = (it?: Item) => it?.t === 'c' && !isSpace(it);
+    const prev = word(items[o - 1]) ? items[o - 1].id : null, next = word(items[o + 1]) ? items[o + 1].id : null;
+    if (!prev && !next) return;
+    const grow = (ids: Id[]): Id[] | null => {
+      const pi = prev ? ids.indexOf(prev) : -1;
+      if (pi >= 0) return [...ids.slice(0, pi + 1), c.id, ...ids.slice(pi + 1)];
+      const ni = next ? ids.indexOf(next) : -1;
+      return ni >= 0 ? [...ids.slice(0, ni), c.id, ...ids.slice(ni)] : null;
+    };
+    for (const m of this.doc.marks) {
+      const r = grow(m.at);
+      if (r) m.at = r;
+    }
+    for (const a of this.doc.arrows) {
+      const f = grow(a.from), t = grow(a.to);
+      if (f) a.from = f;
+      if (t) a.to = t;
+    }
   }
 
   /** Last text snippet expansion, so an immediate Backspace can undo it. */
