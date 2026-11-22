@@ -4,13 +4,16 @@
   import { cubicOut } from 'svelte/easing';
   import type { Editor } from '$lib/editor.svelte';
   import { configToText, DEFAULT_CONFIG, openConfigExternally } from '$lib/config';
+  import { SUB_GROUPS } from '$lib/math/defs';
   import { isDesktop } from '$lib/files';
 
   let { ed }: { ed: Editor } = $props();
 
-  type Row = { label: string; value?: () => string; change?: (dir: 1 | -1) => void; act?: () => void; hint?: string };
+  type Row = { label: string; value?: () => string; change?: (dir: 1 | -1) => void; act?: () => void; hint?: string | (() => string) };
 
   const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+  const onCount = () => SUB_GROUPS.filter((g) => ed.config.typing.substitutions[g.id]).length;
+  const mineCount = () => Object.keys(ed.config.snippets.math).length + Object.keys(ed.config.snippets.text).length;
   const rows: Row[] = [
     { label: 'theme', value: () => ed.config.theme, change: (d) => ed.cycleTheme(d) },
     { label: 'text size', value: () => `${ed.config.fontSize}px`, change: (d) => ed.updateConfig({ fontSize: clamp(ed.config.fontSize + d, 11, 28) }) },
@@ -26,7 +29,8 @@
       change: () => ed.updateConfig({ typing: { ...ed.config.typing, autoMath: !ed.config.typing.autoMath } }),
     },
     { label: 'tips now and then', value: () => (ed.config.tips ? 'on' : 'off'), change: () => ed.updateConfig({ tips: !ed.config.tips }) },
-    { label: 'snippets, themes & css…', act: () => openEditor(), hint: 'edit the config' },
+    { label: 'substitutions…', act: () => openSubs(), hint: () => `${onCount()} on · ${mineCount()} yours` },
+    { label: 'themes & css…', act: () => openEditor(), hint: 'edit the config' },
     ...(isDesktop()
       ? [{ label: 'open config in my editor', act: async () => { const p = await openConfigExternally(); if (p) ed.flash(`opened ${p} — changes load when you come back`); }, hint: 'external' } as Row]
       : []),
@@ -37,6 +41,78 @@
   let error = $state('');
   let area: HTMLTextAreaElement | undefined = $state();
 
+  // ── substitutions ──
+  type Kind = 'math' | 'text';
+  type Mine = { kind: Kind; trigger: string; to: string };
+  const mine = $derived<Mine[]>(
+    (['math', 'text'] as const).flatMap((kind) => Object.entries(ed.config.snippets[kind]).map(([trigger, to]) => ({ kind, trigger, to }))),
+  );
+  // the list: the groups, your own, then the "add" line
+  const subCount = $derived(SUB_GROUPS.length + mine.length + 1);
+  let subSel = $state(0);
+  /** The one being edited (null: adding a new one). */
+  let editing = $state<Mine | null>(null);
+  let form = $state<Mine>({ kind: 'math', trigger: '', to: '' });
+  let formError = $state('');
+  let triggerEl: HTMLInputElement | undefined = $state();
+  let toEl: HTMLInputElement | undefined = $state();
+
+  const same = (a: Mine | null, b: Mine) => !!a && a.kind === b.kind && a.trigger === b.trigger;
+
+  function openSubs() {
+    ed.settingsView = 'subs';
+    subSel = 0;
+  }
+
+  function toggleGroup(id: string) {
+    const s = ed.config.typing.substitutions;
+    ed.updateConfig({ typing: { ...ed.config.typing, substitutions: { ...s, [id]: !s[id] } } });
+  }
+
+  async function startForm(m: Mine | null) {
+    editing = m;
+    form = m ? { ...m } : { kind: form.kind, trigger: '', to: '' };
+    formError = '';
+    subSel = m ? SUB_GROUPS.length + mine.indexOf(m) : subCount - 1;
+    await tick();
+    (m ? toEl : triggerEl)?.focus();
+  }
+
+  function withoutOld(sn: typeof ed.config.snippets, m: Mine | null) {
+    const out = { math: { ...sn.math }, text: { ...sn.text } };
+    if (m) delete out[m.kind][m.trigger];
+    return out;
+  }
+
+  function saveForm() {
+    const trigger = form.trigger.trim();
+    if (!trigger) return void ((formError = 'type what triggers it'), triggerEl?.focus());
+    if (/\s/.test(trigger)) return void ((formError = 'a trigger has no spaces'), triggerEl?.focus());
+    if (!form.to) return void ((formError = 'and what it becomes'), toEl?.focus());
+    const sn = withoutOld(ed.config.snippets, editing);
+    sn[form.kind][trigger] = form.to;
+    ed.updateConfig({ snippets: sn });
+    ed.flash(`${trigger} → ${form.to}`);
+    editing = null;
+    form = { kind: form.kind, trigger: '', to: '' };
+    formError = '';
+    triggerEl?.focus();
+  }
+
+  function remove(m: Mine) {
+    ed.updateConfig({ snippets: withoutOld(ed.config.snippets, m) });
+    if (same(editing, m)) editing = null;
+    subSel = Math.min(subSel, subCount - 2);
+  }
+
+  function endForm() {
+    editing = null;
+    form = { kind: form.kind, trigger: '', to: '' };
+    formError = '';
+    (document.activeElement as HTMLElement | null)?.blur();
+  }
+
+  // ── the config text ──
   async function openEditor() {
     text = configToText($state.snapshot(ed.config) as typeof ed.config);
     error = '';
@@ -57,6 +133,32 @@
   function close() {
     ed.showSettings = false;
     ed.settingsEditing = false;
+    ed.settingsView = 'main';
+  }
+
+  function subsKey(e: KeyboardEvent) {
+    const typing = e.target instanceof HTMLInputElement;
+    if (typing) {
+      if (e.key === 'Escape') endForm();
+      else if (e.key === 'Enter' && e.target === triggerEl && !form.to) toEl?.focus();
+      else if (e.key === 'Enter') saveForm();
+      else return;
+      e.preventDefault();
+      return;
+    }
+    const g = SUB_GROUPS[subSel];
+    const m = mine[subSel - SUB_GROUPS.length];
+    switch (e.key) {
+      case 'Escape': ed.settingsView = 'main'; break;
+      case 'ArrowDown': subSel = (subSel + 1) % subCount; break;
+      case 'ArrowUp': subSel = (subSel - 1 + subCount) % subCount; break;
+      case 'ArrowLeft': case 'ArrowRight': case ' ': if (g) toggleGroup(g.id); break;
+      case 'Enter': g ? toggleGroup(g.id) : startForm(m ?? null); break;
+      case 'Delete': case 'Backspace': if (m) remove(m); break;
+      case 'a': case 'n': startForm(null); break;
+      default: return;
+    }
+    e.preventDefault();
   }
 
   function onKey(e: KeyboardEvent) {
@@ -66,6 +168,7 @@
       else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { saveText(); e.preventDefault(); }
       return;
     }
+    if (ed.settingsView === 'subs') return subsKey(e);
     const r = rows[sel];
     switch (e.key) {
       case 'Escape': close(); break;
@@ -88,8 +191,61 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="scrim" onmousedown={(e) => e.target === e.currentTarget && close()}>
-  <div class="panel" class:wide={ed.settingsEditing} transition:fly={{ y: 8, duration: 180, easing: cubicOut }}>
-    {#if !ed.settingsEditing}
+  <div class="panel" class:wide={ed.settingsEditing} class:mid={!ed.settingsEditing && ed.settingsView === 'subs'} transition:fly={{ y: 8, duration: 180, easing: cubicOut }}>
+    {#if ed.settingsEditing}
+      <div class="title">config <span>· changes load when saved</span></div>
+      <textarea bind:this={area} bind:value={text} spellcheck="false"></textarea>
+      {#if error}<div class="error" transition:fly={{ y: -4, duration: 150 }}>{error}</div>{/if}
+      <div class="actions">
+        <button onclick={() => (text = configToText(DEFAULT_CONFIG))}>reset to defaults</button>
+        <span class="spacer"></span>
+        <button onclick={() => (ed.settingsEditing = false)}>cancel <kbd>esc</kbd></button>
+        <button class="primary" onclick={saveText}>save <kbd>ctrl+⏎</kbd></button>
+      </div>
+    {:else if ed.settingsView === 'subs'}
+      <div class="title">
+        <button class="back" onclick={() => (ed.settingsView = 'main')} data-tip="back to settings">‹</button>
+        substitutions <span>· made as you type; anything off is still a \command</span>
+      </div>
+      <div class="section">in math</div>
+      {#each SUB_GROUPS as g, i}
+        {@const on = !!ed.config.typing.substitutions[g.id]}
+        <div class="row" class:sel={i === subSel} onmouseenter={() => (subSel = i)} onclick={() => toggleGroup(g.id)}>
+          <span class="label">{g.label}</span>
+          <span class="example">{g.example}</span>
+          <span class="switch" class:on>{on ? 'on' : 'off'}</span>
+        </div>
+      {/each}
+      <div class="section">yours <span>· win over the ones above</span></div>
+      {#each mine as m, j (m.kind + m.trigger)}
+        {@const i = SUB_GROUPS.length + j}
+        <div class="row" class:sel={i === subSel} class:editing={same(editing, m)} onmouseenter={() => (subSel = i)} onclick={() => startForm(m)}>
+          <span class="kind">{m.kind}</span>
+          <span class="trigger">{m.trigger}</span>
+          <span class="to">{m.to}</span>
+          <button class="del" tabindex="-1" data-tip="remove" onclick={(e) => { e.stopPropagation(); remove(m); }}>×</button>
+        </div>
+      {/each}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="row form" class:sel={subSel === subCount - 1} onmouseenter={() => (subSel = subCount - 1)}>
+        <button
+          class="kind toggle"
+          tabindex="-1"
+          data-tip={form.kind === 'math' ? 'typed in math, becomes LaTeX (# marks the caret)' : 'typed in text, becomes text (may hold $math$)'}
+          onclick={() => (form.kind = form.kind === 'math' ? 'text' : 'math')}>{form.kind}</button
+        >
+        <input class="trigger" bind:this={triggerEl} bind:value={form.trigger} placeholder={editing ? '' : '+ trigger'} spellcheck="false" onfocus={() => (subSel = subCount - 1)} />
+        <span class="arrow">→</span>
+        <input class="to" bind:this={toEl} bind:value={form.to} placeholder={form.kind === 'math' ? '\\mathbb{R}' : 'becomes'} spellcheck="false" />
+        <button class="save" tabindex="-1" onclick={saveForm}>{editing ? 'save' : 'add'}</button>
+      </div>
+      {#if formError}<div class="error inset" transition:fly={{ y: -4, duration: 150 }}>{formError}</div>{/if}
+      <div class="foot">
+        {#if subSel < SUB_GROUPS.length}↑↓ choose · ←→ switch · a add · esc back
+        {:else if subSel < subCount - 1}↑↓ choose · ⏎ edit · del remove · esc back
+        {:else}⏎ add · esc done{/if}
+      </div>
+    {:else}
       <div class="title">settings</div>
       {#each rows as r, i}
         <div class="row" class:sel={i === sel} onmouseenter={() => (sel = i)} onclick={() => (r.act ? r.act() : r.change?.(1))}>
@@ -101,21 +257,11 @@
               <button tabindex="-1" onclick={(e) => { e.stopPropagation(); r.change?.(1); }}>›</button>
             </span>
           {:else}
-            <span class="hint">{r.hint} ⏎</span>
+            <span class="hint">{typeof r.hint === 'function' ? r.hint() : r.hint} ⏎</span>
           {/if}
         </div>
       {/each}
       <div class="foot">↑↓ choose · ←→ change · esc close</div>
-    {:else}
-      <div class="title">config <span>· snippets: <code>"trigger": "LaTeX with # for the caret"</code></span></div>
-      <textarea bind:this={area} bind:value={text} spellcheck="false"></textarea>
-      {#if error}<div class="error" transition:fly={{ y: -4, duration: 150 }}>{error}</div>{/if}
-      <div class="actions">
-        <button onclick={() => (text = configToText(DEFAULT_CONFIG))}>reset to defaults</button>
-        <span class="spacer"></span>
-        <button onclick={() => (ed.settingsEditing = false)}>cancel <kbd>esc</kbd></button>
-        <button class="primary" onclick={saveText}>save <kbd>ctrl+⏎</kbd></button>
-      </div>
     {/if}
   </div>
 </div>
@@ -130,9 +276,13 @@
     background: var(--scrim);
     font-family: var(--mono);
     font-size: 12.5px;
+    /* what you type, as typed: -> not an arrow ligature */
+    font-variant-ligatures: none;
   }
   .panel {
     width: min(460px, 92vw);
+    max-height: 88vh;
+    overflow-y: auto;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -140,6 +290,7 @@
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
     transition: width 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
   }
+  .panel.mid { width: min(600px, 94vw); }
   .panel.wide {
     width: min(760px, 94vw);
     padding: 16px 16px 12px;
@@ -152,11 +303,28 @@
   }
   .wide .title { padding: 0 2px 10px; }
   .title span { color: var(--muted); font-weight: 400; font-size: 11.5px; }
-  code { color: var(--fg); }
+  .back {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font: inherit;
+    cursor: pointer;
+    padding: 0 6px 0 0;
+  }
+  .back:hover { color: var(--accent); }
+  .section {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 10px 18px 4px;
+  }
+  .section span { text-transform: none; letter-spacing: 0; }
   .row {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
     padding: 6px 18px;
     cursor: pointer;
     color: var(--fg);
@@ -168,6 +336,60 @@
     border-left-color: var(--accent);
   }
   .row.sel .label { color: var(--accent); }
+  .row.editing { opacity: 0.45; }
+  .label { white-space: nowrap; }
+  .example { flex: 1; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .switch { width: 3ch; text-align: right; color: var(--muted); }
+  .switch.on { color: var(--accent); }
+  .kind { width: 4ch; color: var(--muted); font-size: 11px; }
+  .trigger { width: 12ch; color: var(--accent); }
+  .to { flex: 1; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .arrow { color: var(--muted); }
+  .del {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font: inherit;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 100ms ease;
+  }
+  .row.sel .del { opacity: 1; }
+  .del:hover { color: var(--danger); }
+  .form { cursor: default; }
+  .form input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font: inherit;
+    outline: none;
+    min-width: 0;
+  }
+  .form input:focus { border-color: var(--accent); }
+  .form input::placeholder { color: var(--muted); opacity: 0.7; }
+  .form .trigger { flex: none; }
+  .toggle {
+    background: none;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 0;
+    width: 5ch;
+  }
+  .toggle:hover { color: var(--accent); border-color: var(--accent); }
+  .save {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    border-radius: 4px;
+    padding: 2px 10px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .save:hover { border-color: var(--accent); color: var(--accent); }
   .value { display: flex; align-items: center; gap: 8px; }
   .value button {
     background: none;
@@ -195,6 +417,7 @@
   }
   textarea:focus { border-color: var(--accent); }
   .error { color: var(--danger); padding: 6px 2px 0; }
+  .error.inset { padding: 4px 18px 0; }
   .actions { display: flex; gap: 8px; padding-top: 10px; align-items: center; }
   .spacer { flex: 1; }
   .actions button {

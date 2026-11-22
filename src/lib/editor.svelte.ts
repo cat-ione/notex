@@ -94,6 +94,8 @@ export class Editor {
   config = $state<C.Config>(C.DEFAULT_CONFIG);
   showSettings = $state(false);
   settingsEditing = $state(false);
+  /** Which page of the settings panel: the main list, or the substitutions. */
+  settingsView = $state<'main' | 'subs'>('main');
 
   /** The note's file (path is null for unsaved notes or in the browser). */
   file = $state<{ path: string | null; name: string }>({ path: null, name: 'untitled' });
@@ -2292,6 +2294,7 @@ export class Editor {
     if (k === 'C-,') {
       this.showSettings = !this.showSettings;
       this.settingsEditing = false;
+      this.settingsView = 'main';
       e.preventDefault();
       return;
     }
@@ -3143,6 +3146,7 @@ export class Editor {
       { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i') },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
+      { name: 'substitutions', desc: 'what typing turns into symbols, and your own', run: () => ((this.settingsView = 'subs'), (this.showSettings = true)) },
       { name: 'config', desc: 'edit the config file', run: () => this.editConfig() },
       { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
       { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
