@@ -4,7 +4,7 @@
       ['$', 'start math ($$ for a centered block)'], ['\\  or  ctrl+k', 'commands'],
       ['# ␣   ## ␣   - ␣', 'heading, subheading, list'], ['1. ␣   tab  shift+tab', 'numbered list, nest / un-nest'],
       ['ctrl+b  ctrl+i', 'bold, italic (or **word**, *word*)'], ['x^2  a_n', 'in text: becomes math'],
-      ['ctrl+f  F3', 'find, next match'], ['ctrl+s  o  n', 'save, open, new note'], ['ctrl+,', 'settings, snippets, themes'], ['F1', 'this help'],
+      ['ctrl+f  F3', 'find, next match'], ['alt+↑ ↓', 'move the paragraph (or the selected ones)'], ['ctrl+s  o  n', 'save, open, new note'], ['ctrl+,', 'settings, snippets, themes'], ['F1', 'this help'],
     ]],
     ['math', [
       ['/', 'fraction from what you just typed'], ['^  _', 'one thing up / down: x^2, x^10, e^-x'], ['^(…)  _(…)', 'more than one: e^(-x^2/2), int_0^(2pi)'],

@@ -2435,6 +2435,7 @@ export class Editor {
 
     switch (k) {
       case 'Escape': this.anchor = null; return true;
+      case 'A-Up': case 'A-Down': this.moveBlocks(k === 'A-Up' ? -1 : 1); return true;
       case 'C-a': this.selectAll(); return true;
       case 'C-z': this.undo(); return true;
       case 'C-y': case 'C-S-z': this.redo(); return true;
@@ -2676,6 +2677,23 @@ export class Editor {
       if (f) a.from = f;
       if (t) a.to = t;
     }
+  }
+
+  /**
+   * Alt+↑ / Alt+↓: move the paragraph (or the ones the selection touches) up / down past
+   * its neighbour, the caret and selection with it; drawings on it come along (they're
+   * on its words, not on places).
+   */
+  private moveBlocks(d: -1 | 1) {
+    const s = this.selection;
+    const first = s ? s.s.b : this.b, last = s ? s.e.b : this.b;
+    const blocks = this.doc.blocks;
+    if (d < 0 ? first === 0 : last === blocks.length - 1) return;
+    this.checkpoint();
+    const moved = blocks.splice(first, last - first + 1);
+    blocks.splice(first + d, 0, ...moved);
+    this.b += d;
+    if (this.anchor) this.anchor = { b: this.anchor.b + d, o: this.anchor.o };
   }
 
   /** Last text snippet expansion, so an immediate Backspace can undo it. */
@@ -4212,8 +4230,8 @@ export class Editor {
       case 'C-a': this.anchor = { b: NOTE_B, o: 0 }; this.o = end; return true;
       case 'Backspace': case 'C-Backspace': if (this.o === 0 && !this.selection) return true; break;
       case 'Delete': case 'C-Delete': if (this.o === end && !this.selection) return true; break;
-      // (the page's command palette and draw menu are for the page)
-      case 'C-k': case 'C-d': return true;
+      // (the page's command palette, draw menu and paragraph moves are for the page)
+      case 'C-k': case 'C-d': case 'A-Up': case 'A-Down': return true;
       case '\\': this.checkpoint('type'); this.blk.items.splice(this.o, 0, ch('\\')); this.o++; return true;
     }
     return this.textKey(k);
