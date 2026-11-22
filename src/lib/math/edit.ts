@@ -100,6 +100,42 @@ export function moveRight(root: MRow, cur: MCursor): boolean {
   return true;
 }
 
+/**
+ * Ctrl+→ / Ctrl+←: by a whole piece of the row: a run of letters or digits (with their
+ * scripts), or one symbol or structure (a fraction, a root… as a whole, not into it). At
+ * the end of a box, out of it. False at the edge of the formula (the caret leaves it).
+ */
+export function wordMove(root: MRow, cur: MCursor, dir: 1 | -1): boolean {
+  const r = rowAt(root, cur.path);
+  const alnum = (n: MNode | undefined) => n?.k === 'sym' && /^[A-Za-z0-9.]$/.test(n.v);
+  // the base of the group ending at j (a script or prime belongs to the node before it)
+  const base = (j: number) => {
+    while (j > 0 && isAttached(r[j])) j--;
+    return j;
+  };
+  if (dir > 0) {
+    if (cur.off >= r.length) return exitAfter(root, cur);
+    let i = cur.off;
+    if (alnum(r[i])) while (i < r.length && alnum(r[i])) i = pastScripts(r, i + 1);
+    else i = pastScripts(r, i + 1);
+    cur.off = i;
+    return true;
+  }
+  if (cur.off === 0) {
+    const st = cur.path.pop();
+    if (!st) return false;
+    // out of the box, to before it (and before its base, if the box is a script)
+    const row = rowAt(root, cur.path);
+    cur.off = st.i;
+    while (cur.off > 0 && isAttached(row[cur.off])) cur.off--;
+    return true;
+  }
+  let i = base(cur.off - 1);
+  if (alnum(r[i])) while (i > 0 && alnum(r[base(i - 1)])) i = base(i - 1);
+  cur.off = i;
+  return true;
+}
+
 export function moveLeft(root: MRow, cur: MCursor): boolean {
   const r = rowAt(root, cur.path);
   if (cur.off > 0) {

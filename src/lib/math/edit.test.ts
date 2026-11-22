@@ -246,3 +246,30 @@ describe('selection ranges', () => {
     expect(toLatex(root, true, null, { path: [], s: 1, e: 3 })).toMatch(/htmlClass\{nx-sel\}\{.*\+.*b.*\}$/);
   });
 });
+
+describe('Ctrl+arrows in math', () => {
+  // the caret's offsets visited by repeated Ctrl+← from the end of the formula
+  const stops = (keys: string, dir: 1 | -1) => {
+    const { root, cur } = typed(keys);
+    if (dir > 0) (cur.path = []), (cur.off = 0);
+    const seen: number[] = [];
+    while (M.wordMove(root, cur, dir)) seen.push(cur.path.length ? -1 : cur.off);
+    return seen;
+  };
+  it('jump a run of letters or digits, or one symbol, scripts and all', () => {
+    // x^2 + abc + 12: [x, sup, +, a, b, c, +, 1, 2]
+    expect(stops('x^2+abc+12', -1)).toEqual([7, 6, 3, 2, 0]);
+    expect(stops('x^2+abc+12', 1)).toEqual([2, 3, 6, 7, 9]);
+  });
+  it('jump a structure whole, and step out of a box at its edge', () => {
+    const { root, cur } = typed('a+(b+c)/d');
+    // inside the denominator, at its start: Ctrl+← leaves the fraction (to before it)
+    cur.path = [{ i: 2, s: 1 }];
+    cur.off = 0;
+    expect(M.wordMove(root, cur, -1)).toBe(true);
+    expect(cur).toEqual({ path: [], off: 2 });
+    // from there: the fraction in one step
+    expect(M.wordMove(root, cur, 1)).toBe(true);
+    expect(cur.off).toBe(3);
+  });
+});

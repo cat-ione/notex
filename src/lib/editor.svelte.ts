@@ -2691,7 +2691,7 @@ export class Editor {
     if (this.island && this.island !== item.id) this.island = null;
 
     // Selection inside the formula.
-    if (/^(S-(Left|Right|Up|Home|End)|C-a)$/.test(k)) {
+    if (/^((C-)?S-(Left|Right)|S-(Up|Home|End)|C-a)$/.test(k)) {
       this.extendMathSel(k);
       return true;
     }
@@ -2722,6 +2722,8 @@ export class Editor {
       case 'Escape': this.exitMath(true); return true;
       case 'Left': case 'A-h': if (!M.moveLeft(root, cur)) this.exitMath(false); return true;
       case 'Right': case 'A-l': if (!M.moveRight(root, cur)) this.exitMath(true); return true;
+      case 'C-Left': if (!M.wordMove(root, cur, -1)) this.exitMath(false); return true;
+      case 'C-Right': if (!M.wordMove(root, cur, 1)) this.exitMath(true); return true;
       case 'Up': case 'A-k': M.moveVert(root, cur, 'up'); return true;
       case 'Down': case 'A-j': M.moveVert(root, cur, 'down'); return true;
       case 'Home': cur.path = []; cur.off = 0; return true;
@@ -2819,6 +2821,15 @@ export class Editor {
         cur.off++;
         while (cur.off < row.length && script(cur.off)) cur.off++;
         return;
+      // by whole pieces, as Ctrl+arrows move (out of the box at its edge)
+      case 'C-S-Left': case 'C-S-Right': {
+        const d = k === 'C-S-Right' ? 1 : -1;
+        if (cur.off === (d > 0 ? row.length : 0)) return grow(d);
+        const c = { path: [...cur.path], off: cur.off };
+        M.wordMove(root, c, d);
+        cur.off = c.off;
+        return;
+      }
       case 'S-Up': return grow(1);
       case 'S-Home': cur.off = 0; return;
       case 'S-End': cur.off = row.length; return;
