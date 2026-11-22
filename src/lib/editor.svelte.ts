@@ -14,7 +14,7 @@
 import { tick } from 'svelte';
 import { arrowGeo, attachAt, curveThrough, defaultBend, nextSide, sideName, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
-import { besideNote, labelOffsetAt, layoutRow, measureLabel, openMath, pinnedLeader, provisional, type RowNote } from './labels';
+import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import * as F from './files';
 import * as C from './config';
@@ -25,7 +25,7 @@ import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { allIds, block, ch, chars, cloneRow, cmd, isListKind, MAX_INDENT, math, sym, uid, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
-export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'label';
+export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette';
 
 export type Loc =
   | { k: 'word'; b: number; s: number; e: number }
@@ -37,7 +37,10 @@ export type Loc =
 export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
-type LabelSnap = { text: string; at: number; anchor: number | null };
+/** A step of a note's undo history. */
+type NoteSnap = { items: Item[]; o: number; mode: 'text' | 'math'; mc: MCursor; anchor: Pos | null };
+/** The block index that stands for the note being typed (see Editor.blockAt). */
+export const NOTE_B = -1;
 /** A find match: characters [s, e) of block b, (math) the formula at s, or (note) a drawing's note. */
 export type FindMatch = { b: number; s: number; e: number; math?: true; note?: Id };
 /**
@@ -159,7 +162,7 @@ export class Editor {
   // ───────────────────────── helpers ─────────────────────────
 
   get blk(): Block {
-    return this.doc.blocks[this.b];
+    return this.blockAt(this.b);
   }
   get mathItem(): MathItem | null {
     const it = this.blk?.items[this.o];
@@ -458,6 +461,7 @@ export class Editor {
   }
 
   checkpoint(kind = 'edit') {
+    if (this.note) return this.noteCheckpoint(kind);
     // an edit follows: lookups made before it may not hold afterwards
     if (this.frame) this.frame.blockOfs = undefined;
     this.dirty = true;
@@ -499,11 +503,11 @@ export class Editor {
     this.setMode('text');
     this.touch();
   }
-  undo = () => this.restore(this.undoStack, this.redoStack, 'undo');
-  redo = () => this.restore(this.redoStack, this.undoStack, 'redo');
+  undo = () => (this.note ? this.noteUndo(-1) : this.restore(this.undoStack, this.redoStack, 'undo'));
+  redo = () => (this.note ? this.noteUndo(1) : this.restore(this.redoStack, this.undoStack, 'redo'));
 
   setMode(m: Mode) {
-    if (m !== 'hint' && m !== 'palette' && m !== 'label') this.prevMode = m;
+    if (m !== 'hint' && m !== 'palette') this.prevMode = m;
     if ((m === 'text' || m === 'math') && m !== this.mode) this.message = '';
     if (m !== 'palette' && (m !== 'math' || this.mode !== 'math')) this.msel = null;
     this.mode = m;
@@ -522,6 +526,10 @@ export class Editor {
   }
 
   private els(id: Id, b?: number): Element[] {
+    if (this.note && (b === NOTE_B || b === undefined)) {
+      const found = [...(this.noteRoot()?.querySelectorAll(`[data-nx="${id}"]`) ?? [])];
+      if (found.length || b === NOTE_B) return found;
+    }
     const bi = b ?? this.blockOf(id);
     return bi < 0 ? [] : (this.blockMap(bi).get(id) ?? []);
   }
@@ -673,11 +681,7 @@ export class Editor {
 
   /** Viewport rect of the caret stop before item `o` of block `b` (or end of block). */
   private stopRect(b: number, o: number): DOMRect | null {
-    const blk = this.doc.blocks[b];
-    const e = this.frame
-      ? (o < blk.items.length ? this.el(blk.items[o].id, b) : (this.blockMap(b).get('eol')?.[0] ?? null))
-      : o < blk.items.length ? this.el(blk.items[o].id) : this.page?.querySelector(`[data-eol="${blk.id}"]`);
-    return e?.getBoundingClientRect() ?? null;
+    return this.stopEl(b, o)?.getBoundingClientRect() ?? null;
   }
 
   // ───────────────────────── selection ─────────────────────────
@@ -703,7 +707,7 @@ export class Editor {
     if (!r) return [];
     const out: Item[][] = [];
     for (let b = r.s.b; b <= r.e.b; b++) {
-      const items = this.doc.blocks[b].items;
+      const items = this.blockAt(b).items;
       out.push(items.slice(b === r.s.b ? r.s.o : 0, b === r.e.b ? r.e.o : items.length));
     }
     return out;
@@ -714,8 +718,8 @@ export class Editor {
     const r = this.selection;
     this.anchor = null;
     if (!r) return false;
-    const first = this.doc.blocks[r.s.b];
-    const last = this.doc.blocks[r.e.b];
+    const first = this.blockAt(r.s.b);
+    const last = this.blockAt(r.e.b);
     const tail = last.items.slice(r.e.o);
     first.items.splice(r.s.o, Infinity, ...tail);
     if (r.e.b > r.s.b) this.doc.blocks.splice(r.s.b + 1, r.e.b - r.s.b);
@@ -736,15 +740,6 @@ export class Editor {
 
   /** Handle a DOM copy/cut event. */
   copy(e: ClipboardEvent, cut: boolean) {
-    if (this.mode === 'label') {
-      const sel = this.labelSel();
-      e.preventDefault();
-      if (!sel) return;
-      e.clipboardData?.setData('text/plain', this.label!.text.slice(...sel));
-      if (cut) this.labelRecord('other'), this.labelInsert('');
-      this.touch();
-      return;
-    }
     const range = this.mathSelRange;
     if (this.mode === 'math' && range) {
       // Part of a formula: copy it as LaTeX, which pastes back as structure.
@@ -782,12 +777,8 @@ export class Editor {
 
   /** Paste text at the caret (into the formula or note being edited, if any). */
   private pasteText(text: string) {
-    if (this.mode === 'label') {
-      this.labelRecord('other');
-      this.labelInsert(text.replace(/\s*\n\s*/g, ' '));
-      this.touch();
-      return;
-    }
+    // a note is one line
+    if (this.note) text = text.replace(/\s*\r?\n\s*/g, ' ');
     if (this.mode === 'math') {
       this.checkpoint();
       const range = this.mathSelRange;
@@ -833,7 +824,16 @@ export class Editor {
     if (!this.page) return null;
     const hit = this.under(x, y);
     const mel = hit?.closest('.math');
-    if (mel && this.page.contains(mel)) {
+    if (hit && mel && this.page.contains(mel)) {
+      const r = this.mathAt(mel, hit, x, y);
+      if (r) return r;
+    }
+    return this.textAt(x, y);
+  }
+
+  /** On a formula (element `mel`, `hit` the element under the point): the node there. */
+  private mathAt(mel: Element, hit: Element, x: number, y: number): { pos: Pos; math: { item: MathItem; id: Id | null; after: boolean } } | null {
+    {
       const pos = this.findItem(mel.getAttribute('data-nx')!);
       if (pos) {
         // On a glyph (a letter, an operator, a delimiter): the node it belongs to. On
@@ -855,9 +855,15 @@ export class Editor {
         }
         const id = node && node !== mel ? node.getAttribute('data-nx') : null;
         const r = node?.getBoundingClientRect();
-        return { pos, math: { item: this.doc.blocks[pos.b].items[pos.o] as MathItem, id, after: !r || x > r.left + r.width / 2 } };
+        return { pos, math: { item: this.blockAt(pos.b).items[pos.o] as MathItem, id, after: !r || x > r.left + r.width / 2 } };
       }
     }
+    return null;
+  }
+
+  /** The caret stop nearest a point in the page's text. */
+  private textAt(x: number, y: number): { pos: Pos } | null {
+    if (!this.page) return null;
     // Find the block under (or nearest to) y, then the nearest caret stop on that line.
     const blocks = [...this.page.children].filter((e) => e.classList.contains('block'));
     let bi = 0, bd = Infinity;
@@ -885,6 +891,10 @@ export class Editor {
   }
 
   private findItem(id: Id): Pos | null {
+    if (this.note) {
+      const o = this.note.blk.items.findIndex((i) => i.id === id);
+      if (o >= 0) return { b: NOTE_B, o };
+    }
     for (let b = 0; b < this.doc.blocks.length; b++) {
       const o = this.doc.blocks[b].items.findIndex((i) => i.id === id);
       if (o >= 0) return { b, o };
@@ -904,7 +914,7 @@ export class Editor {
     }
     if (e.button !== 0) return;
     e.preventDefault();
-    if (e.altKey && (this.mode === 'text' || this.mode === 'math' || this.mode === 'style' || this.mode === 'label') && this.beginAltDraw(e)) return;
+    if (e.altKey && (this.mode === 'text' || this.mode === 'math' || this.mode === 'style') && this.beginAltDraw(e)) return;
     if (this.mode === 'pick') {
       const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
       const loc = id ? this.locFromId(id) : null;
@@ -919,10 +929,9 @@ export class Editor {
     if (!h) return;
     if (this.mode === 'palette') this.closePalette();
     // clicking away from a note being typed keeps it, as leaving a text field would
-    if (this.mode === 'label' && this.label) this.commitLabel();
+    if (this.note) this.commitNote();
     this.styling = null;
     this.hints = null;
-    this.label = null;
     if (h.math && !e.shiftKey) {
       this.anchor = null;
       this.msel = null;
@@ -996,8 +1005,6 @@ export class Editor {
     else if (this.hovered === id) this.hovered = null;
   }
 
-  /** Selecting inside the note being typed by dragging. */
-  private labelDrag: { id: Id } | null = null;
   /** A press on a note: a drag from it moves the note. */
   private noteDrag: { id: Id; x: number; y: number; moved: boolean; from?: NoteAt } | null = null;
 
@@ -1015,20 +1022,36 @@ export class Editor {
     if (e.button === 1) return this.deleteDrawing(id);
     this.withFrame(() => {
       this.menu = null;
-      const lb = this.label;
-      if (this.mode === 'label' && lb && this.styling === id) {
-        const at = labelOffsetAt(e.currentTarget as Element, e.clientX, e.clientY);
-        const t = lb.text;
-        if (e.detail >= 3) (lb.anchor = 0), (lb.at = t.length);
-        else if (e.detail === 2) {
-          let a = at, b = at;
-          while (a > 0 && !/\s/.test(t[a - 1])) a--;
-          while (b < t.length && !/\s/.test(t[b])) b++;
-          (lb.anchor = a), (lb.at = b);
-        } else if (e.shiftKey) (lb.anchor ??= lb.at), (lb.at = at);
-        else (lb.anchor = null), (lb.at = at);
-        if (lb.anchor === lb.at) lb.anchor = null;
-        this.labelDrag = e.detail === 1 ? { id } : null;
+      if (this.note?.id === id) {
+        // in the note being typed: as a click on the page's text would
+        const h = this.noteHit(e.clientX, e.clientY);
+        if (!h) return;
+        const items = this.note.blk.items;
+        if (e.detail >= 3) {
+          this.anchor = { b: NOTE_B, o: 0 };
+          this.o = items.length;
+          if (this.mode !== 'text') this.setMode('text');
+        } else if (e.detail === 2 && !h.math) {
+          let a = h.pos.o, z = h.pos.o;
+          const word = (it?: Item) => it?.t === 'c' && !isSpace(it);
+          while (a > 0 && word(items[a - 1])) a--;
+          while (z < items.length && word(items[z])) z++;
+          this.anchor = { b: NOTE_B, o: a };
+          this.o = z;
+        } else if (h.math && !e.shiftKey) {
+          this.anchor = null;
+          this.msel = null;
+          this.o = h.pos.o;
+          this.mc = this.mathPos(h.math);
+          this.setMode('math');
+          this.mathDrag = { b: NOTE_B, o: h.pos.o, from: { path: [...this.mc.path], off: this.mc.off } };
+          this.dragging = true;
+        } else {
+          if (this.mode !== 'text') this.setMode('text');
+          this.moveTo(h.pos, e.shiftKey);
+          if (!e.shiftKey) this.anchor = { ...h.pos };
+          this.dragging = true;
+        }
         this.touch();
         return;
       }
@@ -1255,7 +1278,7 @@ export class Editor {
 
   /** Double-click on a note: type in it, the caret where it was clicked. */
   noteDblClick(id: Id, e: MouseEvent) {
-    if (this.mode === 'label' && this.styling === id) return; // a double press in it selects a word
+    if (this.note?.id === id) return; // (a double press in it selects a word: noteDown)
     const at = labelOffsetAt(e.currentTarget as Element, e.clientX, e.clientY);
     this.withFrame(() => {
       if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
@@ -1271,15 +1294,6 @@ export class Editor {
       this.editNote();
       this.touch();
     });
-  }
-
-  private dragLabelSel(e: MouseEvent) {
-    const lb = this.label, el = this.labelDrag && this.noteEl(this.labelDrag.id);
-    if (!lb || !el || this.mode !== 'label') return void (this.labelDrag = null);
-    const at = labelOffsetAt(el, e.clientX, e.clientY);
-    if (at !== lb.at) (lb.anchor ??= lb.at), (lb.at = at);
-    if (lb.anchor === lb.at) lb.anchor = null;
-    this.touch();
   }
 
   private drawing(id: Id): Arrow | Mark | undefined {
@@ -1331,8 +1345,8 @@ export class Editor {
     const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
     const loc = id ? this.locFromId(id) : null;
     if (!loc) return false;
-    if (this.mode === 'label' && this.label) this.commitLabel();
-    if (this.mode === 'style' || this.mode === 'label') this.setMode('text');
+    if (this.note) this.commitNote();
+    if (this.mode === 'style') this.setMode('text');
     this.styling = null;
     this.menu = null;
     this.noteDrawReturn();
@@ -1432,18 +1446,17 @@ export class Editor {
   mouseMove(e: MouseEvent) {
     const lk = this.wheelLock;
     if (lk && Math.hypot(e.clientX - lk.x, e.clientY - lk.y) >= 4) this.wheelLock = null;
-    if (!this.handleDrag && !this.dragging && !this.labelDrag && !this.noteDrag && !this.altDraw && !this.bodyDrag) return;
+    if (!this.handleDrag && !this.dragging && !this.noteDrag && !this.altDraw && !this.bodyDrag) return;
     this.withFrame(() => this.mouseMoveInner(e));
   }
 
   private mouseMoveInner(e: MouseEvent) {
     if (this.handleDrag) return this.dragHandle(e);
-    if (this.labelDrag) return this.dragLabelSel(e);
     if (this.noteDrag) return this.dragNote(e);
     if (this.altDraw) return this.dragAltDraw(e);
     if (this.bodyDrag) return this.dragBody(e);
     if (!this.dragging) return;
-    const h = this.hitTest(e.clientX, e.clientY);
+    const h = this.b === NOTE_B ? this.noteHit(e.clientX, e.clientY) : this.hitTest(e.clientX, e.clientY);
     if (!h) return;
     const md = this.mathDrag;
     if (md) {
@@ -1472,7 +1485,6 @@ export class Editor {
     if (this.altDraw) this.endAltDraw();
     this.dragging = false;
     this.mathDrag = null;
-    this.labelDrag = null;
     this.noteDrag = null;
     this.bodyDrag = null;
     this.dragBusy = false;
@@ -1507,7 +1519,7 @@ export class Editor {
     const rel = (r: Rect | null) => (r ? relTo(r, origin) : null);
 
     // Caret
-    const base = this.mode === 'palette' || this.mode === 'hint' || this.mode === 'label' ? this.prevMode : this.mode;
+    const base = this.mode === 'palette' || this.mode === 'hint' ? this.prevMode : this.mode;
     let caret: typeof this.caret = null;
     if (base === 'math') caret = this.mathCaret(origin);
     else if (base === 'text') {
@@ -1565,7 +1577,7 @@ export class Editor {
       }
       const m = $state.snapshot(pm) as Mark;
       // a label being typed is laid out as typed
-      if (this.mode === 'label' && this.label && this.styling === m.id) m.label = this.label.text;
+      if (this.note?.id === m.id) m.label = noteText(this.note.blk.items);
       act.push(m);
       active.add(m.id);
       if (bi >= 0) this.geoTops.set(m.id, { epoch: this.geoEpoch, tops: near.at(bi) });
@@ -1735,7 +1747,7 @@ export class Editor {
 
   /** The box of a hand-placed note (page coordinates). */
   private pinnedBox(d: Mark | Arrow, g: MarkGeo | ArrowGeo): Rect {
-    const s = measureLabel(d.label, Infinity, this.typingLabel === d.id, this.noteCaret(d.id));
+    const s = this.noteSize(d);
     const c = 'bounds' in g ? { x: g.bounds.x + g.bounds.w / 2, y: g.bounds.y + g.bounds.h / 2 } : g.mid;
     return { x: c.x + d.note!.dx - s.w / 2, y: c.y + d.note!.dy - s.h / 2, w: s.w, h: s.h };
   }
@@ -1839,7 +1851,7 @@ export class Editor {
       if (t.y + t.h / 2 <= u.y + u.h * 0.6) continue;
       const shape = g.outline.r;
       const others = infos.filter((o) => o !== i).map((o) => o.g.bounds);
-      const r = besideNote(shape, measureLabel(m.label, Infinity, this.typingLabel === m.id, this.noteCaret(m.id)), { left, right, obstacles: [...inkLines(i.blockEl)[i.line], ...others, ...placed] });
+      const r = besideNote(shape, this.noteSize(m), { left, right, obstacles: [...inkLines(i.blockEl)[i.line], ...others, ...placed] });
       if (!r) {
         g.label = { x: shape.x + shape.w / 2, y: shape.y + shape.h + 15, below: true };
         continue;
@@ -1876,9 +1888,9 @@ export class Editor {
         const notes: RowNote[] = row.map(({ m, g }) => {
           // the note's box as LabelLayer draws it: hanging from y - 12 (below) or standing on y + 3 (above)
           const edge = below ? g.label.y - 12 : g.label.y + 3;
-          const typing = this.typingLabel === m.id;
-          const at = this.noteCaret(m.id), open = at === undefined ? null : openMath(m.label, at);
-          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, size: (maxW: number) => measureLabel(m.label, maxW, typing, at), key: typing ? `\u0000${open?.[0] ?? ''}\u0000${m.label}` : m.label };
+          // (the note being typed has the size it's drawn at)
+          const live = this.typingLabel === m.id ? this.noteSize(m) : null;
+          return { id: m.id, tip: { x: g.label.x, y: below ? edge - 1 : edge + 1 }, edge, size: (maxW: number) => live ?? measureLabel(m.label, maxW), key: live ? `\u0000${live.w}x${live.h}` : m.label };
         });
         // keep off ink on this line, other shapes and notes already placed
         const mine = new Set(row.map((i) => i.m.id));
@@ -1933,7 +1945,7 @@ export class Editor {
       if (b.y < target.y - 4) items.push({ anchor: first, side: 'above', r: b });
       if (m.label) {
         // the note as LabelLayer draws it: hanging from y - 12 (below) or standing on y + 3 (above)
-        const s = measureLabel(m.label, g.label.maxW ?? Infinity, this.typingLabel === m.id, this.noteCaret(m.id));
+        const s = this.noteSize(m, g.label.maxW ?? Infinity);
         const x = g.label.x + origin.left - s.w / 2;
         const y = g.label.below ? g.label.y - 12 + origin.top : g.label.y + 3 - s.h + origin.top;
         items.push({ anchor: g.label.below ? last : first, side: g.label.below ? 'below' : 'above', r: { x, y, w: s.w, h: s.h } });
@@ -2066,13 +2078,13 @@ export class Editor {
    */
   private selectionRects(origin: DOMRect): Rect[] {
     const r = this.selection;
-    if (!r) return [];
+    if (!r || r.s.b === NOTE_B) return [];
     // runs of text by their line boxes, formulas by their whole box (a range's rects
     // only cover a formula's text line, not what sticks out above and below)
     const rects: DOMRect[] = [];
     const range = sharedRange();
     const run = (b: number, o0: number, o1: number) => {
-      const a = this.stopEl(b, o0), z = this.el(this.doc.blocks[b].items[o1 - 1].id, b);
+      const a = this.stopEl(b, o0), z = this.el(this.blockAt(b).items[o1 - 1].id, b);
       if (!a || !z) return;
       range.setStartBefore(a);
       range.setEndAfter(z);
@@ -2114,6 +2126,7 @@ export class Editor {
    * cover the line box, not a fraction's or a sum's full height.
    */
   private mathSelRects(origin: DOMRect): Rect[] {
+    if (this.note) return []; // (drawn in the note: see LabelLayer)
     const item = this.mathSelRange ? this.mathItem : null;
     const sel = item ? this.el(item.id, this.b)?.querySelector('.nx-sel') : null;
     if (!sel) return [];
@@ -2126,6 +2139,7 @@ export class Editor {
    * and scripts reach past its line box) with some room, so a selection inside fits.
    */
   private mathFrameRect(origin: DOMRect): Rect | null {
+    if (this.note) return null; // (the note's ring frames it)
     const item = this.mathItem;
     const mel = item ? this.el(item.id, this.b) : null;
     if (!mel) return null;
@@ -2139,9 +2153,10 @@ export class Editor {
 
   /** The element at caret stop (b, o): the item there, or the end-of-line marker. */
   private stopEl(b: number, o: number): Element | null {
-    const blk = this.doc.blocks[b];
+    const blk = this.blockAt(b);
     if (!blk) return null;
     if (o < blk.items.length) return this.el(blk.items[o].id, b);
+    if (b === NOTE_B) return this.noteRoot()?.querySelector('.eol') ?? null;
     return this.frame ? (this.blockMap(b).get('eol')?.[0] ?? null) : (this.page?.querySelector(`[data-eol="${blk.id}"]`) ?? null);
   }
 
@@ -2200,7 +2215,7 @@ export class Editor {
       'C-o': () => this.openNote(),
       'C-n': () => this.newNote(),
     };
-    if (fileKeys[k] && this.mode !== 'label') {
+    if (fileKeys[k] && !this.note) {
       e.preventDefault();
       fileKeys[k]();
       return;
@@ -2222,7 +2237,7 @@ export class Editor {
       e.preventDefault();
       return;
     }
-    if (k === 'C-d' && (this.mode === 'text' || this.mode === 'math')) {
+    if (k === 'C-d' && (this.mode === 'text' || this.mode === 'math') && !this.note) {
       this.openPalette('draw');
       e.preventDefault();
       return;
@@ -2243,10 +2258,10 @@ export class Editor {
 
   private wordPos(dir: 1 | -1): Pos {
     let { b, o } = this;
-    const items = this.doc.blocks[b].items;
+    const items = this.blockAt(b).items;
     const word = (it: Item | undefined) => !!it && it.t === 'c' && !isSpace(it);
     if (dir === 1) {
-      if (o >= items.length) return b < this.doc.blocks.length - 1 ? { b: b + 1, o: 0 } : { b, o };
+      if (o >= items.length) return b !== NOTE_B && b < this.doc.blocks.length - 1 ? { b: b + 1, o: 0 } : { b, o };
       if (items[o].t === 'm') o++;
       else while (o < items.length && word(items[o])) o++;
       while (o < items.length && isSpace(items[o])) o++;
@@ -2318,7 +2333,7 @@ export class Editor {
           this.enterMath(false);
           return true;
         }
-        const p = this.o < blk.items.length ? { b: this.b, o: this.o + 1 } : this.b < this.doc.blocks.length - 1 ? { b: this.b + 1, o: 0 } : null;
+        const p = this.o < blk.items.length ? { b: this.b, o: this.o + 1 } : this.b !== NOTE_B && this.b < this.doc.blocks.length - 1 ? { b: this.b + 1, o: 0 } : null;
         if (p) this.moveTo(p, shift);
         return true;
       }
@@ -2534,7 +2549,7 @@ export class Editor {
     // (the live characters: selectedItems may hand back the document's own objects or copies)
     const ids = new Set(chars.map((c) => c.id));
     for (let b = sel.s.b; b <= sel.e.b; b++)
-      for (const it of this.doc.blocks[b].items)
+      for (const it of this.blockAt(b).items)
         if (it.t === 'c' && ids.has(it.id)) {
           if (on) it[s] = true;
           else delete it[s];
@@ -2595,6 +2610,7 @@ export class Editor {
   }
 
   private markdownShortcut() {
+    if (this.note) return; // (a note is no heading or list)
     const blk = this.blk;
     const text = blk.items.slice(0, this.o).map((i) => (i.t === 'c' ? i.ch : '\0')).join('');
     const map: Record<string, BlockKind> = { '# ': 'h1', '## ': 'h2', '### ': 'h3', '- ': 'li', '* ': 'li', '1. ': 'ol', '1) ': 'ol' };
@@ -2607,6 +2623,7 @@ export class Editor {
   }
 
   insertMath(display: boolean) {
+    if (this.note) display = false; // a note is one line
     this.checkpoint();
     this.anchor = null;
     const m = math([], display);
@@ -2733,7 +2750,7 @@ export class Editor {
     }
     switch (k) {
       case '$':
-        if (!root.length && !item.display) {
+        if (!root.length && !item.display && !this.note) {
           // `$$` → display math
           this.blk.items.splice(this.o, 1);
           this.insertMath(true);
@@ -3226,11 +3243,10 @@ export class Editor {
 
   /** Enter style mode for an arrow or mark. */
   selectDrawing(id: Id) {
-    if (this.mode === 'label' && this.label) this.commitLabel();
+    if (this.note) this.commitNote();
     this.anchor = null;
     this.hints = null;
     this.palette = null;
-    this.label = null;
     this.menu = null;
     this.message = '';
     this.styling = id;
@@ -3807,7 +3823,7 @@ export class Editor {
     }
     this.withFrame(() => {
       if (this.mode !== 'text') {
-        if (this.mode === 'label' && this.label) this.commitLabel();
+        if (this.note) this.commitNote();
         this.styling = null;
         this.pick = null;
         this.palette = null;
@@ -3882,7 +3898,7 @@ export class Editor {
   openPageMenu(e: MouseEvent) {
     e.preventDefault();
     this.withFrame(() => {
-      if (this.mode === 'label' && this.label) this.commitLabel();
+      if (this.note) this.commitNote();
       if (this.mode === 'style' || this.mode === 'pick' || this.mode === 'hint') this.endDrawing();
       if (this.mode === 'palette') this.closePalette();
       const h = this.hitTest(e.clientX, e.clientY);
@@ -3914,6 +3930,7 @@ export class Editor {
 
   /** Run a key as if it had been pressed (in the current mode). */
   private runKey(k: string): boolean {
+    if (this.note && (this.mode === 'text' || this.mode === 'math')) return this.noteKey(k);
     switch (this.mode) {
       case 'text': return this.textKey(k);
       case 'math': return this.mathKey(k);
@@ -3921,7 +3938,6 @@ export class Editor {
       case 'style': return this.styleKey(k);
       case 'hint': return this.hintKey(k);
       case 'palette': return this.paletteKey(k);
-      case 'label': return this.labelKey(k);
     }
   }
 
@@ -3986,174 +4002,181 @@ export class Editor {
     return Math.max(0, from);
   }
 
-  /** Start typing the selected drawing's note. */
-  private editNote(at?: number) {
-    const d = this.doc.arrows.find((x) => x.id === this.styling) ?? this.stylingMark;
-    if (!d) return;
-    this.label = { text: d.label, at: at ?? d.label.length, anchor: null };
-    this.labelHist = { undo: [], redo: [], run: null };
-    this.tip('note-math', 'notes can hold math too: $x^2$');
-    this.setMode('label');
+  // ── notes being typed ──
+
+  /**
+   * The note being typed, as a paragraph (letters and formulas) typed with the same text
+   * and math code as the page: while it's open, the caret's block is NOTE_B, which stands
+   * for it (see blockAt). It keeps its own undo history, and is saved as text with $…$
+   * (noteText) when done.
+   */
+  note = $state<{ id: Id; blk: Block; from: Pos; undo: NoteSnap[]; redo: NoteSnap[]; lastKind: string; lastTime: number } | null>(null);
+
+  /** The block at index `b`: the page's, or (NOTE_B) the note being typed. */
+  blockAt(b: number): Block {
+    return b === NOTE_B && this.note ? this.note.blk : this.doc.blocks[b];
   }
 
-  private labelKey(k: string): boolean {
-    const lb = this.label!;
-    switch (k) {
-      case 'Escape': this.label = null; this.mode = 'style'; return true;
-      case 'Enter': this.commitLabel(); return true;
+  /** The element of the note being typed. */
+  private noteRoot(): HTMLElement | null {
+    return this.page?.querySelector<HTMLElement>('.dlabel.noting') ?? null;
+  }
+
+  /** Start typing the selected drawing's note, the caret at character `at` of its text (or at the end). */
+  private editNote(at?: number) {
+    const d = this.drawing(this.styling ?? '');
+    if (!d) return;
+    const { items, index } = noteItems(d.label);
+    this.note = { id: d.id, blk: block(items), from: { b: this.b, o: this.o }, undo: [], redo: [], lastKind: '', lastTime: 0 };
+    this.b = NOTE_B;
+    this.o = at === undefined ? items.length : index(at);
+    this.anchor = null;
+    this.msel = null;
+    this.island = null;
+    this.tip('note-math', 'notes can hold math too: type $');
+    this.setMode('text');
+  }
+
+  /** Keep the note being typed and go back to its drawing. */
+  private commitNote() {
+    const n = this.note;
+    if (!n) return;
+    const text = noteText(n.blk.items);
+    this.endNote();
+    const d = this.drawing(n.id);
+    if (d && d.label !== text) {
+      this.checkpoint();
+      d.label = text;
     }
-    // a single-line text field: caret moves, deletes and typing at the caret
-    const t = lb.text;
-    const wordBack = (i: number) => {
-      while (i > 0 && /\s/.test(t[i - 1])) i--;
-      while (i > 0 && !/\s/.test(t[i - 1])) i--;
-      return i;
-    };
-    const wordFwd = (i: number) => {
-      while (i < t.length && /\s/.test(t[i])) i++;
-      while (i < t.length && !/\s/.test(t[i])) i++;
-      return i;
-    };
-    const cut = (from: number, to: number) => {
-      lb.text = t.slice(0, from) + t.slice(to);
-      lb.at = from;
-      lb.anchor = null;
-    };
-    const sel = this.labelSel();
-    // `$` comes in pairs: typed, both, the caret between; at a closing one, past it
-    const dollars = (i: number) => t.slice(0, i).match(/\$/g)?.length ?? 0;
-    if (k === '$' && !sel) {
-      if (dollars(lb.at) % 2 === 1 && t[lb.at] === '$') {
-        lb.at++;
-        lb.anchor = null;
-        return true;
-      }
-      if (dollars(lb.at) % 2 === 0) {
-        this.labelRecord('other');
-        lb.text = t.slice(0, lb.at) + '$$' + t.slice(lb.at);
-        lb.at++;
-        lb.anchor = null;
-        this.labelEdited();
-        return true;
-      }
-    }
-    // Backspace in an empty pair takes both
-    if (k === 'Backspace' && !sel && t[lb.at - 1] === '$' && t[lb.at] === '$' && dollars(lb.at - 1) % 2 === 0) {
-      this.labelRecord('other');
-      cut(lb.at - 1, lb.at + 1);
-      this.labelEdited();
-      return true;
-    }
-    switch (k) {
-      case 'C-z': this.labelUndo(-1); return true;
-      case 'C-y': case 'C-S-z': this.labelUndo(1); return true;
-      // a run of single deletes is one undo step
-      case 'Backspace': case 'Delete': this.labelRecord('delete', !sel); break;
-      case 'C-Backspace': case 'C-Delete': this.labelRecord('other'); break;
-    }
-    // where a move goes; with Shift it extends the selection, without it collapses it
-    const target = (key: string): number | null => {
-      switch (key) {
-        case 'Left': return sel && !k.startsWith('S-') ? sel[0] : Math.max(0, lb.at - 1);
-        case 'Right': return sel && !k.startsWith('S-') ? sel[1] : Math.min(t.length, lb.at + 1);
-        case 'C-Left': return wordBack(lb.at);
-        case 'C-Right': return wordFwd(lb.at);
-        case 'Home': case 'Up': return 0;
-        case 'End': case 'Down': return t.length;
-      }
-      return null;
-    };
-    const shift = /^(C-)?S-/.test(k);
-    const to = target(shift ? k.replace('S-', '') : k);
-    if (to !== null) {
-      if (shift) lb.anchor ??= lb.at;
-      else lb.anchor = null;
-      lb.at = to;
-      if (lb.anchor === lb.at) lb.anchor = null;
-      return true;
-    }
-    switch (k) {
-      case 'C-a': lb.anchor = 0; lb.at = t.length; if (!t) lb.anchor = null; return true;
-      case 'Backspace': if (sel) cut(...sel); else if (lb.at > 0) cut(lb.at - 1, lb.at); this.labelEdited(); return true;
-      case 'C-Backspace': if (sel) cut(...sel); else cut(wordBack(lb.at), lb.at); return true;
-      case 'Delete': if (sel) cut(...sel); else if (lb.at < t.length) cut(lb.at, lb.at + 1); this.labelEdited(); return true;
-      case 'C-Delete': if (sel) cut(...sel); else cut(lb.at, wordFwd(lb.at)); return true;
-    }
-    // typing on from the last letter typed is one undo step (a space starts a new one)
-    if (k.length === 1) this.labelRecord('type', !sel && /\S/.test(k)), this.labelInsert(k), this.labelEdited();
-    return true;
+    if (n.blk.items.some((i) => i.t === 'm' && i.root.length)) this.learned('note-math');
+  }
+
+  /** Drop what was typed in the note, back to its drawing. */
+  private cancelNote() {
+    if (this.note) this.endNote();
+  }
+
+  private endNote() {
+    const n = this.note!;
+    this.note = null;
+    this.b = Math.min(n.from.b, this.doc.blocks.length - 1);
+    this.o = Math.min(n.from.o, this.doc.blocks[this.b].items.length);
+    this.anchor = null;
+    this.msel = null;
+    this.island = null;
+    this.mc = { path: [], off: 0 };
+    this.setMode('style');
   }
 
   /**
-   * Undo history of the note being typed (once kept, the whole note is one step of the
-   * document's history). `run`: the kind of the last edit and where it left the caret, so
-   * typing (or deleting) on from there joins it.
+   * Keys in the note being typed: the page's own text and math keys, except where a note
+   * isn't a page: Enter keeps it, Esc (with nothing selected) drops it, ↑ ↓ go to its
+   * ends, and nothing leads out of it into the page.
    */
-  private labelHist: { undo: LabelSnap[]; redo: LabelSnap[]; run: { kind: string; at: number } | null } = { undo: [], redo: [], run: null };
-
-  /** Remember the note before an edit, unless it continues the last one (`joins`). */
-  private labelRecord(kind: 'type' | 'delete' | 'other', joins = false) {
-    const lb = this.label, h = this.labelHist;
-    if (!lb) return;
-    const cont = joins && h.run?.kind === kind && h.run.at === lb.at && lb.anchor === null;
-    if (!cont) h.undo.push({ text: lb.text, at: lb.at, anchor: lb.anchor });
-    if (h.undo.length > 200) h.undo.shift();
-    h.redo = [];
-    h.run = { kind, at: -1 };
+  private noteKey(k: string): boolean {
+    const n = this.note!;
+    if (this.mode === 'math') return this.mathKey(k);
+    const end = n.blk.items.length;
+    const bare = k.replace(/^(C-)?S-/, '$1');
+    switch (bare) {
+      case 'Up': case 'PageUp': case 'C-Home': return this.textKey(k.replace(bare, 'Home'));
+      case 'Down': case 'PageDown': case 'C-End': return this.textKey(k.replace(bare, 'End'));
+    }
+    switch (k) {
+      case 'Enter': case 'S-Enter': this.commitNote(); return true;
+      case 'Escape':
+        if (this.selection) this.anchor = null;
+        else this.cancelNote();
+        return true;
+      case 'C-a': this.anchor = { b: NOTE_B, o: 0 }; this.o = end; return true;
+      case 'Backspace': case 'C-Backspace': if (this.o === 0 && !this.selection) return true; break;
+      case 'Delete': case 'C-Delete': if (this.o === end && !this.selection) return true; break;
+      // (the page's command palette and draw menu are for the page)
+      case 'C-k': case 'C-d': return true;
+      case '\\': this.checkpoint('type'); this.blk.items.splice(this.o, 0, ch('\\')); this.o++; return true;
+    }
+    return this.textKey(k);
   }
 
-  /** After an edit: where it left the caret, for the next edit to join. */
-  private labelEdited() {
-    const h = this.labelHist;
-    if (h.run && this.label) h.run.at = this.label.at;
+  /** The note's undo history: checkpoints while a note is open land here, not on the page's. */
+  private noteCheckpoint(kind: string) {
+    const n = this.note!;
+    const now = Date.now();
+    if (kind === 'type' && n.lastKind === 'type' && now - n.lastTime < 1000) {
+      n.lastTime = now;
+      return;
+    }
+    n.lastKind = kind;
+    n.lastTime = now;
+    n.undo.push(this.noteSnap());
+    if (n.undo.length > 200) n.undo.shift();
+    n.redo = [];
+  }
+
+  private noteSnap(): NoteSnap {
+    return { items: $state.snapshot(this.note!.blk.items) as Item[], o: this.o, mode: this.mode === 'math' ? 'math' : 'text', mc: $state.snapshot(this.mc) as MCursor, anchor: this.anchor && { ...this.anchor } };
   }
 
   /** Step back (-1) or forward (1) through the note's history. */
-  private labelUndo(d: -1 | 1) {
-    const lb = this.label, h = this.labelHist;
-    if (!lb) return;
-    const [from, to] = d < 0 ? [h.undo, h.redo] : [h.redo, h.undo];
+  private noteUndo(d: -1 | 1) {
+    const n = this.note!;
+    const [from, to] = d < 0 ? [n.undo, n.redo] : [n.redo, n.undo];
     const s = from.pop();
     if (!s) return this.flash(d < 0 ? 'nothing to undo in this note' : 'nothing to redo in this note');
-    to.push({ text: lb.text, at: lb.at, anchor: lb.anchor });
-    Object.assign(lb, s);
-    h.run = null;
+    to.push(this.noteSnap());
+    n.blk.items = s.items;
+    this.o = s.o;
+    this.mc = s.mc;
+    this.anchor = s.anchor;
+    this.msel = null;
+    n.lastKind = '';
+    this.setMode(s.mode);
   }
 
-  /** Keep the note being typed (trimmed) and go back to the drawing. */
-  private commitLabel() {
-    const lb = this.label;
-    const a = this.doc.arrows.find((x) => x.id === this.styling) ?? this.stylingMark;
-    if (lb && a && a.label !== lb.text.trim()) { this.checkpoint(); a.label = lb.text.trim(); }
-    if (lb?.text.includes('$')) this.learned('note-math');
-    this.label = null;
-    this.mode = 'style';
+  /**
+   * A note's size as drawn: the one being typed is measured on the page (it's drawn with
+   * the page's own formulas and caret); any other, from its text.
+   */
+  private noteSize(d: Mark | Arrow, maxW = Infinity): { w: number; h: number } {
+    if (this.note?.id === d.id) {
+      const el = this.noteRoot();
+      if (el) {
+        const r = el.getBoundingClientRect();
+        return { w: Math.ceil(r.width), h: Math.ceil(r.height) };
+      }
+    }
+    return measureLabel(d.label, maxW);
   }
 
-  /** Where the caret is in a note being typed (undefined for any other note). */
-  private noteCaret(id: Id): number | undefined {
-    return this.typingLabel === id ? this.label?.at : undefined;
+  /** Where in the note being typed a point is: like hitTest on the page. */
+  private noteHit(x: number, y: number): { pos: Pos; math?: { item: MathItem; id: Id | null; after: boolean } } | null {
+    const root = this.noteRoot(), n = this.note;
+    if (!root || !n) return null;
+    const hit = document.elementsFromPoint(x, y).find((e) => root.contains(e));
+    const mel = hit?.closest('.math');
+    if (hit && mel && root.contains(mel)) {
+      const r = this.mathAt(mel, hit, x, y);
+      if (r) return r;
+    }
+    const items = n.blk.items;
+    let best = { o: items.length, d: Infinity };
+    for (let o = 0; o <= items.length; o++) {
+      const r = this.stopRect(NOTE_B, o);
+      if (!r) continue;
+      const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      const d = dy * 1000 + Math.abs(r.left - x);
+      if (d < best.d) best = { o, d };
+      if (o < items.length) {
+        const d2 = dy * 1000 + Math.abs(r.right - x);
+        if (d2 < best.d) best = { o: o + 1, d: d2 };
+      }
+    }
+    return { pos: { b: NOTE_B, o: best.o } };
   }
 
-  /** The drawing whose label is being typed. */
+  /** The drawing whose note is being typed. */
   private get typingLabel(): Id | null {
-    return this.mode === 'label' && this.label ? this.styling : null;
-  }
-
-  /** The selected part of the label being typed, [start, end), if any. */
-  private labelSel(): [number, number] | null {
-    const lb = this.label;
-    if (!lb || lb.anchor === null || lb.anchor === lb.at) return null;
-    return [Math.min(lb.anchor, lb.at), Math.max(lb.anchor, lb.at)];
-  }
-
-  /** Type or paste into the label at the caret, replacing the selection. */
-  private labelInsert(s: string) {
-    const lb = this.label!;
-    const [a, b] = this.labelSel() ?? [lb.at, lb.at];
-    lb.text = lb.text.slice(0, a) + s + lb.text.slice(b);
-    lb.at = a + s.length;
-    lb.anchor = null;
+    return this.note?.id ?? null;
   }
 
   // ───────────────────────── hints ─────────────────────────

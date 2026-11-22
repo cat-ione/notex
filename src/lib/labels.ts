@@ -13,9 +13,10 @@
 import katex from 'katex';
 import { spread } from './marks';
 import type { Rect } from './geom';
-import type { MRow } from './model';
+import { ch, math, type Char, type Item, type MRow } from './model';
 import * as M from './math/edit';
 import { toLatex, type MCursor } from './math/latex';
+import { parseLatex } from './math/parse';
 
 /**
  * The LaTeX for a note's `$…$`: typed the way math is typed on the page (`1/pi`, `x^2+1`,
@@ -32,80 +33,113 @@ export function noteTex(src: string): string {
   return toLatex(root);
 }
 
-/** The `$…$` part of a note the caret is inside (between its dollars), if any: [start, end). */
-export function openMath(text: string, at: number): [number, number] | null {
+/** Bold / italic runs in a note's text: ***both***, **bold**, *italic* (no space just inside). */
+export const NOTE_STYLE = /(\*\*\*[^*\s](?:[^*]*[^*\s])?\*\*\*|\*\*[^*\s](?:[^*]*[^*\s])?\*\*|\*[^*\s](?:[^*]*[^*\s])?\*)/;
+
+/** A piece of a note's prose: its text, and how many stars around it (0 plain, 1 italic, 2 bold, 3 both). */
+export function noteRuns(prose: string): { text: string; stars: number }[] {
+  return prose
+    .split(NOTE_STYLE)
+    .filter((q) => q)
+    .map((q) => {
+      const m = NOTE_STYLE.test(q) ? /^(\*{1,3})([\s\S]*)\1$/.exec(q) : null;
+      return m ? { text: m[2], stars: m[1].length } : { text: q, stars: 0 };
+    });
+}
+
+/**
+ * A note's text (as saved) as a paragraph to type in: letters, bold / italic from its
+ * stars, formulas from its $…$ (typed shorthand or LaTeX: see noteTex). `index` turns a
+ * character offset of the text into an offset among the items.
+ */
+export function noteItems(text: string): { items: Item[]; index: (at: number) => number } {
+  const items: Item[] = [];
+  const map: number[] = [];
   let pos = 0;
   for (const p of text.split(/(\$[^$]+\$)/)) {
-    const start = pos;
-    pos += p.length;
-    if (/^\$[^$]+\$$/.test(p) && at > start && at < pos) return [start, pos];
+    if (/^\$[^$]+\$$/.test(p)) {
+      // (in the formula's text: after it)
+      for (let k = 0; k < p.length; k++) map[pos + k] = items.length + (k ? 1 : 0);
+      items.push(math(parseLatex(noteTex(p.slice(1, -1))).row, false));
+      pos += p.length;
+      continue;
+    }
+    for (const { text: inner, stars } of noteRuns(p)) {
+      for (let k = 0; k < stars; k++) map[pos + k] = items.length;
+      pos += stars;
+      for (const c of inner) {
+        map[pos++] = items.length;
+        const x = ch(c);
+        if (stars >= 2) x.b = true;
+        if (stars === 1 || stars === 3) x.i = true;
+        items.push(x);
+      }
+      for (let k = 0; k < stars; k++) map[pos + k] = items.length;
+      pos += stars;
+    }
   }
-  return null;
+  map[pos] = items.length;
+  return { items, index: (at) => map[Math.max(0, Math.min(at, pos))] ?? items.length };
+}
+
+/** A note typed as a paragraph, saved as text: $…$ around formulas (LaTeX), stars for bold / italic. */
+export function noteText(items: Item[]): string {
+  let out = '';
+  for (let i = 0; i < items.length; ) {
+    const it = items[i];
+    if (it.t === 'm') {
+      if (it.root.length) out += `$${toLatex(it.root).trim()}$`;
+      i++;
+      continue;
+    }
+    const style = (c: Item) => (c.t === 'c' ? (c.b ? 'b' : '') + (c.i ? 'i' : '') : null);
+    const st = style(it);
+    let s = '';
+    while (i < items.length && style(items[i]) === st) s += (items[i++] as Char).ch;
+    const stars = st === 'bi' ? '***' : st === 'b' ? '**' : st === 'i' ? '*' : '';
+    // (spaces stay outside the stars)
+    const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(s)!;
+    out += stars && m[2] ? m[1] + stars + m[2] + stars + m[3] : s;
+  }
+  return out.trim();
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 const htmlCache = new Map<string, string>();
 const katexHtml = (tex: string) => katex.renderToString(tex, { throwOnError: false, strict: 'ignore', output: 'html' });
-/** A caret inside a note being typed: no width of its own, so the text doesn't move. */
-const CARET = '<span class="lcaret"></span>';
 
 /**
- * Note text as HTML: prose with `$math$` rendered by KaTeX. While the note is being
- * typed (`edit`): a caret at offset `at`, the selection from `anchor` highlighted (a
- * $math$ part it touches, as a whole), and the $math$ part the caret is inside shown as
- * what's typed, to see it while editing it.
+ * Note text as HTML: prose (bold / italic from its stars) with `$math$` rendered by KaTeX.
+ * Each part says where its text starts in the note (and a $math$ part where it ends), so a
+ * click can be turned back into an offset (labelOffsetAt).
  */
-export function renderLabel(text: string, edit?: { at: number; anchor: number | null }): string {
-  const key = edit ? `${edit.at}:${edit.anchor}|${text}` : text;
-  let html = htmlCache.get(key);
+export function renderLabel(text: string): string {
+  let html = htmlCache.get(text);
   if (html !== undefined) return html;
-  const parts = text.split(/(\$[^$]+\$)/);
-  // each part says where it starts in the text (and a $math$ part where it ends), so a
-  // click can be turned back into a caret offset (labelOffsetAt)
   const wrap = (h: string, start: number, end?: number) => (h ? `<span data-o="${start}"${end === undefined ? '' : ` data-e="${end}"`}>${h}</span>` : '');
-  if (!edit) {
-    let pos = 0;
-    html = parts.map((p) => {
+  const TAG = ['', 'i', 'b', 'b'];
+  let pos = 0;
+  html = text
+    .split(/(\$[^$]+\$)/)
+    .map((p) => {
       const start = pos;
       pos += p.length;
-      return /^\$[^$]+\$$/.test(p) ? wrap(katexHtml(noteTex(p.slice(1, -1))), start, pos) : wrap(esc(p), start);
-    }).join('');
-  } else {
-    const { at: caret } = edit;
-    const [s, e] = edit.anchor === null ? [caret, caret] : [Math.min(edit.anchor, caret), Math.max(edit.anchor, caret)];
-    const sel = (h: string) => `<span class="lsel">${h}</span>`;
-    let pos = 0, placed = false;
-    html = parts
-      .map((p) => {
-        const start = pos, end = (pos += p.length);
-        // the caret goes in the first part that holds it (after a $math$ part it is inside)
-        const here = !placed && caret >= start && caret <= end && (caret < end || end === text.length || /^\$[^$]+\$$/.test(p));
-        if (here) placed = true;
-        const math = /^\$[^$]+\$$/.test(p);
-        if (math && !(caret > start && caret < end)) {
-          const tex = katexHtml(noteTex(p.slice(1, -1)));
-          const h = wrap(s < end && e > start ? sel(tex) : tex, start, end);
-          return here ? (caret === start ? CARET + h : h + CARET) : h;
-        }
-        // prose (or the math being edited, as typed), character by character: the caret
-        // before its offset, the selection wrapped
-        let out = '', open = false;
-        for (let i = start; i <= end; i++) {
-          const inSel = i < end && i >= s && i < e;
-          if (open && !inSel) (out += '</span>'), (open = false);
-          if (here && i === caret) out += CARET;
-          if (i === end) break;
-          if (inSel && !open) (out += '<span class="lsel">'), (open = true);
-          out += esc(text[i]);
-        }
-        return math ? `<span class="lsrc" data-o="${start}">${out}</span>` : wrap(out, start);
-      })
-      .join('');
-    if (!text) html = CARET;
-  }
+      if (/^\$[^$]+\$$/.test(p)) return wrap(katexHtml(noteTex(p.slice(1, -1))), start, pos);
+      let q = start;
+      return noteRuns(p)
+        .map(({ text: t, stars }) => {
+          const at = q + stars;
+          q += t.length + 2 * stars;
+          if (!stars) return wrap(esc(t), at);
+          const open = stars === 3 ? '<b><i>' : `<${TAG[stars]}>`, close = stars === 3 ? '</i></b>' : `</${TAG[stars]}>`;
+          return wrap(open + esc(t) + close, at);
+        })
+        .join('');
+    })
+    .join('');
   if (htmlCache.size > 300) htmlCache.clear();
-  htmlCache.set(key, html);
+  htmlCache.set(text, html);
   return html;
 }
 
@@ -113,12 +147,10 @@ let measurer: HTMLDivElement | null = null;
 const sizeCache = new Map<string, { w: number; h: number }>();
 /**
  * Size of a note as LabelLayer draws it (class `dlabel`), optionally wrapped to `maxW`.
- * `typing`: as drawn while being typed, where every space counts (a trailing one too).
+ * (The note being typed is measured where it's drawn: see Editor.noteSize.)
  */
-export function measureLabel(text: string, maxW = Infinity, typing = false, at?: number): { w: number; h: number } {
-  // being typed with the caret in a $…$: that part is drawn as typed (see renderLabel)
-  const open = typing && at !== undefined ? openMath(text, at) : null;
-  const key = `${maxW}|${typing ? 1 : 0}|${open?.[0] ?? ''}|${text}`;
+export function measureLabel(text: string, maxW = Infinity): { w: number; h: number } {
+  const key = `${maxW}|${text}`;
   const hit = sizeCache.get(key);
   if (hit) return hit;
   if (!measurer) {
@@ -127,8 +159,8 @@ export function measureLabel(text: string, maxW = Infinity, typing = false, at?:
     measurer.style.cssText = 'position:absolute; left:-9999px; top:0; visibility:hidden; transform:none';
     (document.querySelector('.page') ?? document.body).appendChild(measurer);
   }
-  measurer.innerHTML = open ? renderLabel(text, { at: at!, anchor: null }) : renderLabel(text);
-  measurer.style.whiteSpace = maxW === Infinity ? (typing ? 'pre' : 'nowrap') : typing ? 'break-spaces' : 'normal';
+  measurer.innerHTML = renderLabel(text);
+  measurer.style.whiteSpace = maxW === Infinity ? 'nowrap' : 'normal';
   measurer.style.width = maxW === Infinity ? 'auto' : 'max-content';
   measurer.style.maxWidth = maxW === Infinity ? 'none' : `${maxW}px`;
   const r = measurer.getBoundingClientRect();

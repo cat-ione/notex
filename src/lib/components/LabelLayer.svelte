@@ -1,29 +1,29 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
-  import type { Editor } from '$lib/editor.svelte';
+  import { NOTE_B, type Editor } from '$lib/editor.svelte';
   import { inkVar } from '$lib/marks';
   import { renderLabel as render } from '$lib/labels';
+  import MathView from './MathView.svelte';
 
   // Labels on arrows and notes on shapes. HTML rather than SVG text so they can
   // contain $math$.
   let { ed }: { ed: Editor } = $props();
 
-  type L = { id: string; text: string; edit?: { at: number; anchor: number | null }; pinned?: boolean; x: number; y: number; below: boolean; maxW?: number; color?: string; sel: boolean; ghost: boolean };
+  type L = { id: string; text: string; noting?: boolean; pinned?: boolean; x: number; y: number; below: boolean; maxW?: number; color?: string; sel: boolean; ghost: boolean };
   const labels = $derived.by(() => {
     const out: L[] = [];
     const ghost = ed.pick?.edit?.id;
-    // While a label is being typed, show the draft in place with its caret (the editor
-    // lays the note out for the draft too)
-    const editing = (id: string) => ed.mode === 'label' && !!ed.label && ed.styling === id;
-    const text = (id: string, saved: string) => (editing(id) ? ed.label!.text : saved);
-    const edit = (id: string) => (editing(id) ? { at: ed.label!.at, anchor: ed.label!.anchor } : undefined);
+    // The note being typed is drawn as the paragraph it's typed as (below), in place
+    const editing = (id: string) => ed.note?.id === id;
+    const text = (id: string, saved: string) => (editing(id) ? '' : saved);
+    const edit = (id: string) => (editing(id) ? true : undefined);
     for (const a of ed.doc.arrows) {
       const g = ed.arrowGeos[a.id];
       const t = text(a.id, a.label);
       if (!g || !(t || editing(a.id))) continue;
       // placed by hand: centred at its offset from the midpoint
-      if (a.note) out.push({ id: a.id, text: t, edit: edit(a.id), pinned: true, x: g.mid.x + a.note.dx, y: g.mid.y + a.note.dy, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
-      else out.push({ id: a.id, text: t, edit: edit(a.id), x: g.mid.x, y: g.mid.y - 4, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
+      if (a.note) out.push({ id: a.id, text: t, noting: edit(a.id), pinned: true, x: g.mid.x + a.note.dx, y: g.mid.y + a.note.dy, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
+      else out.push({ id: a.id, text: t, noting: edit(a.id), x: g.mid.x, y: g.mid.y - 4, below: false, color: a.color, sel: ed.styling === a.id, ghost: ghost === a.id });
     }
     for (const m of ed.doc.marks) {
       const g = ed.markGeos[m.id];
@@ -31,13 +31,13 @@
       if (!g || !(t || editing(m.id))) continue;
       // label.y is a text baseline: shift to the box's top (below) or bottom (above) edge
       const y = g.label.below ? g.label.y - 12 : g.label.y + 3;
-      out.push({ id: m.id, text: t, edit: edit(m.id), x: g.label.x, y, below: g.label.below, maxW: g.label.maxW, color: m.color, sel: ed.styling === m.id, ghost: ghost === m.id });
+      out.push({ id: m.id, text: t, noting: edit(m.id), x: g.label.x, y, below: g.label.below, maxW: g.label.maxW, color: m.color, sel: ed.styling === m.id, ghost: ghost === m.id });
     }
     return out;
   });
 
   // notes answer the mouse where drawings do (and while one is being typed)
-  const live = $derived(ed.mode === 'text' || ed.mode === 'math' || ed.mode === 'style' || ed.mode === 'label');
+  const live = $derived(ed.mode === 'text' || ed.mode === 'math' || ed.mode === 'style');
 </script>
 
 {#each labels as l (l.id)}
@@ -50,7 +50,8 @@
     class:ghost={l.ghost}
     class:inked={!!l.color}
     class:wrapped={!!l.maxW}
-    class:typing={!!l.edit}
+    class:typing={l.noting}
+    class:noting={l.noting}
     class:pinned={l.pinned}
     class:live
     class:hover={ed.hovered === l.id}
@@ -62,7 +63,7 @@
     style="left: {l.x}px; top: {l.y}px; --ink: {inkVar(l.color)};{l.maxW ? ` max-width: ${l.maxW}px;` : ''}"
     in:fade={{ duration: 200 }}
   >
-    {@html render(l.text, l.edit)}
+    {#if l.noting && ed.note}{#each ed.note.blk.items as it, o (it.id)}{#if it.t === 'c'}<span class="ch" class:b={it.b} class:i={it.i} class:lsel={ed.isSelected(NOTE_B, o)} data-nx={it.id}>{it.ch}</span>{:else}<MathView item={it} cursor={ed.mode === 'math' && ed.o === o ? ed.mc : null} sel={ed.mode === 'math' && ed.o === o ? ed.mathSelRange : null} selected={ed.isSelected(NOTE_B, o)} />{/if}{/each}<span class="eol">&#8203;</span>{:else}{@html render(l.text)}{/if}
   </div>
 {/each}
 
@@ -130,37 +131,27 @@
   :global(.dlabel.typing.wrapped) {
     white-space: break-spaces;
   }
-  /* the $…$ being edited, shown as typed */
-  :global(.dlabel .lsrc) {
-    font-family: var(--mono);
-    background: color-mix(in srgb, var(--ink) 12%, transparent);
+  /* the note being typed: the page's letters and formulas (and its selections, which on the
+     page are drawn behind the text, where the note's background would hide them) */
+  :global(.dlabel .ch.b),
+  :global(.dlabel b) {
+    font-weight: 700;
+  }
+  :global(.dlabel .ch.i),
+  :global(.dlabel i) {
+    font-style: italic;
+  }
+  :global(.dlabel .eol) {
+    display: inline-block;
+    width: 0;
+  }
+  :global(.dlabel .nx-sel),
+  :global(.dlabel .math.selected) {
+    background: var(--text-sel);
     border-radius: 2px;
   }
   :global(.dlabel .lsel) {
     background: var(--text-sel);
     border-radius: 2px;
-  }
-  /* zero width: the text around it stays where it is */
-  :global(.dlabel .lcaret) {
-    display: inline-block;
-    position: relative;
-    width: 0;
-    height: 1.15em;
-    vertical-align: text-bottom;
-  }
-  :global(.dlabel .lcaret)::after {
-    content: '';
-    position: absolute;
-    left: -0.5px;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: currentColor;
-    animation: lcaret-blink 1s steps(1) infinite;
-  }
-  @keyframes -global-lcaret-blink {
-    50% {
-      opacity: 0;
-    }
   }
 </style>

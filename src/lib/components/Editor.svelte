@@ -386,6 +386,7 @@
 
   .caret {
     position: absolute;
+    z-index: 3; /* over notes too: one may be being typed */
     left: 0;
     top: 0;
     pointer-events: none;

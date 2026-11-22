@@ -8,7 +8,7 @@
 import type { Arrow, Doc, Id, Item, Mark, MRow } from './model';
 import { toLatexWrapped, type Wraps } from './math/latex';
 import { CMDS } from './math/defs';
-import { noteTex } from './labels';
+import { noteRuns, noteTex } from './labels';
 
 const ESC: Record<string, string> = {
   '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '#': '\\#', $: '\\$', '%': '\\%', '&': '\\&',
@@ -19,7 +19,16 @@ const ESC: Record<string, string> = {
 const escText = (s: string) =>
   s
     .split(/(\$[^$]+\$)/)
-    .map((p) => (/^\$[^$]+\$$/.test(p) ? `$${noteTex(p.slice(1, -1))}$` : [...p].map((c) => ESC[c] ?? c).join('')))
+    .map((p) =>
+      /^\$[^$]+\$$/.test(p)
+        ? `$${noteTex(p.slice(1, -1))}$`
+        : noteRuns(p)
+            .map(({ text, stars }) => {
+              const t = [...text].map((c) => ESC[c] ?? c).join('');
+              return stars === 3 ? `\\textbf{\\emph{${t}}}` : stars === 2 ? `\\textbf{${t}}` : stars === 1 ? `\\emph{${t}}` : t;
+            })
+            .join(''),
+    )
     .join('');
 
 // ── locating drawn-on ranges ──

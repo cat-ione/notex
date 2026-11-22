@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { besideNote, layoutRow, noteTex, openMath, pinnedLeader, renderLabel, type RowNote } from './labels';
+import { besideNote, layoutRow, noteItems, noteTex, noteText, pinnedLeader, renderLabel, type RowNote } from './labels';
+import type { Item } from './model';
 
 // fake text metrics: 6px per char, 14px lines, words wrap at maxW
 function note(id: string, x: number, text: string, edge = 20): RowNote {
@@ -72,40 +73,17 @@ describe('layoutRow', () => {
   });
 });
 
-describe('renderLabel caret', () => {
-  const C = '<span class="lcaret"></span>';
+describe('renderLabel', () => {
   // a prose part as drawn: tagged with where it starts in the text
   const w = (o: number, h: string) => `<span data-o="${o}">${h}</span>`;
-  it('sits between characters without replacing any', () => {
-    expect(renderLabel('abc', { at: 1, anchor: null })).toBe(w(0, `a${C}bc`));
-    expect(renderLabel('abc', { at: 0, anchor: null })).toBe(w(0, `${C}abc`));
-    expect(renderLabel('abc', { at: 3, anchor: null })).toBe(w(0, `abc${C}`));
-  });
-  it('shows in an empty label', () => {
-    expect(renderLabel('', { at: 0, anchor: null })).toBe(C);
-  });
-  it('shows the math part it is inside as typed, and sits at a boundary once', () => {
-    const html = renderLabel('a $x+y$ b', { at: 5, anchor: null });
-    expect(html.split(C).length).toBe(2);
-    // the $…$ being edited: its characters with the caret among them, not rendered
-    expect(html).toContain(`<span class="lsrc" data-o="2">$x+${C}y$</span>`);
-    expect(html).not.toContain('katex');
-    expect(renderLabel('a $x$', { at: 2, anchor: null }).startsWith(w(0, 'a ') + C)).toBe(true); // right before the math
-    expect(renderLabel('a $x$', { at: 5, anchor: null }).endsWith(C)).toBe(true);
-    for (let i = 0; i <= 'p $x$ q $y$'.length; i++) expect(renderLabel('p $x$ q $y$', { at: i, anchor: null }).split(C).length).toBe(2);
-  });
-  it('highlights the selection, a math part it touches as a whole', () => {
-    expect(renderLabel('abcd', { at: 3, anchor: 1 })).toBe(w(0, `a<span class="lsel">bc</span>${C}d`));
-    expect(renderLabel('abcd', { at: 1, anchor: 3 })).toBe(w(0, `a${C}<span class="lsel">bc</span>d`));
-    const m = renderLabel('a $x$ b', { at: 6, anchor: 0 });
-    expect(m.startsWith(w(0, '<span class="lsel">a </span>'))).toBe(true);
-    expect(m).toMatch(/<span class="lsel"><span class="katex"/);
-  });
   it('tags each part with its offsets, so a click maps back to the text', () => {
     const h = renderLabel('ab $x$ c');
     expect(h.startsWith(w(0, 'ab '))).toBe(true);
     expect(h).toContain('<span data-o="3" data-e="6">');
     expect(h.endsWith(w(6, ' c'))).toBe(true);
+  });
+  it('draws stars as bold / italic (tagged where their text starts)', () => {
+    expect(renderLabel('a **b** *c*')).toBe(w(0, 'a ') + w(4, '<b>b</b>') + w(7, ' ') + w(9, '<i>c</i>'));
   });
 });
 
@@ -156,9 +134,23 @@ describe('math in notes', () => {
     // written as LaTeX: as is
     expect(noteTex('\\frac{a}{b}')).toBe('\\frac{a}{b}');
   });
-  it('knows which $…$ the caret is inside', () => {
-    expect(openMath('a $x$ b', 3)).toEqual([2, 5]);
-    expect(openMath('a $x$ b', 2)).toBeNull();
-    expect(openMath('a $x$ b', 5)).toBeNull();
+});
+
+describe('a note typed as a paragraph', () => {
+  const shape = (items: Item[]) => items.map((i) => (i.t === 'm' ? 'M' : i.b && i.i ? '#' : i.b ? 'B' : i.i ? 'I' : '.')).join('');
+  it('comes from its text: formulas from $…$, bold / italic from stars', () => {
+    const { items, index } = noteItems('a $x^2$ **bo** *it*');
+    expect(shape(items)).toBe('..M.BB.II');
+    // offsets in the text → offsets among the items (inside a formula: after it)
+    expect(index(0)).toBe(0);
+    expect(index(2)).toBe(2);
+    expect(index(4)).toBe(3);
+    expect(index(19)).toBe(9);
+  });
+  it('goes back to the same text', () => {
+    for (const t of ['a $x^{2}$ **bo** *it*', 'plain', '***both*** and $\\frac{1}{2}$']) expect(noteText(noteItems(t).items)).toBe(t);
+  });
+  it('turns typed shorthand into LaTeX', () => {
+    expect(noteText(noteItems('$1/pi$').items)).toBe('$\\frac{1}{\\pi }$');
   });
 });
