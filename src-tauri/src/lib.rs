@@ -50,9 +50,43 @@ fn open_config(app: tauri::AppHandle) -> Result<String, String> {
     Ok(shown)
 }
 
+/// A bare Alt press and release (often the tail of another app's Alt+… shortcut) puts a
+/// Windows window into keyboard menu mode, even with no menu bar: keys then go to the
+/// invisible menu until Esc. The window turns that request down. (Alt+Space still opens
+/// the window menu, and Alt+key shortcuts reach the page as before.)
+#[cfg(windows)]
+mod alt_menu {
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SC_KEYMENU, WM_SYSCOMMAND};
+
+    unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
+        // menu mode from the keyboard with no key named (lparam 0): bare Alt
+        if msg == WM_SYSCOMMAND && (wparam as u32 & 0xFFF0) == SC_KEYMENU && lparam == 0 {
+            return 0;
+        }
+        unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+    }
+
+    pub fn install(hwnd: HWND) {
+        unsafe {
+            SetWindowSubclass(hwnd, Some(proc), 1, 0);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|_app| {
+            #[cfg(windows)]
+            if let Some(w) = _app.get_webview_window("main") {
+                if let Ok(hwnd) = w.hwnd() {
+                    alt_menu::install(hwnd.0 as _);
+                }
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
