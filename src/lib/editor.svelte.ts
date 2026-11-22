@@ -4023,6 +4023,7 @@ export class Editor {
       { name: 'copy', desc: 'copy', keys: ['C-c'], run: clip('copy'), off: !sel },
       { name: 'paste', desc: 'paste', keys: ['C-v'], run: () => void this.pasteFromClipboard() },
       { name: 'all', desc: this.mode === 'math' ? 'select the formula' : 'select everything', keys: ['C-a'], run: () => this.runKey('C-a') },
+      ...(this.mode === 'text' ? [{ name: 'formula', desc: 'formula here', keys: ['$'], run: () => this.runKey('$'), more: '$$ for one on its own line', sep: true } as DrawingAction] : []),
       { name: 'arrow', desc: sel ? 'arrow from the selection' : 'draw an arrow', keys: ['\\arrow'], run: () => this.startArrow(), more: 'or alt+drag from one thing to another', sep: true },
       ...MARK_KINDS.map((k): DrawingAction => ({ name: k, desc: `${MARK_VERB[k]} ${what}`, keys: [`\\${k}`], run: () => this.startMark(k), more: k === this.lastMarkKind ? 'or alt+shift+drag across it' : undefined })),
       { name: 'undo', desc: 'undo', keys: ['C-z'], run: () => this.runKey('C-z'), sep: true },
