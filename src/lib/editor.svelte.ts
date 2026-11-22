@@ -3048,6 +3048,13 @@ export class Editor {
         M.insertNode(item.root, this.mc, sym('\\' + k));
         return true;
       }
+      if (p.ctx === 'math' && p.query && !/[a-zA-Z]/.test(k)) {
+        // as in LaTeX, the name ends at the first non-letter: \int_0^1, \alpha^2, \sin(x)
+        // (only the name as typed: an unknown one is a raw \name, not the closest suggestion)
+        this.acceptPalette(undefined);
+        if (k !== ' ') this.runKey(k);
+        return true;
+      }
       if (p.ctx === 'text' && !p.query && k === '\\') {
         this.closePalette();
         this.checkpoint('type');
@@ -4539,7 +4546,7 @@ function welcomeDoc(): Doc {
       b1,
       b2,
       P('try it', 'h2'),
-      P('type $ to start math. inside, try x^2, a/b, e^(-x/2), int_0^1, sum_(n=1)^oo, ->, pi, or ;a. press $ again (or →) to get back to text.', 'li'),
+      P('type $ to start math. inside, try x^2, a/b, e^(-x/2), \\int_0^1, \\sum_(n=1)^\\infty, ->, \\alpha or ;a. press $ again (or →) to get back to text.', 'li'),
       P('forgot the $? x^2 and a_n typed in the text turn into math by themselves.', 'li'),
       P('1. starts a numbered list, Tab nests an item; **bold** and *italic* as you type; Ctrl+F finds.', 'li'),
       P('type \\ to open commands. \\arrow draws an arrow: pick the start with the arrow keys or a click, then the end.', 'li'),

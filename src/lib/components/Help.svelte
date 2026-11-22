@@ -4,13 +4,13 @@
       ['$', 'start math ($$ for a centered block)'], ['\\  or  ctrl+k', 'commands'],
       ['# ␣   ## ␣   - ␣', 'heading, subheading, list'], ['1. ␣   tab  shift+tab', 'numbered list, nest / un-nest'],
       ['ctrl+b  ctrl+i', 'bold, italic (or **word**, *word*)'], ['x^2  a_n', 'in text: becomes math'],
-      ['ctrl+f  F3', 'find, next match'], ['alt+↑ ↓', 'move the paragraph (or the selected ones)'], ['ctrl+s  o  n', 'save, open, new note'], ['ctrl+,', 'settings, snippets, themes'], ['F1', 'this help'],
+      ['ctrl+f  F3', 'find, next match'], ['alt+↑ ↓', 'move the paragraph (or the selected ones)'], ['ctrl+s  o  n', 'save, open, new note'], ['ctrl+,', 'settings, substitutions, themes'], ['F1', 'this help'],
     ]],
     ['math', [
-      ['/', 'fraction from what you just typed'], ['^  _', 'one thing up / down: x^2, x^10, e^-x'], ['^(…)  _(…)', 'more than one: e^(-x^2/2), int_0^(2pi)'],
-      ['( [ {', 'brackets that grow'], ['"', 'words inside math'], ['alpha  ;a', 'greek letters'],
-      ['sqrt sum int lim', 'roots and big operators'], ['pi  max  sgn', 'greek and functions, by name'], ['-> => <= oo xx', 'arrows, ≤, ∞, ×'],
-      ['\\name', 'any LaTeX command'], ['space / tab', 'leave box / next box'],
+      ['/', 'fraction from what you just typed'], ['^  _', 'one thing up / down: x^2, x^10, e^-x'], ['^(…)  _(…)', 'more than one: e^(-x^2/2), \\int_0^(2\\pi)'],
+      ['( [ {', 'brackets that grow'], ['"', 'words inside math'], ['\\alpha  ;a', 'greek letters'],
+      ['\\name', 'any LaTeX command: \\sqrt, \\in, \\sin, \\int_0^1'], ['-> => <= != +-', 'arrows, ≤, ≠, ±'],
+      ['settings › substitutions', 'names without the \\ (alpha, sin, sum…), your own'], ['space / tab', 'leave box / next box'],
       ['ctrl+← →', 'by whole pieces (shift: select)'], ['& enter', 'matrix: new column / row'], ['shift+← → / ctrl+a', 'select (grows out of boxes)'], ['/  (  \\cmd', 'wrap the selection'], ['$  →  esc', 'back to text'],
     ]],
     ['drawing  (\\arrow  \\circle  \\box …)', [
