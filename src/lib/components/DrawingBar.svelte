@@ -51,7 +51,7 @@
     {#if mark}
       <div class="group">
         {#each MARK_KINDS as k (k)}
-          <button class:on={mark.kind === k} data-tip={k} aria-label={k} data-tip-key="t / shift+t" data-tip-more="or the wheel near it" onclick={() => ed.setMarkKind(id, k)}>{@render kindIcon(k)}</button>
+          <button class:on={mark.kind === k} data-tip={k} aria-label={k} data-tip-key="t / shift+t" data-tip-more="or scroll over it" onclick={() => ed.setMarkKind(id, k)}>{@render kindIcon(k)}</button>
         {/each}
       </div>
     {:else if arrow}
@@ -64,7 +64,7 @@
     {/if}
     <div class="group">
       {#each INKS as c (c)}
-        <button class="ink" class:on={(d.color ?? '') === c} data-tip="{c || 'default'} colour" aria-label="{c || 'default'} colour" data-tip-key="c" data-tip-more="or shift+wheel near it" onclick={() => ed.setInk(id, c)}>
+        <button class="ink" class:on={(d.color ?? '') === c} data-tip="{c || 'default'} colour" aria-label="{c || 'default'} colour" data-tip-key="c" data-tip-more="or shift+scroll over it" onclick={() => ed.setInk(id, c)}>
           <span style="background: {inkVar(c)}"></span>
         </button>
       {/each}

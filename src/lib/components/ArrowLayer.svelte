@@ -74,9 +74,9 @@
               cy={p.y}
               r={part === 'bend' ? 4 : 5}
               onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.beginHandleDrag(a.id, part); }}
-              data-tip={part === 'bend' ? 'drag to move the middle anywhere' : `drag to move the ${part === 'from' ? 'start' : 'tip'}`}
+              data-tip={part === 'bend' ? 'drag to reshape' : `drag to move the ${part === 'from' ? 'start' : 'end'}`}
               data-tip-key={part === 'bend' ? '↑ ↓ ← →' : part === 'from' ? 's / shift+s' : 'e / shift+e'}
-              data-tip-more={part === 'bend' ? '' : 'let go on a side to attach there'}
+              data-tip-more={part === 'bend' ? '' : 'drop on a side to anchor it there'}
               in:fade={{ duration: 120 }}
             />
           {/each}

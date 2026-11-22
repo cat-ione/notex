@@ -45,7 +45,7 @@
       value={ed.find.q}
       oninput={(e) => ed.setFindQuery(e.currentTarget.value)}
       onkeydown={key}
-      placeholder="find in the note"
+      placeholder="find"
       spellcheck="false"
     />
     <span class="count" class:none={ed.find.q && !n}>{ed.find.q ? (n ? `${ed.find.i + 1}/${n}` : 'none') : ''}</span>

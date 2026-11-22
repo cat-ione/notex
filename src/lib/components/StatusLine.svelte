@@ -9,8 +9,8 @@
   };
   const HINTS: Record<string, string> = {
     text: '$ math · \\ commands · F1 help',
-    math: '/ fraction · ^ _ scripts · \\ commands · tab next box · $ or esc back to text',
-    pick: '←→↑↓ move · shift+↑↓ bigger / smaller · shift+←→ extend · tab jump labels · enter choose · esc cancel',
+    math: '/ fraction · ^ _ scripts · \\ commands · tab next box · $ or esc exit math',
+    pick: '←→↑↓ move · shift+↑↓ parent / child · shift+←→ extend · tab jump labels · enter choose · esc cancel',
     hint: 'type a label to jump · esc cancel',
     palette: 'enter accept · ↑↓ choose · esc cancel',
     label: 'enter save · esc cancel',
@@ -21,7 +21,7 @@
   const styleHint = $derived(
     ed.mode === 'style' && ed.styling
       ? [
-          ...(ed.stylingMark ? [] : ['↑↓←→ middle']),
+          ...(ed.stylingMark ? [] : ['↑↓←→ bend']),
           // (what the menu shows; the step-by-step keys are in the menu's tooltips and F1)
           ...ed.drawingActions(ed.styling).filter((a) => a.menu !== false && !a.keyOnly).map((a) => `${keyLabel(a.keys[0])} ${a.name}`),
           'enter done',
@@ -52,7 +52,7 @@
     <span class="keys">{ed.mode === 'style' ? styleHint : ed.note && ed.mode === 'text' ? HINTS.label : HINTS[ed.mode]}</span>
   {/if}
   <span class="spacer"></span>
-  <span class="file" data-tip={ed.file.path ?? 'not saved to a file yet'} data-tip-key="ctrl+s">
+  <span class="file" data-tip={ed.file.path ?? 'not saved'} data-tip-key="ctrl+s">
     {ed.file.name}{#if ed.dirty}<span class="dot" class:warn={!ed.file.path} in:fly={{ y: -4, duration: 150 }}>●</span>{/if}
   </span>
   <span class="stat">{counts.words}w · {counts.maths}∑ · {counts.drawings}↗</span>
