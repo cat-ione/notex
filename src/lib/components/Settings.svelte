@@ -19,20 +19,20 @@
     { label: 'text size', value: () => `${ed.config.fontSize}px`, change: (d) => ed.updateConfig({ fontSize: clamp(ed.config.fontSize + d, 11, 28) }) },
     { label: 'page width', value: () => `${ed.config.pageWidth}px`, change: (d) => ed.updateConfig({ pageWidth: clamp(ed.config.pageWidth + d * 40, 480, 1600) }) },
     {
-      label: 'math ^ and _',
-      value: () => (ed.config.typing.latexScripts ? 'one thing, like LaTeX' : 'stay in until space'),
+      label: 'superscripts & subscripts',
+      value: () => (ed.config.typing.latexScripts ? 'LaTeX-style' : 'end with space'),
       change: () => ed.updateConfig({ typing: { ...ed.config.typing, latexScripts: !ed.config.typing.latexScripts } }),
     },
     {
-      label: 'x^2 in text becomes math',
+      label: 'detect math in text',
       value: () => (ed.config.typing.autoMath ? 'on' : 'off'),
       change: () => ed.updateConfig({ typing: { ...ed.config.typing, autoMath: !ed.config.typing.autoMath } }),
     },
-    { label: 'tips now and then', value: () => (ed.config.tips ? 'on' : 'off'), change: () => ed.updateConfig({ tips: !ed.config.tips }) },
-    { label: 'substitutions…', act: () => openSubs(), hint: () => `${onCount()} on · ${mineCount()} yours` },
-    { label: 'themes & css…', act: () => openEditor(), hint: 'edit the config' },
+    { label: 'show tips', value: () => (ed.config.tips ? 'on' : 'off'), change: () => ed.updateConfig({ tips: !ed.config.tips }) },
+    { label: 'substitutions…', act: () => openSubs(), hint: () => `${onCount()} on, ${mineCount()} custom` },
+    { label: 'edit config file…', act: () => openEditor(), hint: 'themes, css' },
     ...(isDesktop()
-      ? [{ label: 'open config in my editor', act: async () => { const p = await openConfigExternally(); if (p) ed.flash(`opened ${p} — changes load when you come back`); }, hint: 'external' } as Row]
+      ? [{ label: 'open config in external editor', act: async () => { const p = await openConfigExternally(); if (p) ed.flash(`opened ${p}`); }, hint: '' } as Row]
       : []),
   ];
 
@@ -86,13 +86,13 @@
 
   function saveForm() {
     const trigger = form.trigger.trim();
-    if (!trigger) return void ((formError = 'type what triggers it'), triggerEl?.focus());
-    if (/\s/.test(trigger)) return void ((formError = 'a trigger has no spaces'), triggerEl?.focus());
-    if (!form.to) return void ((formError = 'and what it becomes'), toEl?.focus());
+    if (!trigger) return void ((formError = 'enter a trigger'), triggerEl?.focus());
+    if (/\s/.test(trigger)) return void ((formError = "triggers can't contain spaces"), triggerEl?.focus());
+    if (!form.to) return void ((formError = 'enter a replacement'), toEl?.focus());
     const sn = withoutOld(ed.config.snippets, editing);
     sn[form.kind][trigger] = form.to;
     ed.updateConfig({ snippets: sn });
-    ed.flash(`${trigger} → ${form.to}`);
+    ed.flash('substitution saved');
     editing = null;
     form = { kind: form.kind, trigger: '', to: '' };
     formError = '';
@@ -193,7 +193,7 @@
 <div class="scrim" onmousedown={(e) => e.target === e.currentTarget && close()}>
   <div class="panel" class:wide={ed.settingsEditing} class:mid={!ed.settingsEditing && ed.settingsView === 'subs'} transition:fly={{ y: 8, duration: 180, easing: cubicOut }}>
     {#if ed.settingsEditing}
-      <div class="title">config <span>· changes load when saved</span></div>
+      <div class="title">config</div>
       <textarea bind:this={area} bind:value={text} spellcheck="false"></textarea>
       {#if error}<div class="error" transition:fly={{ y: -4, duration: 150 }}>{error}</div>{/if}
       <div class="actions">
@@ -205,9 +205,9 @@
     {:else if ed.settingsView === 'subs'}
       <div class="title">
         <button class="back" onclick={() => (ed.settingsView = 'main')} data-tip="back to settings">‹</button>
-        substitutions <span>· made as you type; anything off is still a \command</span>
+        substitutions <span>· replace text as you type</span>
       </div>
-      <div class="section">in math</div>
+      <div class="section">built-in <span>· math</span></div>
       {#each SUB_GROUPS as g, i}
         {@const on = !!ed.config.typing.substitutions[g.id]}
         <div class="row" class:sel={i === subSel} onmouseenter={() => (subSel = i)} onclick={() => toggleGroup(g.id)}>
@@ -216,7 +216,7 @@
           <span class="switch" class:on>{on ? 'on' : 'off'}</span>
         </div>
       {/each}
-      <div class="section">yours <span>· win over the ones above</span></div>
+      <div class="section">custom</div>
       {#each mine as m, j (m.kind + m.trigger)}
         {@const i = SUB_GROUPS.length + j}
         <div class="row" class:sel={i === subSel} class:editing={same(editing, m)} onmouseenter={() => (subSel = i)} onclick={() => startForm(m)}>
@@ -231,12 +231,12 @@
         <button
           class="kind toggle"
           tabindex="-1"
-          data-tip={form.kind === 'math' ? 'typed in math, becomes LaTeX (# marks the caret)' : 'typed in text, becomes text (may hold $math$)'}
+          data-tip={form.kind === 'math' ? 'math: replacement is LaTeX, # marks the cursor' : 'text: plain text replacement'}
           onclick={() => (form.kind = form.kind === 'math' ? 'text' : 'math')}>{form.kind}</button
         >
-        <input class="trigger" bind:this={triggerEl} bind:value={form.trigger} placeholder={editing ? '' : '+ trigger'} spellcheck="false" onfocus={() => (subSel = subCount - 1)} />
+        <input class="trigger" bind:this={triggerEl} bind:value={form.trigger} placeholder="trigger" spellcheck="false" onfocus={() => (subSel = subCount - 1)} />
         <span class="arrow">→</span>
-        <input class="to" bind:this={toEl} bind:value={form.to} placeholder={form.kind === 'math' ? '\\mathbb{R}' : 'becomes'} spellcheck="false" />
+        <input class="to" bind:this={toEl} bind:value={form.to} placeholder="replacement" spellcheck="false" />
         <button class="save" tabindex="-1" onclick={saveForm}>{editing ? 'save' : 'add'}</button>
       </div>
       {#if formError}<div class="error inset" transition:fly={{ y: -4, duration: 150 }}>{formError}</div>{/if}

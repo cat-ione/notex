@@ -236,7 +236,7 @@ const names = (list: string, tex = (n: string) => '\\' + n) => Object.fromEntrie
 export const SUB_GROUPS: SubGroup[] = [
   {
     id: 'symbols',
-    label: 'symbols from keys',
+    label: 'symbols',
     example: '->  <=  !=  +-  ...  **',
     on: true,
     subs: {
@@ -246,14 +246,14 @@ export const SUB_GROUPS: SubGroup[] = [
   },
   {
     id: 'greek',
-    label: 'greek letters by name',
+    label: 'greek letters',
     example: 'alpha  pi  Omega',
     on: false,
     subs: names('alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi pi sigma upsilon phi chi psi omega rho tau Gamma Delta Theta Lambda Xi Pi Sigma Phi Psi Omega'),
   },
   {
     id: 'functions',
-    label: 'functions by name',
+    label: 'functions',
     example: 'sin  log  max  det',
     on: false,
     subs: {
@@ -262,17 +262,17 @@ export const SUB_GROUPS: SubGroup[] = [
     },
   },
   // (as the bare symbol with LaTeX-style scripts, with empty limits otherwise: see edit.ts)
-  { id: 'operators', label: 'big operators by name', example: 'sum  int  prod  lim', on: false, subs: names('sum prod int lim') },
+  { id: 'operators', label: 'big operators', example: 'sum  int  prod  lim', on: false, subs: names('sum prod int lim') },
   {
     id: 'structures',
-    label: 'roots and accents by name',
+    label: 'roots & accents',
     example: 'sqrt  vec  hat  bar',
     on: false,
     subs: { sqrt: MATH_PALETTE.sqrt, vec: MATH_PALETTE.vec, hat: MATH_PALETTE.hat, bar: MATH_PALETTE.bar, tilde: MATH_PALETTE.tilde },
   },
   {
     id: 'doubled',
-    label: 'doubled letters',
+    label: 'letter pairs',
     example: 'RR  NN  oo  xx  AA  uu',
     on: false,
     subs: {
@@ -282,7 +282,7 @@ export const SUB_GROUPS: SubGroup[] = [
   },
   {
     id: 'named',
-    label: 'other symbols by name',
+    label: 'other symbols',
     example: 'in  sub  infty  del  cdot',
     on: false,
     subs: {
@@ -290,7 +290,7 @@ export const SUB_GROUPS: SubGroup[] = [
       sub: '\\subset', sube: '\\subseteq', supe: '\\supseteq', del: '\\partial', grad: '\\nabla',
     },
   },
-  { id: 'words', label: 'and / or as words', example: 'and  or', on: false, subs: { and: '\\text{ and }', or: '\\text{ or }' } },
+  { id: 'words', label: 'and / or', example: 'and  or', on: false, subs: { and: '\\text{ and }', or: '\\text{ or }' } },
   // LaTeX templates, as the user's own substitutions are (`#`: where the caret goes)
   {
     id: 'shorthands',

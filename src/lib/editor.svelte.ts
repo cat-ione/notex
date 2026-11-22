@@ -2919,7 +2919,7 @@ export class Editor {
     }
     if (w.length < 3 || M.isSubstitution(w)) return;
     const g = SUB_GROUPS.find((g) => !g.template && g.subs[w] !== undefined && !this.config.typing.substitutions[g.id]);
-    if (g) this.tip('sub-names', `\\${w} for the symbol, or switch on ${g.label} in settings › substitutions`, 2);
+    if (g) this.tip('sub-names', `type \\${w} for the symbol, or turn on ${g.label} in settings › substitutions`, 2);
   }
 
   /** Anchor offset of a selection inside the formula (same row as the caret). */
