@@ -2498,6 +2498,7 @@ export class Editor {
       case 'Right': {
         const sel = this.selection;
         if (sel && !shift) return this.moveTo(sel.e, false), true;
+        if (!shift && this.stepOut()) return true;
         if (!shift && blk.items[this.o]?.t === 'm') {
           this.enterMath(false);
           return true;
@@ -2679,6 +2680,8 @@ export class Editor {
         if (st.c) c.c = true;
       }
       this.blk.items.splice(this.o, 0, c);
+      const vc = this.closeAt;
+      if (vc && vc.b === this.b && vc.o === this.o && (c[vc.s] || vc.s === 'c')) vc.o++; // (the run grows)
       this.o++;
       if (this.b !== NOTE_B) this.growAnchors(this.blk.items, this.o - 1);
       if (this.pendingStyle) this.pendingStyle.at = { b: this.b, o: this.o };
@@ -2686,8 +2689,7 @@ export class Editor {
       if (k === ' ') this.lastKind = '';
       if (inBlock || st.c) return true; // code is typed as it is
       if (k === ' ') this.markdownShortcut();
-      if (k === '*') this.emphasisShortcut();
-      if (k === '`') this.codeShortcut();
+      this.inlineShortcuts(this.o - 1);
       this.textSnippet();
       return true;
     }
@@ -2789,27 +2791,60 @@ export class Editor {
     }
   }
 
-  /** `code` → inline code, on the closing backtick. One undo step. */
-  private codeShortcut() {
-    if (this.note) return;
+  /**
+   * `code`, **bold** and *italic* as you type: once the character just typed (at `at`)
+   * completes a pair of markers around some text, the markers go and the text is styled,
+   * whichever was typed last: the closing marker, the opening one, or the text between
+   * markers typed first (type ``, ← and the code). Bold and italic open after a space, a
+   * bracket or the line start, with no space just inside; code takes anything. One undo step.
+   */
+  private inlineShortcuts(at: number) {
     const items = this.blk.items;
-    const text = items.slice(0, this.o).map((i) => (i.t === 'c' && !i.c ? i.ch : '\0')).join('');
-    const m = /(^|[^`])`([^`\0]+)`$/.exec(text);
-    if (!m) return;
-    this.learned('md-code');
-    const end = this.o, start = end - m[2].length - 2;
-    this.checkpoint();
-    for (const it of items.slice(start + 1, end - 1))
-      if (it.t === 'c') {
-        it.c = true;
-        delete it.b;
-        delete it.i;
+    // (code already styled counts as NUL: markers in it don't pair; a formula as U+0001: bold may hold one, code cannot)
+    const text = items.map((i) => (i.t === 'c' ? (i.c ? '\0' : i.ch) : '\u0001')).join('');
+    if (!/[`*]/.test(text)) return;
+    const patterns: [RegExp, 'b' | 'i' | 'c'][] = [
+      ...(this.note ? [] : [[/(^|[^`])(`)([^`\0\u0001]+)`(?!`)/g, 'c'] as [RegExp, 'c']]),
+      [/(^|[\s(["'])(\*\*)([^\s*\0](?:[^*\0]*[^\s*\0])?)\*\*(?!\*)/g, 'b'],
+      [/(^|[\s(["'])(\*)([^\s*\0](?:[^*\0]*[^\s*\0])?)\*(?!\*)/g, 'i'],
+    ];
+    for (const [re, s] of patterns)
+      for (const m of text.matchAll(re)) {
+        const L = m[2].length;
+        const start = m.index! + m[1].length, end = start + L + m[3].length + L;
+        if (at < start || at >= end) continue;
+        this.learned(s === 'c' ? 'md-code' : 'md-bold');
+        this.checkpoint();
+        for (const it of items.slice(start + L, end - L))
+          if (it.t === 'c') {
+            it[s] = true;
+            if (s === 'c') delete it.b, delete it.i;
+          }
+        items.splice(end - L, L);
+        items.splice(start, L);
+        // the caret stays among the same characters
+        const o = this.o;
+        this.o = o - Math.min(L, Math.max(0, o - start)) - Math.min(L, Math.max(0, o - (end - L)));
+        // the closing marker was typed: what's typed next is plain again (between markers typed
+        // first, it's still inside: the text goes on, and → steps over where the marker was)
+        if (at >= end - L) this.pendingStyle = { ...this.typingStyle(), [s]: false, at: { b: this.b, o: this.o } };
+        else this.closeAt = { b: this.b, o: end - 2 * L, s };
+        return;
       }
-    items.splice(end - 1, 1);
-    items.splice(start, 1);
-    this.o = end - 2;
-    // what's typed next is plain again
-    this.pendingStyle = { b: false, i: false, c: false, at: { b: this.b, o: this.o } };
+  }
+
+  /** Where a closing marker was typed before the text it closes (see inlineShortcuts). */
+  private closeAt: { b: number; o: number; s: 'b' | 'i' | 'c' } | null = null;
+
+  /** → at the end of such a run: out of its style first, as if over the marker. */
+  private stepOut(): boolean {
+    const vc = this.closeAt;
+    if (!vc || vc.b !== this.b || vc.o !== this.o) return false;
+    this.closeAt = null;
+    const st = this.typingStyle();
+    if (!st[vc.s]) return false;
+    this.pendingStyle = { ...st, [vc.s]: false, at: { b: this.b, o: this.o } };
+    return true;
   }
 
   /** A formula made by auto-math: space (, ; :) at its end goes straight back to text. */
@@ -2882,28 +2917,6 @@ export class Editor {
           if (on) it[s] = true;
           else delete it[s];
         }
-  }
-
-  /**
-   * `*word*` → italic, `**word**` → bold, on the closing `*`: the run opened after a space,
-   * a bracket or the line start, with no space just inside the stars. One undo step.
-   */
-  private emphasisShortcut() {
-    const items = this.blk.items;
-    const text = items.slice(0, this.o).map((i) => (i.t === 'c' ? i.ch : '\0')).join('');
-    const m = /(^|[\s(["'])(\*\*|\*)([^\s*](?:[^*]*[^\s*])?)\2$/.exec(text);
-    if (!m) return;
-    this.learned('md-bold');
-    const L = m[2].length, inner = m[3].length;
-    const end = this.o, start = end - L - inner - L;
-    this.checkpoint();
-    for (const it of items.slice(start + L, end - L)) if (it.t === 'c') it[L === 2 ? 'b' : 'i'] = true;
-    items.splice(end - L, L);
-    items.splice(start, L);
-    this.o = end - 2 * L;
-    // what's typed next is plain again
-    const st = this.typingStyle();
-    this.pendingStyle = { ...st, [L === 2 ? 'b' : 'i']: false, at: { b: this.b, o: this.o } };
   }
 
   /**
