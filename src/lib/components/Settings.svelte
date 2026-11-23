@@ -9,30 +9,32 @@
 
   let { ed }: { ed: Editor } = $props();
 
-  type Row = { label: string; value?: () => string; change?: (dir: 1 | -1) => void; act?: () => void; hint?: string | (() => string) };
+  type Row = { label: string; tip: string; value?: () => string; change?: (dir: 1 | -1) => void; act?: () => void; hint?: string | (() => string) };
 
   const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
   const onCount = () => SUB_GROUPS.filter((g) => ed.config.typing.substitutions[g.id]).length;
   const mineCount = () => Object.keys(ed.config.snippets.math).length + Object.keys(ed.config.snippets.text).length;
   const rows: Row[] = [
-    { label: 'theme', value: () => ed.config.theme, change: (d) => ed.cycleTheme(d) },
-    { label: 'text size', value: () => `${ed.config.fontSize}px`, change: (d) => ed.updateConfig({ fontSize: clamp(ed.config.fontSize + d, 11, 28) }) },
-    { label: 'page width', value: () => `${ed.config.pageWidth}px`, change: (d) => ed.updateConfig({ pageWidth: clamp(ed.config.pageWidth + d * 40, 480, 1600) }) },
+    { label: 'theme', tip: 'Colour scheme: midnight, phosphor or paper. Define your own under "themes" in the config file.', value: () => ed.config.theme, change: (d) => ed.cycleTheme(d) },
+    { label: 'text size', tip: 'Font size of the note, in pixels.', value: () => `${ed.config.fontSize}px`, change: (d) => ed.updateConfig({ fontSize: clamp(ed.config.fontSize + d, 11, 28) }) },
+    { label: 'page width', tip: 'Maximum width of the page, in pixels. Wider pages fit more on a line.', value: () => `${ed.config.pageWidth}px`, change: (d) => ed.updateConfig({ pageWidth: clamp(ed.config.pageWidth + d * 40, 480, 1600) }) },
     {
       label: 'superscripts & subscripts',
+      tip: 'LaTeX-style: ^ and _ take the next character or (…) group, so x^2+1 keeps +1 on the line. End with space: everything typed stays in the script until you press space.',
       value: () => (ed.config.typing.latexScripts ? 'LaTeX-style' : 'end with space'),
       change: () => ed.updateConfig({ typing: { ...ed.config.typing, latexScripts: !ed.config.typing.latexScripts } }),
     },
     {
       label: 'detect math in text',
+      tip: 'Typing ^ or _ right after a word in text, like x^2 or a_n, turns it into math without typing $ first.',
       value: () => (ed.config.typing.autoMath ? 'on' : 'off'),
       change: () => ed.updateConfig({ typing: { ...ed.config.typing, autoMath: !ed.config.typing.autoMath } }),
     },
-    { label: 'show tips', value: () => (ed.config.tips ? 'on' : 'off'), change: () => ed.updateConfig({ tips: !ed.config.tips }) },
-    { label: 'substitutions…', act: () => openSubs(), hint: () => `${onCount()} on, ${mineCount()} custom` },
-    { label: 'edit config file…', act: () => openEditor(), hint: 'themes, css' },
+    { label: 'show tips', tip: 'Now and then, a short tip in the status bar about a faster way to do what you just did. Each tip shows at most twice.', value: () => (ed.config.tips ? 'on' : 'off'), change: () => ed.updateConfig({ tips: !ed.config.tips }) },
+    { label: 'substitutions…', tip: 'Text replaced as you type, like -> with →. Turn groups of built-in substitutions on or off, and add your own.', act: () => openSubs(), hint: () => `${onCount()} on, ${mineCount()} custom` },
+    { label: 'edit config file…', tip: 'All settings as JSON, including custom themes and extra CSS.', act: () => openEditor(), hint: 'themes, css' },
     ...(isDesktop()
-      ? [{ label: 'open config in external editor', act: async () => { const p = await openConfigExternally(); if (p) ed.flash(`opened ${p}`); }, hint: '' } as Row]
+      ? [{ label: 'open config in external editor', tip: 'Open the config file in your default editor. Changes apply when you come back to notex.', act: async () => { const p = await openConfigExternally(); if (p) ed.flash(`opened ${p}`); }, hint: '' } as Row]
       : []),
   ];
 
@@ -210,7 +212,7 @@
       <div class="section">built-in <span>· math</span></div>
       {#each SUB_GROUPS as g, i}
         {@const on = !!ed.config.typing.substitutions[g.id]}
-        <div class="row" class:sel={i === subSel} onmouseenter={() => (subSel = i)} onclick={() => toggleGroup(g.id)}>
+        <div class="row" class:sel={i === subSel} data-tip={g.desc} onmouseenter={() => (subSel = i)} onclick={() => toggleGroup(g.id)}>
           <span class="label">{g.label}</span>
           <span class="example">{g.example}</span>
           <span class="switch" class:on>{on ? 'on' : 'off'}</span>
@@ -219,7 +221,7 @@
       <div class="section">custom</div>
       {#each mine as m, j (m.kind + m.trigger)}
         {@const i = SUB_GROUPS.length + j}
-        <div class="row" class:sel={i === subSel} class:editing={same(editing, m)} onmouseenter={() => (subSel = i)} onclick={() => startForm(m)}>
+        <div class="row" class:sel={i === subSel} class:editing={same(editing, m)} data-tip={m.kind === 'math' ? 'In math, typing this inserts the LaTeX on the right. Click to edit.' : 'In text, typing this inserts the text on the right. Click to edit.'} onmouseenter={() => (subSel = i)} onclick={() => startForm(m)}>
           <span class="kind">{m.kind}</span>
           <span class="trigger">{m.trigger}</span>
           <span class="to">{m.to}</span>
@@ -234,9 +236,9 @@
           data-tip={form.kind === 'math' ? 'math: replacement is LaTeX, # marks the cursor' : 'text: plain text replacement'}
           onclick={() => (form.kind = form.kind === 'math' ? 'text' : 'math')}>{form.kind}</button
         >
-        <input class="trigger" bind:this={triggerEl} bind:value={form.trigger} placeholder="trigger" spellcheck="false" onfocus={() => (subSel = subCount - 1)} />
+        <input class="trigger" bind:this={triggerEl} bind:value={form.trigger} placeholder="trigger" data-tip="What you type to trigger it, without spaces" spellcheck="false" onfocus={() => (subSel = subCount - 1)} />
         <span class="arrow">→</span>
-        <input class="to" bind:this={toEl} bind:value={form.to} placeholder="replacement" spellcheck="false" />
+        <input class="to" bind:this={toEl} bind:value={form.to} placeholder="replacement" data-tip={form.kind === 'math' ? 'LaTeX to insert; # marks where the cursor goes' : 'Text to insert; may contain $math$'} spellcheck="false" />
         <button class="save" tabindex="-1" onclick={saveForm}>{editing ? 'save' : 'add'}</button>
       </div>
       {#if formError}<div class="error inset" transition:fly={{ y: -4, duration: 150 }}>{formError}</div>{/if}
@@ -248,7 +250,7 @@
     {:else}
       <div class="title">settings</div>
       {#each rows as r, i}
-        <div class="row" class:sel={i === sel} onmouseenter={() => (sel = i)} onclick={() => (r.act ? r.act() : r.change?.(1))}>
+        <div class="row" class:sel={i === sel} data-tip={r.tip} onmouseenter={() => (sel = i)} onclick={() => (r.act ? r.act() : r.change?.(1))}>
           <span class="label">{r.label}</span>
           {#if r.value}
             <span class="value">

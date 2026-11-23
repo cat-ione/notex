@@ -90,6 +90,8 @@
   .tip {
     position: fixed;
     z-index: 40;
+    width: max-content;
+    font-variant-ligatures: none; /* keys as typed: -> not an arrow */
     max-width: 320px;
     padding: 4px 8px;
     font-family: var(--mono);
@@ -101,8 +103,8 @@
     border-radius: 5px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
     pointer-events: none;
-    white-space: nowrap;
   }
+  kbd { white-space: nowrap; }
   .main {
     display: flex;
     align-items: center;

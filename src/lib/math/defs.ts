@@ -229,7 +229,7 @@ for (const g of 'alpha beta gamma delta epsilon varepsilon zeta eta theta varthe
  * (`\alpha`, `\in`, `\sin`, `\sqrt`), so only the symbols made of keys are on at first:
  * names typed as letters are just letters unless their group is switched on.
  */
-export type SubGroup = { id: string; label: string; example: string; on: boolean; subs: Record<string, string | Inserter>; template?: true };
+export type SubGroup = { id: string; label: string; example: string; desc: string; on: boolean; subs: Record<string, string | Inserter>; template?: true };
 
 const names = (list: string, tex = (n: string) => '\\' + n) => Object.fromEntries(list.split(' ').map((n) => [n, tex(n)]));
 
@@ -237,6 +237,7 @@ export const SUB_GROUPS: SubGroup[] = [
   {
     id: 'symbols',
     label: 'symbols',
+    desc: 'Key combinations become symbols: -> →, => ⇒, <=> ⇔, <= ≤, >= ≥, != ≠, ~~ ≈, +- ±, ... …, ** ·',
     example: '->  <=  !=  +-  ...  **',
     on: true,
     subs: {
@@ -247,6 +248,7 @@ export const SUB_GROUPS: SubGroup[] = [
   {
     id: 'greek',
     label: 'greek letters',
+    desc: 'Greek letter names become letters: alpha α, theta θ, pi π, Omega Ω. When off, type \\alpha.',
     example: 'alpha  pi  Omega',
     on: false,
     subs: names('alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi pi sigma upsilon phi chi psi omega rho tau Gamma Delta Theta Lambda Xi Pi Sigma Phi Psi Omega'),
@@ -254,6 +256,7 @@ export const SUB_GROUPS: SubGroup[] = [
   {
     id: 'functions',
     label: 'functions',
+    desc: 'Function names are set upright, as functions: sin, cos, log, exp, max, det, sgn. When off, type \\sin.',
     example: 'sin  log  max  det',
     on: false,
     subs: {
@@ -262,10 +265,11 @@ export const SUB_GROUPS: SubGroup[] = [
     },
   },
   // (as the bare symbol with LaTeX-style scripts, with empty limits otherwise: see edit.ts)
-  { id: 'operators', label: 'big operators', example: 'sum  int  prod  lim', on: false, subs: names('sum prod int lim') },
+  { id: 'operators', label: 'big operators', desc: 'sum, int, prod and lim become ∑ ∫ ∏ lim. Add limits with _ and ^, as in sum_(n=1)^10. When off, type \\sum.', example: 'sum  int  prod  lim', on: false, subs: names('sum prod int lim') },
   {
     id: 'structures',
     label: 'roots & accents',
+    desc: 'sqrt makes a square root; vec, hat, bar and tilde put an accent over what you type next. When off, type \\sqrt.',
     example: 'sqrt  vec  hat  bar',
     on: false,
     subs: { sqrt: MATH_PALETTE.sqrt, vec: MATH_PALETTE.vec, hat: MATH_PALETTE.hat, bar: MATH_PALETTE.bar, tilde: MATH_PALETTE.tilde },
@@ -273,6 +277,7 @@ export const SUB_GROUPS: SubGroup[] = [
   {
     id: 'doubled',
     label: 'letter pairs',
+    desc: 'Doubled letters become symbols: RR ℝ, NN ℕ, ZZ ℤ, QQ ℚ, CC ℂ, oo ∞, xx ×, AA ∀, EE ∃, uu ∪, nn ∩',
     example: 'RR  NN  oo  xx  AA  uu',
     on: false,
     subs: {
@@ -283,6 +288,7 @@ export const SUB_GROUPS: SubGroup[] = [
   {
     id: 'named',
     label: 'other symbols',
+    desc: 'Symbol names become symbols: in ∈, notin ∉, sub ⊂, sube ⊆, infty ∞, del ∂, grad ∇, cdot ·, equiv ≡, perp ⊥ and more.',
     example: 'in  sub  infty  del  cdot',
     on: false,
     subs: {
@@ -290,11 +296,12 @@ export const SUB_GROUPS: SubGroup[] = [
       sub: '\\subset', sube: '\\subseteq', supe: '\\supseteq', del: '\\partial', grad: '\\nabla',
     },
   },
-  { id: 'words', label: 'and / or', example: 'and  or', on: false, subs: { and: '\\text{ and }', or: '\\text{ or }' } },
+  { id: 'words', label: 'and / or', desc: 'and / or typed in a formula are set as words, with spacing around them.', example: 'and  or', on: false, subs: { and: '\\text{ and }', or: '\\text{ or }' } },
   // LaTeX templates, as the user's own substitutions are (`#`: where the caret goes)
   {
     id: 'shorthands',
     label: 'shorthands',
+    desc: 'eps ε, pd ∂/∂ (a partial derivative), dd d/d (a derivative), inv ⁻¹, TT ᵀ (transpose), norm ‖ ‖',
     example: 'eps  pd  dd  inv  TT  norm',
     on: false,
     template: true,
