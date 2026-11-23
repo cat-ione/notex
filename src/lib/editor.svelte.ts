@@ -17,6 +17,7 @@ import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
+import { imageSrc, pickImageFiles } from './images';
 import * as F from './files';
 import * as C from './config';
 import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
@@ -775,7 +776,98 @@ export class Editor {
   paste(e: ClipboardEvent) {
     const text = e.clipboardData?.getData('text/plain') ?? '';
     e.preventDefault();
+    // an image (a screenshot, one copied from a page): as an image
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+    if (files.length && !this.note && this.mode !== 'math') return void this.insertImages(files);
     this.pasteText(text);
+  }
+
+  // ── images ──
+
+  /** Files dropped on the page: images go where they were dropped. */
+  dropFiles(e: DragEvent) {
+    const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+    if (!files.length) return;
+    e.preventDefault();
+    this.withFrame(() => {
+      if (this.note) this.commitNote();
+      if (this.mode !== 'text') this.setMode('text');
+      const h = this.hitTest(e.clientX, e.clientY);
+      if (h) (this.b = h.pos.b), (this.o = h.pos.o), (this.anchor = null);
+    });
+    void this.insertImages(files);
+  }
+
+  /** \image: choose image files to put in at the caret. */
+  async chooseImages() {
+    const files = await pickImageFiles();
+    if (files.length) await this.insertImages(files);
+  }
+
+  /**
+   * Put images in at the caret, each a block of its own (an empty line becomes them;
+   * a line with text is split around them), and carry on typing after them.
+   */
+  async insertImages(files: Blob[]) {
+    const got: { src: string; w: number }[] = [];
+    for (const f of files) {
+      try {
+        got.push(await imageSrc(f));
+      } catch {
+        this.flash("couldn't read that image");
+      }
+    }
+    if (!got.length || this.note) return;
+    this.withFrame(() => {
+      if (this.mode === 'math') this.exitMath(true);
+      if (this.mode !== 'text') this.setMode('text');
+      this.checkpoint();
+      this.deleteSelection();
+      const blk = this.blk;
+      const imgs = got.map(({ src, w }) => Object.assign(block([], 'img'), { src, w }));
+      const blocks = this.doc.blocks;
+      if (!blk.items.length && blk.kind !== 'img') {
+        // an empty line: the images, then the line to go on typing on
+        blocks.splice(this.b, 0, ...imgs);
+        this.b += imgs.length;
+      } else if (this.o === 0 && blk.kind !== 'img') {
+        blocks.splice(this.b, 0, ...imgs);
+        this.b += imgs.length;
+      } else {
+        const rest = blk.items.splice(this.o);
+        blocks.splice(this.b + 1, 0, ...imgs, block(rest));
+        this.b += imgs.length + 1;
+        this.o = 0;
+      }
+      this.o = 0;
+      this.anchor = null;
+      this.touch();
+    });
+  }
+
+  /** Width of an image block, by hand (the mouse on its corner, or Alt+← →). */
+  setImageWidth(b: number, w: number, step = false) {
+    const blk = this.doc.blocks[b];
+    if (blk?.kind !== 'img') return;
+    const max = this.page?.clientWidth ?? 2000;
+    this.withFrame(() => {
+      if (step) this.checkpoint('style');
+      blk.w = Math.round(Math.max(40, Math.min(max, w)));
+      this.touch();
+    });
+  }
+
+  /** Start resizing an image by hand: the caret goes to it (one undo step for the drag). */
+  beginImageResize(b: number) {
+    this.withFrame(() => {
+      if (this.note) this.commitNote();
+      this.setMode('text');
+      this.b = b;
+      this.o = this.doc.blocks[b].items.length;
+      this.anchor = null;
+      this.checkpoint();
+      this.touch();
+    });
   }
 
   /** Paste text at the caret (into the formula or note being edited, if any). */
@@ -2444,6 +2536,9 @@ export class Editor {
     switch (k) {
       case 'Escape': this.anchor = null; return true;
       case 'A-Up': case 'A-Down': this.moveBlocks(k === 'A-Up' ? -1 : 1); return true;
+      case 'A-Left': case 'A-Right':
+        if (blk.kind === 'img') this.setImageWidth(this.b, (blk.w ?? 400) * (k === 'A-Right' ? 1.1 : 1 / 1.1), true);
+        return true;
       case 'C-a': this.selectAll(); return true;
       case 'C-z': this.undo(); return true;
       case 'C-y': case 'C-S-z': this.redo(); return true;
@@ -2487,6 +2582,7 @@ export class Editor {
           this.deleteSelection();
           return true;
         }
+        if (this.o === 0 && this.imageEdge(-1)) return true;
         if (k === 'C-Backspace' && this.o > 0) {
           const p = this.wordPos(-1);
           this.checkpoint();
@@ -2536,6 +2632,8 @@ export class Editor {
           this.checkpoint('type');
           const end = k === 'C-Delete' ? this.wordPos(1).o : this.o + 1;
           blk.items.splice(this.o, Math.max(1, end - this.o));
+        } else if (this.imageEdge(1)) {
+          // (an image's line isn't joined to the next)
         } else if (this.b < this.doc.blocks.length - 1) {
           this.checkpoint();
           blk.items.push(...this.doc.blocks.splice(this.b + 1, 1)[0].items);
@@ -2594,6 +2692,43 @@ export class Editor {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Backspace at a line's start (d = -1) / Delete at its end (1), where an image is
+   * involved: an image with no caption goes (Backspace in its caption); an empty line
+   * next to an image goes; otherwise the caret steps over rather than joining the lines.
+   * True when it was handled.
+   */
+  private imageEdge(d: -1 | 1): boolean {
+    const blocks = this.doc.blocks;
+    const blk = this.blk, other = blocks[this.b + d];
+    if (this.b === NOTE_B) return false;
+    if (blk.kind === 'img') {
+      if (d < 0 && !blk.items.length) {
+        this.checkpoint();
+        blocks.splice(this.b, 1);
+        if (!blocks.length) blocks.push(block());
+        if (this.b > 0) this.b--, (this.o = blocks[this.b].items.length);
+        else this.o = 0;
+        return true;
+      }
+      if (d > 0 || this.b === 0) return true;
+      this.b--;
+      this.o = blocks[this.b].items.length;
+      return true;
+    }
+    if (other?.kind !== 'img' || blk.kind !== 'p') return false;
+    if (!blk.items.length) {
+      this.checkpoint();
+      blocks.splice(this.b, 1);
+      if (d < 0) this.b--, (this.o = blocks[this.b].items.length);
+      else this.o = 0;
+      return true;
+    }
+    this.b += d;
+    this.o = d < 0 ? blocks[this.b].items.length : 0;
+    return true;
   }
 
   /** Typing in code (a code block, or inline code): keys are the characters themselves. */
@@ -3259,7 +3394,7 @@ export class Editor {
     const setKind = (kind: BlockKind) => () => {
       this.checkpoint();
       const sel = this.selection;
-      for (let b = sel ? sel.s.b : this.b; b <= (sel ? sel.e.b : this.b); b++) this.doc.blocks[b].kind = kind;
+      for (let b = sel ? sel.s.b : this.b; b <= (sel ? sel.e.b : this.b); b++) if (this.doc.blocks[b].kind !== 'img') this.doc.blocks[b].kind = kind;
     };
     return [
       ...this.drawCommands(),
@@ -3274,6 +3409,7 @@ export class Editor {
       { name: 'bold', desc: 'bold  ctrl+b', run: () => this.toggleStyle('b') },
       { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i') },
       { name: 'code', desc: 'code block  ```', run: setKind('code') },
+      { name: 'image', desc: 'insert an image (or paste / drop one)', run: () => void this.chooseImages() },
       { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c') },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
@@ -3373,6 +3509,7 @@ export class Editor {
   private level0(): Loc[] {
     const out: Loc[] = [];
     this.doc.blocks.forEach((blk, b) => {
+      if (blk.kind === 'img') out.push({ k: 'block', b }); // an image, then its caption's words
       let s = -1;
       blk.items.forEach((it, o) => {
         if (it.t === 'c' && !/\s/.test(it.ch)) {

@@ -105,3 +105,12 @@ describe('code', () => {
     expect(back.blocks[2].items.map((i) => (i.t === 'c' ? i.ch : '')).join('')).toBe('  y');
   });
 });
+
+describe('images', () => {
+  it('keep their picture, width and caption', () => {
+    const img = Object.assign(block(chars('Fig. 1'), 'img'), { src: 'data:image/png;base64,AAAA', w: 320 });
+    const back = decode(encode({ blocks: [img], arrows: [], marks: [] }));
+    expect(back.blocks[0]).toMatchObject({ kind: 'img', src: 'data:image/png;base64,AAAA', w: 320 });
+    expect(back.blocks[0].items.length).toBe(6);
+  });
+});

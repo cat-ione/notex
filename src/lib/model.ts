@@ -17,12 +17,13 @@ export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true; c?: true };
 export type MathItem = { t: 'm'; id: Id; root: MRow; display: boolean };
 export type Item = Char | MathItem;
 
-export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code';
+export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code' | 'img';
 /**
  * `indent`: how deep a list item is nested (0, absent, at the top). A code block is a run
- * of `code` blocks, one per line; `lang`, on its first line, names its language.
+ * of `code` blocks, one per line; `lang`, on its first line, names its language. An image
+ * (`img`) is its `src` (a data URL), shown `w` pixels wide, with its items as the caption.
  */
-export type Block = { id: Id; kind: BlockKind; items: Item[]; indent?: number; lang?: string };
+export type Block = { id: Id; kind: BlockKind; items: Item[]; indent?: number; lang?: string; src?: string; w?: number };
 export const isListKind = (k: BlockKind) => k === 'li' || k === 'ol';
 /** Deepest a list item can be nested. */
 export const MAX_INDENT = 4;

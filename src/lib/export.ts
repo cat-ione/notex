@@ -119,6 +119,7 @@ const PKG = {
   ulem: '\\usepackage[normalem]{ulem}',
   xcolor: '\\usepackage{xcolor}',
   amsmath: '\\usepackage{amsmath}',
+  graphicx: '\\usepackage{graphicx}',
 };
 
 export function docToLatex(doc: Doc): string {
@@ -222,7 +223,18 @@ export function docToLatex(doc: Doc): string {
   // open lists, outermost first (a nested item opens one inside the item before it)
   const lists: ('itemize' | 'enumerate')[] = [];
   const pad = (n: number) => '  '.repeat(n);
+  let images = 0;
   doc.blocks.forEach((blk, b) => {
+    // an image: a figure for a file of its own (the image itself lives in the note)
+    if (blk.kind === 'img') {
+      need.add('graphicx');
+      const caption = inline(blk.items, b);
+      const ext = /^data:image\/(\w+)/.exec(blk.src ?? '')?.[1]?.replace('jpeg', 'jpg').replace('svg+xml', 'svg') ?? 'png';
+      out.push('\\begin{figure}[h]', '  \\centering', `  \\includegraphics[width=${blk.w ? `${Math.round(blk.w * 0.75)}pt` : '\\linewidth'}]{image${++images}.${ext}}`);
+      if (caption) out.push(`  \\caption*{${caption}}`);
+      out.push('\\end{figure}\n');
+      return;
+    }
     // a code block: its lines as they are
     if (blk.kind === 'code') {
       const first = doc.blocks[b - 1]?.kind !== 'code', last = doc.blocks[b + 1]?.kind !== 'code';
@@ -254,6 +266,7 @@ export function docToLatex(doc: Doc): string {
   const head: string[] = [];
   if (need.size) head.push('% preamble:', ...[...need].map((p) => `%   ${PKG[p]}`));
   if (names.size) head.push('% (drawings use tikzmark: compile twice)');
+  if (images) head.push(`% ${images} image(s): save them from the note as image1, image2, …`);
   if (skipped) head.push(`% ${skipped} drawing(s) could not be exported (they span several paragraphs or overlap other drawings)`);
   return [...head, ...(head.length ? [''] : []), ...out].join('\n');
 }

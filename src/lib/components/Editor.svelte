@@ -106,6 +106,23 @@
   const codeEdge = (b: number, d: -1 | 1) => ed.doc.blocks[b].kind === 'code' && ed.doc.blocks[b + d]?.kind !== 'code';
   // inline code's first / last character (its rounded ends)
   const isCode = (it: Item | undefined) => it?.t === 'c' && !!it.c;
+
+  /** Dragging an image's corner: it grows on both sides (it's centred), one undo step. */
+  function resizeImage(e: MouseEvent, b: number) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const img = (e.currentTarget as HTMLElement).parentElement!.querySelector('img')!;
+    const x0 = e.clientX, w0 = img.getBoundingClientRect().width;
+    ed.beginImageResize(b);
+    const move = (m: MouseEvent) => ed.setImageWidth(b, w0 + (m.clientX - x0) * 2);
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
   const SIGIL = { math: 'ƒ', text: '❯', draw: '✎', style: '✎' };
 
   // numbered list items: each counts on from the one before at its depth (a bullet at that
@@ -139,7 +156,14 @@
   <FindBar {ed} />
   <Tooltip {ed} />
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="scroller" onmousedown={(e) => ed.mouseDown(e)} oncontextmenu={(e) => ed.openPageMenu(e)} onscroll={() => ed.scrolled()}>
+  <div
+    class="scroller"
+    onmousedown={(e) => ed.mouseDown(e)}
+    oncontextmenu={(e) => ed.openPageMenu(e)}
+    onscroll={() => ed.scrolled()}
+    ondragover={(e) => e.dataTransfer?.types.includes('Files') && e.preventDefault()}
+    ondrop={(e) => ed.dropFiles(e)}
+  >
     <div class="page" bind:this={page}>
       <MarkLayer {ed} under />
       {#if ed.mathFrame}
@@ -158,12 +182,21 @@
           class:current={ed.b === b}
           class:cfirst={codeEdge(b, -1)}
           class:clast={codeEdge(b, 1)}
-          data-nx={blk.id}
+          class:empty={!blk.items.length}
+          data-nx={blk.kind === 'img' ? undefined : blk.id}
           data-depth={blk.indent || undefined}
           data-n={listNums[b]}
           data-lang={blk.kind === 'code' ? blk.lang : undefined}
           style:--indent={blk.indent || undefined}
         >
+          {#if blk.kind === 'img'}
+            <div class="figure">
+              <!-- (an image's id is on the picture: drawings on it are on the picture, not its caption) -->
+              <img src={blk.src} alt="" draggable="false" data-nx={blk.id} style:width={blk.w ? `${blk.w}px` : undefined} />
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <span class="grip" onmousedown={(e) => resizeImage(e, b)} data-tip="drag to resize" data-tip-key="alt+← →"></span>
+            </div>
+          {/if}
           {#each blk.items as it, o (it.id)}
             {#if it.t === 'c'}
               <span class="ch" class:b={it.b} class:i={it.i} class:c={it.c} class:cs={it.c && !isCode(blk.items[o - 1])} class:ce={it.c && !isCode(blk.items[o + 1])} data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
@@ -426,6 +459,58 @@
   }
   .ch.c.cs.ce {
     border-radius: 3px;
+  }
+  /* an image, centred, its caption under it */
+  .block.img {
+    text-align: center;
+    padding: 0.5em 0 0.3em;
+    font-size: 0.9em;
+    color: var(--muted);
+    contain-intrinsic-size: auto 200px;
+  }
+  .figure {
+    position: relative;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto 0.2em;
+    line-height: 0;
+  }
+  .figure img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    outline: 2px solid transparent;
+    outline-offset: 3px;
+    transition: outline-color 120ms ease;
+  }
+  .block.img.current .figure img {
+    outline-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  .grip {
+    position: absolute;
+    right: -7px;
+    bottom: -7px;
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    cursor: nwse-resize;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .figure:hover .grip,
+  .block.img.current .grip {
+    opacity: 1;
+  }
+  /* the caption, when there's none yet and the caret is on it */
+  .block.img.empty.current .eol::after {
+    content: 'caption';
+    position: absolute;
+    transform: translateX(-50%);
+    opacity: 0.5;
+    pointer-events: none;
   }
   /* a code block: its lines in the mono font on one tinted box */
   .block.code {

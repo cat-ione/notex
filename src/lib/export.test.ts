@@ -93,3 +93,13 @@ describe('code', () => {
     expect(docToLatex(doc)).toBe(String.raw`call \texttt{f} now` + '\n\n' + String.raw`\begin{verbatim}` + '\na = $1\n  b\n' + String.raw`\end{verbatim}` + '\n');
   });
 });
+
+describe('images', () => {
+  it('export as figures for files of their own', () => {
+    const img = Object.assign(block(chars('Setup'), 'img'), { src: 'data:image/jpeg;base64,AAAA', w: 400 });
+    const tex = docToLatex({ blocks: [img], arrows: [], marks: [] });
+    expect(tex).toContain('includegraphics[width=300pt]{image1.jpg}');
+    expect(tex).toContain('caption*{Setup}');
+    expect(tex).toContain('usepackage{graphicx}');
+  });
+});

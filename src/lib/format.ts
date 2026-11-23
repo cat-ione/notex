@@ -16,7 +16,7 @@ import { block, ch, type Arrow, type Mark, type Block, type BlockKind, type Doc,
 
 /** Plain text, styled text (bold / italic / inline code), or a formula. */
 type Content = string | { s: string; b?: 1; i?: 1; c?: 1 } | { m: MRow; id: Id; d?: 1 };
-type FileBlock = { kind: BlockKind; content: Content[]; indent?: number; lang?: string };
+type FileBlock = { kind: BlockKind; content: Content[]; indent?: number; lang?: string; src?: string; w?: number };
 type FileArrow = Omit<Arrow, 'id'>;
 type FileMark = Omit<Mark, 'id'>;
 export type NoteFile = { format: 'notex'; version: 1; blocks: FileBlock[]; arrows: FileArrow[]; marks?: FileMark[] };
@@ -44,7 +44,14 @@ export function encode(doc: Doc): NoteFile {
       }
     });
     flush();
-    return { kind: b.kind, content, ...(b.indent ? { indent: b.indent } : {}), ...(b.lang ? { lang: b.lang } : {}) };
+    return {
+      kind: b.kind,
+      content,
+      ...(b.indent ? { indent: b.indent } : {}),
+      ...(b.lang ? { lang: b.lang } : {}),
+      ...(b.src ? { src: b.src } : {}),
+      ...(b.w ? { w: b.w } : {}),
+    };
   });
   const mapIds = (ids: Id[]) => ids.map((id) => where.get(id) ?? id);
   const arrows = doc.arrows.map(({ id: _id, ...a }) => ({ ...a, from: mapIds(a.from), to: mapIds(a.to) }));
@@ -72,6 +79,8 @@ export function decode(file: NoteFile): Doc {
     const blk = block(items, fb.kind);
     if (fb.indent) blk.indent = fb.indent;
     if (fb.lang) blk.lang = fb.lang;
+    if (fb.src) blk.src = fb.src;
+    if (fb.w) blk.w = fb.w;
     return blk;
   });
   const resolve = (ref: string): Id => {
