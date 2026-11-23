@@ -2622,8 +2622,12 @@ export class Editor {
             return true;
           }
           this.checkpoint('type');
-          blk.items.splice(this.o - 1, 1);
+          const [gone] = blk.items.splice(this.o - 1, 1);
           this.o--;
+          // by styled text, the caret stays on the deleted character's side of the markers
+          // (backspacing up to `code` leaves it after the closing one; within, inside)
+          if (gone.t === 'c' && this.caretRuns().length)
+            this.pendingStyle = { b: !!gone.b, i: !!gone.i, c: !!gone.c, at: { b: this.b, o: this.o } };
         } else if (isListKind(blk.kind) && blk.indent) {
           // at the start of a nested item: out a level first
           this.checkpoint();

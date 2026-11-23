@@ -159,7 +159,7 @@
       <img src={blk.src} alt="" draggable="false" data-nx={blk.id} style:width={blk.w ? `${blk.w}px` : undefined} />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="grip" onmousedown={(e) => resizeImage(e, b)} data-tip="drag to resize" data-tip-key="alt+← →"></span>
-    </div>{/if}{#if reveal?.code?.first === b}<div class="mk fence">```{blk.lang ?? ''}</div>{/if}{#if reveal?.b === b && reveal.hashes}<span class="mk hash">{'#'.repeat(reveal.hashes)}&nbsp;</span>{/if}{/snippet}
+    </div>{/if}{#if reveal?.code?.first === b}<div class="mk fence open">```{blk.lang ?? ''}</div>{/if}{#if reveal?.b === b && reveal.hashes}<span class="mk hash">{'#'.repeat(reveal.hashes)}</span>{/if}{/snippet}
 
 <!-- Markers shown at item o of block b: the closing ones of a run ending there, then the opening ones of one starting. -->
 {#snippet markers(b: number, o: number)}{#if reveal?.b === b}{#each reveal.close[o] ?? [] as s (s)}<span class="mk" data-mk="c{o}{s}">{MARKER[s]}</span>{/each}{#each reveal.open[o] ?? [] as s (s)}<span class="mk" data-mk="o{o}{s}">{MARKER[s]}</span>{/each}{/if}{/snippet}
@@ -196,6 +196,7 @@
           class:cfirst={codeEdge(b, -1)}
           class:clast={codeEdge(b, 1)}
           class:empty={!blk.items.length}
+          class:hashed={reveal?.b === b && !!reveal.hashes}
           class:fenced={!!reveal?.code && b >= reveal.code.first && b <= reveal.code.last}
           data-nx={blk.kind === 'img' ? undefined : blk.id}
           data-depth={blk.indent || undefined}
@@ -209,7 +210,7 @@
             {:else}
               <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {/if}
-          {/each}{@render markers(b, blk.items.length)}<span class="eol" data-eol={blk.id}>&#8203;</span>{#if reveal?.code?.last === b}<div class="mk fence">```</div>{/if}
+          {/each}{@render markers(b, blk.items.length)}<span class="eol" data-eol={blk.id}>&#8203;</span>{#if reveal?.code?.last === b}<div class="mk fence close">```</div>{/if}
         </div>
       {/each}
 
@@ -529,12 +530,30 @@
     opacity: 0.75;
     user-select: none;
   }
+  /* (shown where nothing moves for them: a drawing on the text stays where it is) */
   .mk.hash {
-    font-size: 0.75em;
+    position: absolute;
+    top: 0;
+    right: calc(100% + 0.35em);
+    font-size: inherit;
+    white-space: nowrap;
+  }
+  /* (in place of the current-line bar) */
+  .block.hashed::before {
+    opacity: 0;
   }
   .mk.fence {
-    font-size: 1em;
+    position: absolute;
+    left: 1em;
+    font-size: 0.9em;
     line-height: 1.6;
+    white-space: nowrap;
+  }
+  .mk.fence.open {
+    top: 0.25em;
+  }
+  .mk.fence.close {
+    bottom: 0.2em;
   }
   /* (the language shows in the fence then) */
   .block.code.fenced.cfirst::after {
@@ -552,12 +571,12 @@
     tab-size: 2;
   }
   .block.code.cfirst {
-    padding-top: 0.5em;
+    padding-top: 1.6em;
     margin-top: 0.3em;
     border-radius: 5px 5px 0 0;
   }
   .block.code.clast {
-    padding-bottom: 0.5em;
+    padding-bottom: 1.5em;
     margin-bottom: 0.3em;
     border-radius: 0 0 5px 5px;
   }
@@ -573,7 +592,7 @@
     content: attr(data-lang);
     position: absolute;
     right: 0.8em;
-    top: 0.35em;
+    top: 0.3em;
     font-size: 0.8em;
     color: var(--muted);
   }
