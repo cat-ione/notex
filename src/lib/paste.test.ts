@@ -37,3 +37,21 @@ describe('pasting', () => {
     expect(parsePaste('# not a heading')[0]).toMatchObject({ kind: 'p' });
   });
 });
+
+describe('pasting code', () => {
+  it('keeps inline code as it is', () => {
+    const items = inlineItems('run `a $x$ *b*` then $y$');
+    expect(items.filter((i) => i.t === 'c' && i.c).map((i) => (i.t === 'c' ? i.ch : '')).join('')).toBe('a $x$ *b*');
+    expect(items.filter((i) => i.t === 'm').length).toBe(1);
+  });
+  it('reads fenced code as code blocks', () => {
+    const b = parsePaste('look:\n```python\ndef f(x):\n\n    return $x\n```\ndone');
+    expect(b.map((x) => [x.kind, x.lang, show(x.items)])).toEqual([
+      ['p', undefined, 'look:'],
+      ['code', 'python', 'def f(x):'],
+      ['code', undefined, ''],
+      ['code', undefined, '    return $x'],
+      ['p', undefined, 'done'],
+    ]);
+  });
+});

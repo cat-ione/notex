@@ -15,6 +15,7 @@
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
   import { isDesktop, setWindowTitle } from '$lib/files';
+  import type { Item } from '$lib/model';
 
   const ed = new Editor();
   let page: HTMLElement;
@@ -101,6 +102,10 @@
 
 
   const editingMath = (b: number, o: number) => ed.inFormula && ed.b === b && ed.o === o;
+  // a code block's first / last line (its box is drawn around the run of lines)
+  const codeEdge = (b: number, d: -1 | 1) => ed.doc.blocks[b].kind === 'code' && ed.doc.blocks[b + d]?.kind !== 'code';
+  // inline code's first / last character (its rounded ends)
+  const isCode = (it: Item | undefined) => it?.t === 'c' && !!it.c;
   const SIGIL = { math: 'ƒ', text: '❯', draw: '✎', style: '✎' };
 
   // numbered list items: each counts on from the one before at its depth (a bullet at that
@@ -148,10 +153,20 @@
         <div class="findhit" class:cur={f.cur} style="transform: translate({f.r.x - 1}px, {f.r.y}px); width: {f.r.w + 2}px; height: {f.r.h}px;"></div>
       {/each}
       {#each ed.doc.blocks as blk, b (blk.id)}
-        <div class="block {blk.kind}" class:current={ed.b === b} data-nx={blk.id} data-depth={blk.indent || undefined} data-n={listNums[b]} style:--indent={blk.indent || undefined}>
+        <div
+          class="block {blk.kind}"
+          class:current={ed.b === b}
+          class:cfirst={codeEdge(b, -1)}
+          class:clast={codeEdge(b, 1)}
+          data-nx={blk.id}
+          data-depth={blk.indent || undefined}
+          data-n={listNums[b]}
+          data-lang={blk.kind === 'code' ? blk.lang : undefined}
+          style:--indent={blk.indent || undefined}
+        >
           {#each blk.items as it, o (it.id)}
             {#if it.t === 'c'}
-              <span class="ch" class:b={it.b} class:i={it.i} data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
+              <span class="ch" class:b={it.b} class:i={it.i} class:c={it.c} class:cs={it.c && !isCode(blk.items[o - 1])} class:ce={it.c && !isCode(blk.items[o + 1])} data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {:else}
               <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {/if}
@@ -392,6 +407,62 @@
   }
   .ch.i {
     font-style: italic;
+  }
+  /* inline code: a tinted run in the mono font (see-through, so selections show under it) */
+  .ch.c {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    color: var(--code-fg, var(--fg));
+    background: color-mix(in srgb, var(--fg) 9%, transparent);
+    padding: 0.12em 0;
+  }
+  .ch.c.cs {
+    padding-left: 0.3em;
+    border-radius: 3px 0 0 3px;
+  }
+  .ch.c.ce {
+    padding-right: 0.3em;
+    border-radius: 0 3px 3px 0;
+  }
+  .ch.c.cs.ce {
+    border-radius: 3px;
+  }
+  /* a code block: its lines in the mono font on one tinted box */
+  .block.code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    line-height: 1.6;
+    min-height: 1.6em;
+    contain-intrinsic-size: auto 1.6em;
+    padding: 0 1em;
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
+    tab-size: 2;
+  }
+  .block.code.cfirst {
+    padding-top: 0.5em;
+    margin-top: 0.3em;
+    border-radius: 5px 5px 0 0;
+  }
+  .block.code.clast {
+    padding-bottom: 0.5em;
+    margin-bottom: 0.3em;
+    border-radius: 0 0 5px 5px;
+  }
+  .block.code.cfirst.clast {
+    border-radius: 5px;
+  }
+  .block.code::before {
+    left: -18px;
+    top: 0.3em;
+    bottom: 0.3em;
+  }
+  .block.code.cfirst[data-lang]::after {
+    content: attr(data-lang);
+    position: absolute;
+    right: 0.8em;
+    top: 0.35em;
+    font-size: 0.8em;
+    color: var(--muted);
   }
   /* after a display formula it would get a line of its own: an empty line under every one */
   :global(.block .math.display + .eol) {

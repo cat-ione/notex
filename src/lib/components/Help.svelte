@@ -4,6 +4,7 @@
       ['$', 'inline math ($$ for display math)'], ['\\  or  ctrl+k', 'command palette'],
       ['# ␣   ## ␣   - ␣', 'heading, subheading, bullet list'], ['1. ␣   tab  shift+tab', 'numbered list, indent / outdent'],
       ['ctrl+b  ctrl+i', 'bold, italic (or **bold**, *italic*)'], ['x^2  a_n', 'converted to math automatically'],
+      ['`code`  ctrl+e', 'inline code'], ['```  enter', 'code block (``` or two blank lines to leave)'],
       ['ctrl+f  F3', 'find, find next'], ['alt+↑ ↓', 'move paragraph up / down'], ['ctrl+s  o  n', 'save, open, new'], ['ctrl+,', 'settings'], ['F1', 'keyboard shortcuts'],
     ]],
     ['math', [

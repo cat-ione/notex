@@ -6,7 +6,7 @@
 // \tikzmarknode{...}{...} and is drawn in a tikz overlay after the paragraph.
 
 import type { Arrow, Doc, Id, Item, Mark, MRow } from './model';
-import { toLatexWrapped, type Wraps } from './math/latex';
+import { toLatex, toLatexWrapped, type Wraps } from './math/latex';
 import { CMDS } from './math/defs';
 import { noteRuns, noteTex } from './labels';
 
@@ -202,13 +202,13 @@ export function docToLatex(doc: Doc): string {
   for (const [k, ws] of after) if (!k.includes(':')) mathWraps.after.set(k, closes(ws));
 
   // bold / italic runs as \textbf / \emph (closed around a drawing's wrapper, so they nest)
-  const OPEN: Record<string, string> = { b: '\\textbf{', i: '\\emph{', bi: '\\textbf{\\emph{' };
-  const CLOSE: Record<string, string> = { b: '}', i: '}', bi: '}}' };
+  const OPEN: Record<string, string> = { b: '\\textbf{', i: '\\emph{', bi: '\\textbf{\\emph{', c: '\\texttt{' };
+  const CLOSE: Record<string, string> = { b: '}', i: '}', bi: '}}', c: '}' };
   const inline = (items: Item[], b: number) => {
     let out = '', cur = '';
     items.forEach((it, o) => {
       const pre = opens(before.get(`${b}:${o}`)), post = closes(after.get(`${b}:${o}`));
-      const st = it.t === 'c' ? (it.b ? 'b' : '') + (it.i ? 'i' : '') : '';
+      const st = it.t === 'c' ? (it.c ? 'c' : (it.b ? 'b' : '') + (it.i ? 'i' : '')) : '';
       if (st !== cur || pre) (out += CLOSE[cur] ?? ''), (cur = '');
       out += pre;
       if (st !== cur) (out += OPEN[st] ?? ''), (cur = st);
@@ -223,6 +223,14 @@ export function docToLatex(doc: Doc): string {
   const lists: ('itemize' | 'enumerate')[] = [];
   const pad = (n: number) => '  '.repeat(n);
   doc.blocks.forEach((blk, b) => {
+    // a code block: its lines as they are
+    if (blk.kind === 'code') {
+      const first = doc.blocks[b - 1]?.kind !== 'code', last = doc.blocks[b + 1]?.kind !== 'code';
+      if (first) out.push('\\begin{verbatim}');
+      out.push(blk.items.map((it) => (it.t === 'c' ? it.ch : `$${toLatex(it.root)}$`)).join(''));
+      if (last) out.push('\\end{verbatim}\n');
+      return;
+    }
     const list = blk.kind === 'li' || blk.kind === 'ol';
     const depth = list ? (blk.indent ?? 0) + 1 : 0;
     const env = blk.kind === 'ol' ? 'enumerate' : 'itemize';

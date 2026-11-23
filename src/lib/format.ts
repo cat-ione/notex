@@ -14,9 +14,9 @@
 
 import { block, ch, type Arrow, type Mark, type Block, type BlockKind, type Doc, type Id, type Item, type MRow } from './model';
 
-/** Plain text, styled text (bold / italic), or a formula. */
-type Content = string | { s: string; b?: 1; i?: 1 } | { m: MRow; id: Id; d?: 1 };
-type FileBlock = { kind: BlockKind; content: Content[]; indent?: number };
+/** Plain text, styled text (bold / italic / inline code), or a formula. */
+type Content = string | { s: string; b?: 1; i?: 1; c?: 1 } | { m: MRow; id: Id; d?: 1 };
+type FileBlock = { kind: BlockKind; content: Content[]; indent?: number; lang?: string };
 type FileArrow = Omit<Arrow, 'id'>;
 type FileMark = Omit<Mark, 'id'>;
 export type NoteFile = { format: 'notex'; version: 1; blocks: FileBlock[]; arrows: FileArrow[]; marks?: FileMark[] };
@@ -29,13 +29,13 @@ export function encode(doc: Doc): NoteFile {
     // runs of text in one style
     let run = '', style = '';
     const flush = () => {
-      if (run) content.push(style ? { s: run, ...(style.includes('b') ? { b: 1 as const } : {}), ...(style.includes('i') ? { i: 1 as const } : {}) } : run);
+      if (run) content.push(style ? { s: run, ...Object.fromEntries([...style].map((k) => [k, 1 as const])) } : run);
       run = '';
     };
     b.items.forEach((it, o) => {
       if (it.t === 'c') {
         where.set(it.id, `c${bi}.${o}`);
-        const st = (it.b ? 'b' : '') + (it.i ? 'i' : '');
+        const st = (it.b ? 'b' : '') + (it.i ? 'i' : '') + (it.c ? 'c' : '');
         if (st !== style) flush(), (style = st);
         run += it.ch;
       } else {
@@ -44,7 +44,7 @@ export function encode(doc: Doc): NoteFile {
       }
     });
     flush();
-    return b.indent ? { kind: b.kind, content, indent: b.indent } : { kind: b.kind, content };
+    return { kind: b.kind, content, ...(b.indent ? { indent: b.indent } : {}), ...(b.lang ? { lang: b.lang } : {}) };
   });
   const mapIds = (ids: Id[]) => ids.map((id) => where.get(id) ?? id);
   const arrows = doc.arrows.map(({ id: _id, ...a }) => ({ ...a, from: mapIds(a.from), to: mapIds(a.to) }));
@@ -64,12 +64,14 @@ export function decode(file: NoteFile): Doc {
           const x = ch(s);
           if (c.b) x.b = true;
           if (c.i) x.i = true;
+          if (c.c) x.c = true;
           items.push(x);
         }
       else items.push({ t: 'm', id: c.id, root: c.m, display: !!c.d });
     }
     const blk = block(items, fb.kind);
     if (fb.indent) blk.indent = fb.indent;
+    if (fb.lang) blk.lang = fb.lang;
     return blk;
   });
   const resolve = (ref: string): Id => {

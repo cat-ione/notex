@@ -796,12 +796,17 @@ export class Editor {
     this.deleteSelection();
     // our own copy comes back as it was; anything else is read for its math and markdown
     const blocks: PastedBlock[] =
-      this.clip && this.clip.text === text ? this.clip.blocks.map((items) => ({ kind: 'p', items: items.map(cloneItem) })) : parsePaste(text);
+      this.blk.kind === 'code'
+        ? text.replace(/\r\n?/g, '\n').replace(/\t/g, '  ').split('\n').map((l) => ({ kind: 'code', items: chars(l) }))
+        : this.clip && this.clip.text === text
+          ? this.clip.blocks.map((items) => ({ kind: 'p', items: items.map(cloneItem) }))
+          : parsePaste(text);
     const blk = this.blk;
     // pasted onto an empty line: it takes the first pasted line's kind (a heading, a list item)
     if (!blk.items.length && blocks.length > 1 && this.b !== NOTE_B) {
       blk.kind = blocks[0].kind;
       if (blocks[0].indent) blk.indent = blocks[0].indent;
+      if (blocks[0].lang) blk.lang = blocks[0].lang;
     }
     const tail = blk.items.splice(this.o);
     blk.items.push(...blocks[0].items);
@@ -809,7 +814,7 @@ export class Editor {
       this.o += blocks[0].items.length;
       blk.items.push(...tail);
     } else {
-      const rest = blocks.slice(1).map((p) => Object.assign(block(p.items, p.kind), p.indent ? { indent: p.indent } : {}));
+      const rest = blocks.slice(1).map((p) => Object.assign(block(p.items, p.kind), p.indent ? { indent: p.indent } : {}, p.lang ? { lang: p.lang } : {}));
       const last = rest[rest.length - 1];
       this.o = last.items.length;
       last.items.push(...tail);
@@ -2446,10 +2451,21 @@ export class Editor {
       case 'C-m': this.deleteSelection(); this.insertMath(false); return true;
       case 'C-b': this.toggleStyle('b'); return true;
       case 'C-i': this.toggleStyle('i'); return true;
+      case 'C-e': if (!this.note) this.toggleStyle('c'); return true;
       case 'Enter': case 'S-Enter': {
         this.checkpoint();
         this.deleteSelection();
         const b = this.blk;
+        if (b.kind === 'code') return this.codeEnter(k === 'S-Enter'), true;
+        // ``` (or ```python) and Enter: a code block
+        const fence = b.kind === 'p' && this.o === b.items.length && !this.note ? /^```([\w+#.-]*)$/.exec(plainText(b.items)) : null;
+        if (fence) {
+          b.items = [];
+          b.kind = 'code';
+          if (fence[1]) b.lang = fence[1];
+          this.o = 0;
+          return true;
+        }
         const list = isListKind(b.kind);
         // Enter on an empty item: out a level, then out of the list
         if (list && b.items.length === 0) {
@@ -2493,8 +2509,12 @@ export class Editor {
           // at the start of a nested item: out a level first
           this.checkpoint();
           blk.indent--;
-        } else if (blk.kind !== 'p') {
+        } else if (blk.kind !== 'p' && !(blk.kind === 'code' && this.doc.blocks[this.b - 1]?.kind === 'code')) {
+          // (the first line of a code block: the rest stay code, its language with them)
           this.checkpoint();
+          const next = this.doc.blocks[this.b + 1];
+          if (blk.lang && next?.kind === 'code') next.lang = blk.lang;
+          delete blk.lang;
           blk.kind = 'p';
         } else if (this.b > 0) {
           this.checkpoint();
@@ -2521,9 +2541,10 @@ export class Editor {
           blk.items.push(...this.doc.blocks.splice(this.b + 1, 1)[0].items);
         }
         return true;
-      // nest / un-nest a list item (anywhere in it)
+      // nest / un-nest a list item (anywhere in it); in code, indent
       case 'Tab': case 'S-Tab':
-        if (isListKind(blk.kind)) {
+        if (blk.kind === 'code') this.codeIndent(k === 'Tab' ? 1 : -1);
+        else if (isListKind(blk.kind)) {
           const d = Math.max(0, Math.min(MAX_INDENT, (blk.indent ?? 0) + (k === 'Tab' ? 1 : -1)));
           if (d !== (blk.indent ?? 0)) {
             this.checkpoint();
@@ -2532,33 +2553,128 @@ export class Editor {
           }
         }
         return true;
+      // (in code, `$` and `\` are themselves)
       case '$':
+        if (this.literal) break;
         this.deleteSelection();
         this.insertMath(false);
         return true;
       case '\\':
+        if (this.literal) break;
         this.openPalette('text');
         return true;
     }
-    if ((k === '^' || k === '_') && !this.selection && this.config.typing.autoMath && this.autoMath(k)) return true;
+    if ((k === '^' || k === '_') && !this.selection && this.config.typing.autoMath && !this.literal && this.autoMath(k)) return true;
     if (k.length === 1) {
+      const st = this.typingStyle(), inBlock = this.blk.kind === 'code';
+      // a backtick at the end of inline code leaves it
+      if (k === '`' && st.c && !inBlock && !this.selection) {
+        this.pendingStyle = { ...st, c: false, at: { b: this.b, o: this.o } };
+        return true;
+      }
       this.checkpoint('type');
       this.deleteSelection();
-      const c = ch(k), st = this.typingStyle();
-      if (st.b) c.b = true;
-      if (st.i) c.i = true;
+      const c = ch(k);
+      if (!inBlock) {
+        if (st.b) c.b = true;
+        if (st.i) c.i = true;
+        if (st.c) c.c = true;
+      }
       this.blk.items.splice(this.o, 0, c);
       this.o++;
       if (this.b !== NOTE_B) this.growAnchors(this.blk.items, this.o - 1);
       if (this.pendingStyle) this.pendingStyle.at = { b: this.b, o: this.o };
-      if (k === ' ') this.markdownShortcut();
-      if (k === '*') this.emphasisShortcut();
       // a word typed is an undo step (not the whole run of typing since the last pause)
       if (k === ' ') this.lastKind = '';
+      if (inBlock || st.c) return true; // code is typed as it is
+      if (k === ' ') this.markdownShortcut();
+      if (k === '*') this.emphasisShortcut();
+      if (k === '`') this.codeShortcut();
       this.textSnippet();
       return true;
     }
     return false;
+  }
+
+  /** Typing in code (a code block, or inline code): keys are the characters themselves. */
+  private get literal(): boolean {
+    return this.blk.kind === 'code' || this.typingStyle().c;
+  }
+
+  /**
+   * Enter in a code block: a new line, indented as this one. It leaves the block instead
+   * after a closing ``` on the last line, or on a second blank line at the end (blank lines
+   * inside are kept); Shift+Enter is a new line anyway.
+   */
+  private codeEnter(always: boolean) {
+    const b = this.blk;
+    const last = this.doc.blocks[this.b + 1]?.kind !== 'code';
+    const prev = this.doc.blocks[this.b - 1];
+    const out = () => {
+      b.items = [];
+      b.kind = 'p';
+      delete b.lang;
+      this.o = 0;
+    };
+    if (!always && last && plainText(b.items).trim() === '```') return out();
+    if (!always && last && !b.items.length && prev?.kind === 'code' && !prev.items.length && !prev.lang) {
+      this.doc.blocks.splice(this.b - 1, 1);
+      this.b--;
+      return out();
+    }
+    let lead = 0;
+    while (lead < this.o && b.items[lead].t === 'c' && (b.items[lead] as Char).ch === ' ') lead++;
+    const rest = b.items.splice(this.o);
+    this.doc.blocks.splice(this.b + 1, 0, block([...chars(' '.repeat(lead)), ...rest], 'code'));
+    this.b++;
+    this.o = lead;
+  }
+
+  /** Tab / Shift+Tab in a code block: two spaces in at the caret, or every selected line in / out. */
+  private codeIndent(d: 1 | -1) {
+    const sel = this.selection;
+    if (d > 0 && !sel) {
+      this.checkpoint('type');
+      this.blk.items.splice(this.o, 0, ...chars('  '));
+      this.o += 2;
+      return;
+    }
+    this.checkpoint();
+    for (let b = sel ? sel.s.b : this.b; b <= (sel ? sel.e.b : this.b); b++) {
+      const blk = this.doc.blocks[b];
+      if (blk.kind !== 'code') continue;
+      let n = 0;
+      if (d > 0) blk.items.unshift(...chars('  ')), (n = 2);
+      else {
+        while (n < 2 && blk.items[0]?.t === 'c' && (blk.items[0] as Char).ch === ' ') blk.items.shift(), n++;
+        n = -n;
+      }
+      if (this.b === b) this.o = Math.max(0, this.o + n);
+      if (this.anchor?.b === b) this.anchor = { b, o: Math.max(0, this.anchor.o + n) };
+    }
+  }
+
+  /** `code` → inline code, on the closing backtick. One undo step. */
+  private codeShortcut() {
+    if (this.note) return;
+    const items = this.blk.items;
+    const text = items.slice(0, this.o).map((i) => (i.t === 'c' && !i.c ? i.ch : '\0')).join('');
+    const m = /(^|[^`])`([^`\0]+)`$/.exec(text);
+    if (!m) return;
+    this.learned('md-code');
+    const end = this.o, start = end - m[2].length - 2;
+    this.checkpoint();
+    for (const it of items.slice(start + 1, end - 1))
+      if (it.t === 'c') {
+        it.c = true;
+        delete it.b;
+        delete it.i;
+      }
+    items.splice(end - 1, 1);
+    items.splice(start, 1);
+    this.o = end - 2;
+    // what's typed next is plain again
+    this.pendingStyle = { b: false, i: false, c: false, at: { b: this.b, o: this.o } };
   }
 
   /** A formula made by auto-math: space (, ; :) at its end goes straight back to text. */
@@ -2597,25 +2713,26 @@ export class Editor {
    * Bold / italic for what's typed next (Ctrl+B / Ctrl+I without a selection, or plain right
    * after a *…* conversion), while the caret stays where it was left.
    */
-  private pendingStyle: { b: boolean; i: boolean; at: Pos } | null = null;
+  private pendingStyle: { b: boolean; i: boolean; c: boolean; at: Pos } | null = null;
 
   /** The style a character typed now gets: the pending one, else the character before's. */
-  private typingStyle(): { b: boolean; i: boolean } {
+  private typingStyle(): { b: boolean; i: boolean; c: boolean } {
     const p = this.pendingStyle;
     if (p && p.at.b === this.b && p.at.o === this.o) return p;
     this.pendingStyle = null;
     const prev = this.blk.items[this.o - 1];
-    return prev?.t === 'c' ? { b: !!prev.b, i: !!prev.i } : { b: false, i: false };
+    return prev?.t === 'c' ? { b: !!prev.b, i: !!prev.i, c: !!prev.c } : { b: false, i: false, c: false };
   }
 
-  /** Ctrl+B / Ctrl+I: on the selection (all of it on → off), or for what's typed next. */
-  private toggleStyle(s: 'b' | 'i') {
+  /** Ctrl+B / Ctrl+I / Ctrl+E: on the selection (all of it on → off), or for what's typed next. */
+  private toggleStyle(s: 'b' | 'i' | 'c') {
     const sel = this.selection;
     if (!sel) {
       const st = this.typingStyle();
       this.pendingStyle = { ...st, [s]: !st[s], at: { b: this.b, o: this.o } };
-      this.flash(`${s === 'b' ? 'bold' : 'italic'} ${this.pendingStyle[s] ? 'on' : 'off'}`);
-      this.tipLater('md-bold', 'you can also type **bold** or *italic*');
+      this.flash(`${{ b: 'bold', i: 'italic', c: 'code' }[s]} ${this.pendingStyle[s] ? 'on' : 'off'}`);
+      if (s === 'c') this.tipLater('md-code', 'you can also type `code`');
+      else this.tipLater('md-bold', 'you can also type **bold** or *italic*');
       return;
     }
     const chars = this.selectedItems().flat().filter((it): it is Char => it.t === 'c' && !/\s/.test(it.ch));
@@ -3138,7 +3255,12 @@ export class Editor {
   }
 
   textCommands(): PaletteEntry[] {
-    const setKind = (kind: BlockKind) => () => { this.checkpoint(); this.blk.kind = kind; };
+    // (every paragraph the selection touches)
+    const setKind = (kind: BlockKind) => () => {
+      this.checkpoint();
+      const sel = this.selection;
+      for (let b = sel ? sel.s.b : this.b; b <= (sel ? sel.e.b : this.b); b++) this.doc.blocks[b].kind = kind;
+    };
     return [
       ...this.drawCommands(),
       { name: 'math', desc: 'inline math', run: () => this.insertMath(false) },
@@ -3151,6 +3273,8 @@ export class Editor {
       { name: 'ol', desc: 'numbered list item', run: setKind('ol') },
       { name: 'bold', desc: 'bold  ctrl+b', run: () => this.toggleStyle('b') },
       { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i') },
+      { name: 'code', desc: 'code block  ```', run: setKind('code') },
+      { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c') },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
       { name: 'substitutions', desc: 'edit substitutions', run: () => ((this.settingsView = 'subs'), (this.showSettings = true)) },
@@ -4431,6 +4555,9 @@ const isSpace = (it: { t: string; ch?: string }) => it.t === 'c' && /\s/.test(it
 const cmpPos = (a: Pos, b: Pos) => a.b - b.b || a.o - b.o;
 
 const cloneItem = (it: Item): Item => (it.t === 'c' ? { ...it, id: uid() } : { ...it, id: uid(), root: cloneRow(it.root) });
+
+/** The characters of some items, with anything else as a NUL. */
+const plainText = (items: Item[]) => items.map((i) => (i.t === 'c' ? i.ch : '\0')).join('');
 
 function itemsToText(items: Item[]): string {
   return items.map((it) => (it.t === 'c' ? it.ch : it.display ? `$$${toLatex(it.root)}$$` : `$${toLatex(it.root)}$`)).join('');

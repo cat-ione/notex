@@ -2,11 +2,11 @@
 // source. Its math comes in as formulas ($…$, $$…$$, \(…\), \[…\]), its markdown as
 // structure (# headings, - / 1. lists, indentation, **bold**, *italic*).
 
-import { ch, math, type BlockKind, type Item } from './model';
+import { ch, chars, math, type BlockKind, type Item } from './model';
 import { parseLatex } from './math/parse';
 import { noteRuns } from './labels';
 
-export type PastedBlock = { kind: BlockKind; indent?: number; items: Item[] };
+export type PastedBlock = { kind: BlockKind; indent?: number; lang?: string; items: Item[] };
 
 /**
  * One line of text as items: formulas from $…$ / $$…$$ (not prices: `$5 and $10` stays
@@ -14,6 +14,18 @@ export type PastedBlock = { kind: BlockKind; indent?: number; items: Item[] };
  * one), bold / italic from stars.
  */
 export function inlineItems(line: string): Item[] {
+  // `code` first: what's inside is as it is (no math, no stars)
+  const out: Item[] = [];
+  let at = 0;
+  for (const m of line.matchAll(/`([^`]+)`/g)) {
+    out.push(...mathAndStars(line.slice(at, m.index)));
+    for (const c of m[1]) out.push(Object.assign(ch(c), { c: true as const }));
+    at = m.index! + m[0].length;
+  }
+  return [...out, ...mathAndStars(line.slice(at))];
+}
+
+function mathAndStars(line: string): Item[] {
   const out: Item[] = [];
   let last = 0;
   const prose = (s: string) => {
@@ -48,10 +60,24 @@ function normalizeMath(text: string): string {
  * paragraphs go (notex spaces paragraphs itself). One line: just its text and math.
  */
 export function parsePaste(text: string): PastedBlock[] {
-  const lines = normalizeMath(text.replace(/\r\n?/g, '\n')).split('\n');
-  if (lines.length === 1) return [{ kind: 'p', items: inlineItems(lines[0]) }];
+  text = text.replace(/\r\n?/g, '\n');
+  // fenced code: kept as it is (its math and markdown aren't read), one block a line
+  const fences: PastedBlock[][] = [];
+  text = text.replace(/^[ \t]*```([\w+#.-]*)[ \t]*\n([\s\S]*?)\n?[ \t]*```[ \t]*$/gm, (_, lang: string, body: string) => {
+    const code = body.replace(/\t/g, '  ').split('\n').map((l): PastedBlock => ({ kind: 'code', items: chars(l) }));
+    if (lang) code[0].lang = lang;
+    fences.push(code);
+    return `\u0000${fences.length - 1}`;
+  });
+  const lines = normalizeMath(text).split('\n');
+  if (lines.length === 1 && !fences.length) return [{ kind: 'p', items: inlineItems(lines[0]) }];
   const out: PastedBlock[] = [];
   for (const raw of lines) {
+    const fence = /^\u0000(\d+)$/.exec(raw);
+    if (fence) {
+      out.push(...fences[+fence[1]]);
+      continue;
+    }
     if (!raw.trim()) continue;
     const line = raw.replace(/\t/g, '  ');
     let m: RegExpExecArray | null;

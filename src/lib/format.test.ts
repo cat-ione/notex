@@ -93,3 +93,15 @@ describe('bold and italic in the file', () => {
     expect(back.map((c) => (c.t === 'c' && c.b ? 'B' : '.')).join('')).toBe('......BBBB');
   });
 });
+
+describe('code', () => {
+  it('keeps inline code and code blocks', () => {
+    const p = block(chars('run ls now'));
+    for (const it of p.items.slice(4, 6)) if (it.t === 'c') it.c = true;
+    const c1 = Object.assign(block(chars('x = 1'), 'code'), { lang: 'py' }), c2 = block(chars('  y'), 'code');
+    const back = decode(encode({ blocks: [p, c1, c2], arrows: [], marks: [] }));
+    expect(back.blocks[0].items.map((i) => (i.t === 'c' && i.c ? 'C' : '.')).join('')).toBe('....CC....');
+    expect(back.blocks.slice(1).map((b) => [b.kind, b.lang])).toEqual([['code', 'py'], ['code', undefined]]);
+    expect(back.blocks[2].items.map((i) => (i.t === 'c' ? i.ch : '')).join('')).toBe('  y');
+  });
+});

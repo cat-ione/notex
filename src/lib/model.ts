@@ -12,14 +12,17 @@ export type MCmd = { k: 'cmd'; id: Id; name: string; slots: MRow[]; cols?: numbe
 export type MNode = MSym | MCmd;
 export type MRow = MNode[];
 
-/** A character of text; `b` / `i`: bold, italic. */
-export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true };
+/** A character of text; `b` / `i` / `c`: bold, italic, inline code. */
+export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true; c?: true };
 export type MathItem = { t: 'm'; id: Id; root: MRow; display: boolean };
 export type Item = Char | MathItem;
 
-export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol';
-/** `indent`: how deep a list item is nested (0, absent, at the top). */
-export type Block = { id: Id; kind: BlockKind; items: Item[]; indent?: number };
+export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code';
+/**
+ * `indent`: how deep a list item is nested (0, absent, at the top). A code block is a run
+ * of `code` blocks, one per line; `lang`, on its first line, names its language.
+ */
+export type Block = { id: Id; kind: BlockKind; items: Item[]; indent?: number; lang?: string };
 export const isListKind = (k: BlockKind) => k === 'li' || k === 'ol';
 /** Deepest a list item can be nested. */
 export const MAX_INDENT = 4;

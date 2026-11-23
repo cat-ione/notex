@@ -84,3 +84,12 @@ describe('bold and italic', () => {
     expect(docToLatex({ blocks: [block(items)], arrows: [], marks: [] })).toBe('a \\textbf{bold}, \\textbf{\\emph{both}} and \\emph{it}\n');
   });
 });
+
+describe('code', () => {
+  it('exports inline code as texttt and code blocks verbatim', () => {
+    const p = block(chars('call f now'));
+    p.items[5].t === 'c' && (p.items[5].c = true);
+    const doc: Doc = { blocks: [p, block(chars('a = $1'), 'code'), block(chars('  b'), 'code')], arrows: [], marks: [] };
+    expect(docToLatex(doc)).toBe(String.raw`call \texttt{f} now` + '\n\n' + String.raw`\begin{verbatim}` + '\na = $1\n  b\n' + String.raw`\end{verbatim}` + '\n');
+  });
+});
