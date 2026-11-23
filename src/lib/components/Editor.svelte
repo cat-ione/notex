@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fly, scale, fade } from 'svelte/transition';
   import { cubicOut, backOut } from 'svelte/easing';
-  import { Editor, MARKER } from '$lib/editor.svelte';
+  import { Editor } from '$lib/editor.svelte';
   import MathView from './MathView.svelte';
   import ArrowLayer from './ArrowLayer.svelte';
   import MarkLayer from './MarkLayer.svelte';
@@ -102,12 +102,38 @@
 
 
   const editingMath = (b: number, o: number) => ed.inFormula && ed.b === b && ed.o === o;
-  // a code block's first / last line (its box is drawn around the run of lines)
-  const codeEdge = (b: number, d: -1 | 1) => ed.doc.blocks[b].kind === 'code' && ed.doc.blocks[b + d]?.kind !== 'code';
-  // inline code's first / last character (its rounded ends)
-  const isCode = (it: Item | undefined) => it?.t === 'c' && !!it.c;
-  // the markdown shown at the caret: markers around styled text, #s, code fences
+  // the markdown shown at the caret: markers of the spans it's at, a heading's #s, code fences
   const reveal = $derived(ed.reveal);
+  // inline code's text (not its backticks): its first / last character has the rounded end
+  const codeText = (it: Item | undefined) => it?.t === 'c' && !!it.c && !it.m;
+
+  // The markers that show (Editor.reveal) get a class of their own, set here on just
+  // them: no other character depends on where the caret is.
+  let showing: Element[] = [];
+  $effect(() => {
+    const rv = reveal;
+    const items = rv ? ed.doc.blocks[rv.b]?.items : undefined;
+    for (const e of showing) e.classList.remove('show');
+    showing = [];
+    if (!rv || !items || !page) return;
+    for (const o of rv.shown) {
+      const id: string | undefined = items[o]?.id;
+      const e: Element | null = id ? page.querySelector(`.ch[data-nx="${id}"]`) : null;
+      if (e) e.classList.add('show'), showing.push(e);
+    }
+  });
+  // a code block's box, from its opening fence (or first line) to its closing fence (or last line)
+  const boxed = (b: number) => ['code', 'fence'].includes(ed.doc.blocks[b]?.kind);
+  const codeTop = (b: number) => {
+    const blk = ed.doc.blocks[b];
+    return blk.kind === 'fence' ? blk.lang !== undefined : blk.kind === 'code' && !boxed(b - 1);
+  };
+  const codeBottom = (b: number) => {
+    const blk = ed.doc.blocks[b];
+    return blk.kind === 'fence' ? blk.lang === undefined : blk.kind === 'code' && !boxed(b + 1);
+  };
+  /** A fence of a code block the caret isn't in: its line shows nothing (but the language). */
+  const veiled = (b: number) => ed.doc.blocks[b].kind === 'fence' && !(reveal?.code && b >= reveal.code.first && b <= reveal.code.last);
 
   /** Dragging an image's corner: it grows on both sides (it's centred), one undo step. */
   function resizeImage(e: MouseEvent, b: number) {
@@ -153,16 +179,13 @@
      (Kept on one line: whitespace here would show up in the pre-wrap text.) -->
 {#snippet spacer(id: string)}<span class="nx-sp nx-probe" data-pt={id} style="vertical-align: top">&#8288;</span><span class="nx-sp nx-probe" data-pb={id} style="vertical-align: bottom">&#8288;</span>{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
 
-<!-- What comes before a block's text: an image, a code block's opening fence, a heading's #s. -->
+<!-- What comes before a block's text: an image. -->
 {#snippet blockHead(blk: Block, b: number)}{#if blk.kind === 'img'}<div class="figure">
       <!-- (an image's id is on the picture: drawings on it are on the picture, not its caption) -->
       <img src={blk.src} alt="" draggable="false" data-nx={blk.id} style:width={blk.w ? `${blk.w}px` : undefined} />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="grip" onmousedown={(e) => resizeImage(e, b)} data-tip="drag to resize" data-tip-key="alt+← →"></span>
-    </div>{/if}{#if reveal?.code?.first === b}<div class="mk fence open">```{blk.lang ?? ''}</div>{/if}{#if reveal?.b === b && reveal.hashes}<span class="mk hash">{'#'.repeat(reveal.hashes)}</span>{/if}{/snippet}
-
-<!-- Markers shown at item o of block b: the closing ones of a run ending there, then the opening ones of one starting. -->
-{#snippet markers(b: number, o: number)}{#if reveal?.b === b}{#each reveal.close[o] ?? [] as s (s)}<span class="mk" data-mk="c{o}{s}">{MARKER[s]}</span>{/each}{#each reveal.open[o] ?? [] as s (s)}<span class="mk" data-mk="o{o}{s}">{MARKER[s]}</span>{/each}{/if}{/snippet}
+    </div>{/if}{/snippet}
 
 <div class="shell">
   <DrawingMenu {ed} />
@@ -193,24 +216,33 @@
         <div
           class="block {blk.kind}"
           class:current={ed.b === b}
-          class:cfirst={codeEdge(b, -1)}
-          class:clast={codeEdge(b, 1)}
+          class:cfirst={codeTop(b)}
+          class:clast={codeBottom(b)}
+          class:veiled={veiled(b)}
           class:empty={!blk.items.length}
-          class:hashed={reveal?.b === b && !!reveal.hashes}
-          class:fenced={!!reveal?.code && b >= reveal.code.first && b <= reveal.code.last}
+          class:hang={reveal?.b === b && !!reveal.hang}
           data-nx={blk.kind === 'img' ? undefined : blk.id}
           data-depth={blk.indent || undefined}
           data-n={listNums[b]}
-          data-lang={blk.kind === 'code' ? blk.lang : undefined}
+          data-lang={blk.kind === 'fence' ? blk.lang : undefined}
           style:--indent={blk.indent || undefined}
+          style:--hang={reveal?.b === b && reveal.hang ? reveal.hang : undefined}
         >
           <!-- (no whitespace between these: in the pre-wrap text it would show) -->
-          {@render blockHead(blk, b)}{#each blk.items as it, o (it.id)}{@render markers(b, o)}{#if it.t === 'c'}
-              <span class="ch" class:b={it.b} class:i={it.i} class:c={it.c} class:cs={it.c && !isCode(blk.items[o - 1])} class:ce={it.c && !isCode(blk.items[o + 1])} data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
+          {@render blockHead(blk, b)}{#each blk.items as it, o (it.id)}{#if it.t === 'c'}
+              <span
+                class="ch"
+                class:b={it.b && !it.m}
+                class:i={it.i && !it.m}
+                class:c={it.c}
+                class:mk={it.m}
+                class:cs={codeText(it) && !codeText(blk.items[o - 1])}
+                class:ce={codeText(it) && !codeText(blk.items[o + 1])}
+                data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {:else}
               <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {/if}
-          {/each}{@render markers(b, blk.items.length)}<span class="eol" data-eol={blk.id}>&#8203;</span>{#if reveal?.code?.last === b}<div class="mk fence close">```</div>{/if}
+          {/each}<span class="eol" data-eol={blk.id}>&#8203;</span>
         </div>
       {/each}
 
@@ -520,81 +552,72 @@
     opacity: 0.5;
     pointer-events: none;
   }
-  /* markdown shown at the caret, quietly: markers, #s, fences (see Editor.reveal) */
-  .mk {
-    font-family: var(--mono);
-    font-weight: 400;
-    font-style: normal;
-    font-size: 0.9em;
+  /* markdown's markers (** ` # …): quiet, and only where the caret is (see Editor.reveal) */
+  .ch.mk {
     color: var(--muted);
-    opacity: 0.75;
-    user-select: none;
+    opacity: 0.8;
   }
-  /* (shown where nothing moves for them: a drawing on the text stays where it is) */
-  .mk.hash {
-    position: absolute;
-    top: 0;
-    right: calc(100% + 0.35em);
-    font-size: inherit;
-    white-space: nowrap;
-  }
-  /* (in place of the current-line bar) */
-  .block.hashed::before {
-    opacity: 0;
-  }
-  .mk.fence {
-    position: absolute;
-    left: 1em;
-    font-size: 0.9em;
-    line-height: 1.6;
-    white-space: nowrap;
-  }
-  .mk.fence.open {
-    top: 0.25em;
-  }
-  .mk.fence.close {
-    bottom: 0.2em;
-  }
-  /* (the language shows in the fence then) */
-  .block.code.fenced.cfirst::after {
+  .ch.mk:not(:global(.show)) {
     display: none;
   }
-  /* a code block: its lines in the mono font on one tinted box */
-  .block.code {
+  /* (a code span's backticks sit outside its box) */
+  .ch.c.mk {
+    background: none;
+    padding: 0;
+  }
+  /* a heading's #s hang in the margin, the heading where it always is */
+  .block.hang {
+    text-indent: calc(var(--hang) * -1ch);
+  }
+  .block.hang::before {
+    opacity: 0;
+  }
+  /* a code block: its lines in the mono font on one tinted box, fences included */
+  .block.code,
+  .block.fence {
     font-family: var(--mono);
     font-size: 0.88em;
-    line-height: 1.6;
-    min-height: 1.6em;
+    /* whole pixels: a fraction leaves a seam between the lines' backgrounds */
+    line-height: round(1.6em, 1px);
+    min-height: round(1.6em, 1px);
     contain-intrinsic-size: auto 1.6em;
     padding: 0 1em;
     background: color-mix(in srgb, var(--fg) 6%, transparent);
     tab-size: 2;
   }
-  .block.code.cfirst {
-    padding-top: 1.6em;
-    margin-top: 0.3em;
-    border-radius: 5px 5px 0 0;
+  .block.fence .ch {
+    color: var(--muted);
   }
-  .block.code.clast {
-    padding-bottom: 1.5em;
-    margin-bottom: 0.3em;
-    border-radius: 0 0 5px 5px;
+  /* a fence of a block the caret isn't in: an empty line of the box (nothing moves when it shows) */
+  .block.fence.veiled .ch {
+    visibility: hidden;
   }
-  .block.code.cfirst.clast {
-    border-radius: 5px;
-  }
-  .block.code::before {
-    left: -18px;
-    top: 0.3em;
-    bottom: 0.3em;
-  }
-  .block.code.cfirst[data-lang]::after {
+  .block.fence.veiled[data-lang]::after {
     content: attr(data-lang);
     position: absolute;
     right: 0.8em;
-    top: 0.3em;
+    top: 0.15em;
     font-size: 0.8em;
     color: var(--muted);
+  }
+  .block.cfirst {
+    padding-top: 0.3em;
+    margin-top: 0.3em;
+    border-radius: 5px 5px 0 0;
+  }
+  .block.clast {
+    padding-bottom: 0.3em;
+    margin-bottom: 0.3em;
+    border-radius: 0 0 5px 5px;
+  }
+  .block.cfirst.clast {
+    border-radius: 5px;
+  }
+  .block.code::before,
+  .block.fence::before {
+    left: -18px;
+    top: 0.3em;
+    bottom: 0.3em;
   }
   /* after a display formula it would get a line of its own: an empty line under every one */
   :global(.block .math.display + .eol) {

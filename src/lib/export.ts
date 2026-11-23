@@ -213,7 +213,8 @@ export function docToLatex(doc: Doc): string {
       if (st !== cur || pre) (out += CLOSE[cur] ?? ''), (cur = '');
       out += pre;
       if (st !== cur) (out += OPEN[st] ?? ''), (cur = st);
-      out += it.t === 'c' ? (ESC[it.ch] ?? it.ch) : it.display ? `\n\\[ ${toLatexWrapped(it.root, mathWraps)} \\]\n` : `$${toLatexWrapped(it.root, mathWraps)}$`;
+      // (markdown's markers are what the styles say: not text)
+      out += it.t === 'c' ? (it.m ? '' : (ESC[it.ch] ?? it.ch)) : it.display ? `\n\\[ ${toLatexWrapped(it.root, mathWraps)} \\]\n` : `$${toLatexWrapped(it.root, mathWraps)}$`;
       if (post) (out += CLOSE[cur] ?? ''), (cur = ''), (out += post);
     });
     return out + (CLOSE[cur] ?? '');
@@ -235,7 +236,8 @@ export function docToLatex(doc: Doc): string {
       out.push('\\end{figure}\n');
       return;
     }
-    // a code block: its lines as they are
+    // a code block: its lines as they are (its fences are what verbatim says)
+    if (blk.kind === 'fence') return;
     if (blk.kind === 'code') {
       const first = doc.blocks[b - 1]?.kind !== 'code', last = doc.blocks[b + 1]?.kind !== 'code';
       if (first) out.push('\\begin{verbatim}');

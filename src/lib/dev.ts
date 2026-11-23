@@ -10,7 +10,7 @@ import { parseLatex } from './math/parse';
 import { rowAt } from './math/edit';
 import type { Step } from './math/latex';
 import { block, chars, math, uid, type Block, type Doc, type Item, type Mark, type MarkKind, type MRow } from './model';
-import { deserialize } from './format';
+import { deserialize, withMarkdown } from './format';
 
 /** A target: nodes i..j of the row at `path` inside formula `f` (index into the scenario's formulas), or words of the text. */
 type Target = { f: number; i: number; j?: number; path?: [number, number][] } | { words: [number, number] };
@@ -164,8 +164,8 @@ export function install(ed: Editor) {
   (window as any).__nx = {
     ed,
     loadText: (text: string, name = 'note') => ed.load(deserialize(text), { path: null, name }),
-    loadBig: (opts?: Parameters<typeof bigDoc>[0]) => ed.load(bigDoc(opts), { path: null, name: 'big' }),
-    load: (scs: Scenario[]) => ed.load(buildDoc(scs), { path: null, name: 'lab' }),
+    loadBig: (opts?: Parameters<typeof bigDoc>[0]) => ed.load(withMarkdown(bigDoc(opts)), { path: null, name: 'big' }),
+    load: (scs: Scenario[]) => ed.load(withMarkdown(buildDoc(scs)), { path: null, name: 'lab' }),
     metrics: () => metrics(ed),
     /** Top-level nodes of a formula (to pick target indices). */
     probe: (tex: string) => describe(parseLatex(tex).row),

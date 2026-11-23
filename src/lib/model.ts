@@ -12,16 +12,20 @@ export type MCmd = { k: 'cmd'; id: Id; name: string; slots: MRow[]; cols?: numbe
 export type MNode = MSym | MCmd;
 export type MRow = MNode[];
 
-/** A character of text; `b` / `i` / `c`: bold, italic, inline code. */
-export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true; c?: true };
+/**
+ * A character of text. Its meaning in the markdown, read from the text (Editor.derive):
+ * `b` / `i` / `c` bold, italic, inline code; `m` one of the markers (** ` # …).
+ */
+export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true; c?: true; m?: true };
 export type MathItem = { t: 'm'; id: Id; root: MRow; display: boolean };
 export type Item = Char | MathItem;
 
-export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code' | 'img';
+export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code' | 'fence' | 'img';
 /**
- * `indent`: how deep a list item is nested (0, absent, at the top). A code block is a run
- * of `code` blocks, one per line; `lang`, on its first line, names its language. An image
- * (`img`) is its `src` (a data URL), shown `w` pixels wide, with its items as the caption.
+ * `indent`: how deep a list item is nested (0, absent, at the top). Headings (`# ` in their
+ * text) and code blocks (lines between ``` fences: `fence` and `code` lines) are read from
+ * the text; an opening fence's `lang` names its language. An image (`img`) is its `src`
+ * (a data URL), shown `w` pixels wide, with its items as the caption.
  */
 export type Block = { id: Id; kind: BlockKind; items: Item[]; indent?: number; lang?: string; src?: string; w?: number };
 export const isListKind = (k: BlockKind) => k === 'li' || k === 'ol';

@@ -17,6 +17,8 @@ import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
+import { BOLD, CODE, ITALIC, MARK, OBJ, closesFence, fenceOf, headingOf, parseInline } from './markdown';
+import { withMarkdown } from './format';
 import { imageSrc, pickImageFiles } from './images';
 import * as F from './files';
 import * as C from './config';
@@ -29,22 +31,18 @@ import { allIds, block, ch, chars, cloneRow, cmd, isListKind, MAX_INDENT, math, 
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette';
 
-type Styles = { b: boolean; i: boolean; c: boolean };
-/** A run of text in one style: items start..end (exclusive). */
-type Run = { s: 'b' | 'i' | 'c'; start: number; end: number };
 /** What's shown of the markdown at the caret (see Editor.reveal). */
 export type Reveal = {
   b: number;
-  /** Opening markers before item o (outermost first) / closing ones before item o (innermost first). */
-  open: Record<number, Run['s'][]>;
-  close: Record<number, Run['s'][]>;
-  /** A heading's #s. */
-  hashes: number;
-  /** The code block the caret is in: its first and last lines (for its fences). */
+  /** The caret's paragraph's markers that show (item offsets): those of the spans it's in or at. */
+  shown: Set<number>;
+  /** A heading's prefix (its #s and space), shown hanging in the margin: how long it is. */
+  hang: number;
+  /** The code block the caret is in, its fences included. */
   code: { first: number; last: number } | null;
 };
 /** Each style's markdown marker. */
-export const MARKER = { b: '**', i: '*', c: '`' } as const;
+const MARKER = { b: '**', i: '*', c: '`' } as const;
 
 export type Loc =
   | { k: 'word'; b: number; s: number; e: number }
@@ -167,8 +165,9 @@ export class Editor {
   constructor() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) this.doc = { marks: [], ...JSON.parse(saved) };
+      if (saved) this.doc = withMarkdown({ marks: [], ...JSON.parse(saved) });
       else (this.doc = welcomeDoc()), (this.file.name = 'welcome');
+      this.derive(0, Infinity);
       const f = localStorage.getItem('notex.file');
       if (f) {
         const j = JSON.parse(f);
@@ -177,6 +176,7 @@ export class Editor {
       }
     } catch {
       this.doc = welcomeDoc();
+      this.derive(0, Infinity);
     }
   }
 
@@ -195,7 +195,13 @@ export class Editor {
     if (this.edits !== this.touchedEdits) {
       this.touchedEdits = this.edits;
       this.markDirty();
+      this.derive();
     } else if (this.frame) this.frame = { rects: new Map(), ink: new Map() };
+    // what shows of the markdown: set once an action is done (not followed live through
+    // every write to the text, which would wake every character on the page each time)
+    const rv = this.computeReveal(), old = this.reveal;
+    const same = rv === old || (!!rv && !!old && rv.b === old.b && rv.hang === old.hang && rv.code?.first === old.code?.first && rv.code?.last === old.code?.last && rv.shown.size === old.shown.size && [...rv.shown].every((o) => old.shown.has(o)));
+    if (!same) this.reveal = rv;
     this.version++;
   }
   private touchedEdits = 0;
@@ -451,6 +457,7 @@ export class Editor {
 
   load(doc: Doc, file: { path: string | null; name: string }) {
     this.doc = doc;
+    this.derive(0, Infinity);
     this.file = file;
     this.dirty = false;
     // nothing to autosave until it's edited; the session backup is written when idle
@@ -689,6 +696,7 @@ export class Editor {
     const rs: Rect[] = [];
     for (const id of ids)
       (this.frame ? this.els(id) : (this.page?.querySelectorAll(`[data-nx="${id}"]`) ?? [])).forEach((e) => {
+        if (!e.getClientRects().length) return; // (a hidden marker)
         const m = measure(e);
         if (m) rs.push(m);
       });
@@ -702,7 +710,9 @@ export class Editor {
 
   /** Viewport rect of the caret stop before item `o` of block `b` (or end of block). */
   private stopRect(b: number, o: number): DOMRect | null {
-    return this.stopEl(b, o)?.getBoundingClientRect() ?? null;
+    const e = this.stopEl(b, o);
+    // (a hidden marker: no place on the page)
+    return e && e.getClientRects().length ? e.getBoundingClientRect() : null;
   }
 
   // ───────────────────────── selection ─────────────────────────
@@ -906,7 +916,7 @@ export class Editor {
     // our own copy comes back as it was; anything else is read for its math and markdown
     const blocks: PastedBlock[] =
       this.blk.kind === 'code'
-        ? text.replace(/\r\n?/g, '\n').replace(/\t/g, '  ').split('\n').map((l) => ({ kind: 'code', items: chars(l) }))
+        ? text.replace(/\r\n?/g, '\n').replace(/\t/g, '  ').split('\n').map((l) => ({ kind: 'p', items: chars(l) }))
         : this.clip && this.clip.text === text
           ? this.clip.blocks.map((items) => ({ kind: 'p', items: items.map(cloneItem) }))
           : parsePaste(text);
@@ -915,7 +925,6 @@ export class Editor {
     if (!blk.items.length && blocks.length > 1 && this.b !== NOTE_B) {
       blk.kind = blocks[0].kind;
       if (blocks[0].indent) blk.indent = blocks[0].indent;
-      if (blocks[0].lang) blk.lang = blocks[0].lang;
     }
     const tail = blk.items.splice(this.o);
     blk.items.push(...blocks[0].items);
@@ -923,13 +932,14 @@ export class Editor {
       this.o += blocks[0].items.length;
       blk.items.push(...tail);
     } else {
-      const rest = blocks.slice(1).map((p) => Object.assign(block(p.items, p.kind), p.indent ? { indent: p.indent } : {}, p.lang ? { lang: p.lang } : {}));
+      const rest = blocks.slice(1).map((p) => Object.assign(block(p.items, p.kind), p.indent ? { indent: p.indent } : {}));
       const last = rest[rest.length - 1];
       this.o = last.items.length;
       last.items.push(...tail);
       this.doc.blocks.splice(this.b + 1, 0, ...rest);
       this.b += rest.length;
     }
+    this.derive(this.b - blocks.length, this.b + 1);
     this.touch();
   }
 
@@ -1724,8 +1734,6 @@ export class Editor {
         const y = useprev ? pr!.top : nextIsMath ? r.top + r.height / 2 - h / 2 : r.top;
         caret = { r: relTo({ x, y, w: 2, h }, origin), shape: 'bar' };
       }
-      const mx = caret && this.markerCaretX();
-      if (caret && mx != null) caret.r.x = mx - origin.left;
     }
     this.caret = caret;
     this.selRects = [...this.selectionRects(origin), ...this.mathSelRects(origin)];
@@ -2510,16 +2518,13 @@ export class Editor {
           this.enterMath(true);
           return true;
         }
-        if (!shift && this.stepMarker(-1)) return true;
         const p = this.o > 0 ? { b: this.b, o: this.o - 1 } : this.b > 0 ? { b: this.b - 1, o: this.doc.blocks[this.b - 1].items.length } : null;
         if (p) this.moveTo(p, shift);
-        if (!shift) this.landLeft();
         return true;
       }
       case 'Right': {
         const sel = this.selection;
         if (sel && !shift) return this.moveTo(sel.e, false), true;
-        if (!shift && this.stepMarker(1)) return true;
         if (!shift && blk.items[this.o]?.t === 'm') {
           this.enterMath(false);
           return true;
@@ -2573,16 +2578,7 @@ export class Editor {
         this.checkpoint();
         this.deleteSelection();
         const b = this.blk;
-        if (b.kind === 'code') return this.codeEnter(k === 'S-Enter'), true;
-        // ``` (or ```python) and Enter: a code block
-        const fence = b.kind === 'p' && this.o === b.items.length && !this.note ? /^```([\w+#.-]*)$/.exec(plainText(b.items)) : null;
-        if (fence) {
-          b.items = [];
-          b.kind = 'code';
-          if (fence[1]) b.lang = fence[1];
-          this.o = 0;
-          return true;
-        }
+        if (b.kind === 'code' || b.kind === 'fence') return this.codeEnter(), true;
         const list = isListKind(b.kind);
         // Enter on an empty item: out a level, then out of the list
         if (list && b.items.length === 0) {
@@ -2605,7 +2601,6 @@ export class Editor {
           return true;
         }
         if (this.o === 0 && this.imageEdge(-1)) return true;
-        if (k === 'Backspace' && this.deleteMarker(-1)) return true;
         if (k === 'C-Backspace' && this.o > 0) {
           const p = this.wordPos(-1);
           this.checkpoint();
@@ -2622,22 +2617,15 @@ export class Editor {
             return true;
           }
           this.checkpoint('type');
-          const [gone] = blk.items.splice(this.o - 1, 1);
+          blk.items.splice(this.o - 1, 1);
           this.o--;
-          // by styled text, the caret stays on the deleted character's side of the markers
-          // (backspacing up to `code` leaves it after the closing one; within, inside)
-          if (gone.t === 'c' && this.caretRuns().length)
-            this.pendingStyle = { b: !!gone.b, i: !!gone.i, c: !!gone.c, at: { b: this.b, o: this.o } };
         } else if (isListKind(blk.kind) && blk.indent) {
           // at the start of a nested item: out a level first
           this.checkpoint();
           blk.indent--;
-        } else if (blk.kind !== 'p' && !(blk.kind === 'code' && this.doc.blocks[this.b - 1]?.kind === 'code')) {
-          // (the first line of a code block: the rest stay code, its language with them)
+        } else if (isListKind(blk.kind)) {
+          // (headings and code are their text: their line joins the one before, as any)
           this.checkpoint();
-          const next = this.doc.blocks[this.b + 1];
-          if (blk.lang && next?.kind === 'code') next.lang = blk.lang;
-          delete blk.lang;
           blk.kind = 'p';
         } else if (this.b > 0) {
           this.checkpoint();
@@ -2655,7 +2643,6 @@ export class Editor {
           this.deleteSelection();
           return true;
         }
-        if (k === 'Delete' && this.deleteMarker(1)) return true;
         if (this.o < blk.items.length) {
           this.checkpoint('type');
           const end = k === 'C-Delete' ? this.wordPos(1).o : this.o + 1;
@@ -2692,29 +2679,16 @@ export class Editor {
     }
     if ((k === '^' || k === '_') && !this.selection && this.config.typing.autoMath && !this.literal && this.autoMath(k)) return true;
     if (k.length === 1) {
-      const st = this.typingStyle(), inBlock = this.blk.kind === 'code';
-      // a backtick at the end of inline code leaves it
-      if (k === '`' && st.c && !inBlock && !this.selection) {
-        this.pendingStyle = { ...st, c: false, at: { b: this.b, o: this.o } };
-        return true;
-      }
+      const literal = this.literal;
       this.checkpoint('type');
       this.deleteSelection();
-      const c = ch(k);
-      if (!inBlock) {
-        if (st.b) c.b = true;
-        if (st.i) c.i = true;
-        if (st.c) c.c = true;
-      }
-      this.blk.items.splice(this.o, 0, c);
+      this.blk.items.splice(this.o, 0, ch(k));
       this.o++;
       if (this.b !== NOTE_B) this.growAnchors(this.blk.items, this.o - 1);
-      if (this.pendingStyle) this.pendingStyle.at = { b: this.b, o: this.o };
       // a word typed is an undo step (not the whole run of typing since the last pause)
       if (k === ' ') this.lastKind = '';
-      if (inBlock || st.c) return true; // code is typed as it is
+      if (literal) return true; // code is typed as it is
       if (k === ' ') this.markdownShortcut();
-      this.inlineShortcuts(this.o - 1);
       this.textSnippet();
       return true;
     }
@@ -2758,36 +2732,31 @@ export class Editor {
     return true;
   }
 
-  /** Typing in code (a code block, or inline code): keys are the characters themselves. */
+  /** Typing in code (a code block, or between `backticks`): keys are the characters themselves. */
   private get literal(): boolean {
-    return this.blk.kind === 'code' || this.typingStyle().c;
+    const blk = this.blk;
+    if (blk.kind === 'code' || blk.kind === 'fence') return true;
+    const o = this.o;
+    return parseInline(plainText(blk.items)).spans.some((s) => blk.items[s.start]?.t === 'c' && (blk.items[s.start] as Char).ch === '`' && s.start + s.open <= o && o <= s.end - s.close);
   }
 
   /**
-   * Enter in a code block: a new line, indented as this one. It leaves the block instead
-   * after a closing ``` on the last line, or on a second blank line at the end (blank lines
-   * inside are kept); Shift+Enter is a new line anyway.
+   * Enter in a code block: a new line, indented as this one. After an opening fence
+   * nothing closes yet, the closing one comes too (the caret between).
    */
-  private codeEnter(always: boolean) {
-    const b = this.blk;
-    const last = this.doc.blocks[this.b + 1]?.kind !== 'code';
-    const prev = this.doc.blocks[this.b - 1];
-    const out = () => {
-      b.items = [];
-      b.kind = 'p';
-      delete b.lang;
-      this.o = 0;
-    };
-    if (!always && last && plainText(b.items).trim() === '```') return out();
-    if (!always && last && !b.items.length && prev?.kind === 'code' && !prev.items.length && !prev.lang) {
-      this.doc.blocks.splice(this.b - 1, 1);
-      this.b--;
-      return out();
-    }
+  private codeEnter() {
+    const b = this.blk, at = this.b;
     let lead = 0;
-    while (lead < this.o && b.items[lead].t === 'c' && (b.items[lead] as Char).ch === ' ') lead++;
+    if (b.kind === 'code') while (lead < this.o && b.items[lead].t === 'c' && (b.items[lead] as Char).ch === ' ') lead++;
     const rest = b.items.splice(this.o);
-    this.doc.blocks.splice(this.b + 1, 0, block([...chars(' '.repeat(lead)), ...rest], 'code'));
+    const blocks = this.doc.blocks;
+    blocks.splice(at + 1, 0, block([...chars(' '.repeat(lead)), ...rest]));
+    if (b.kind === 'fence' && b.lang !== undefined) {
+      let j = at + 2;
+      while (blocks[j]?.kind === 'code') j++;
+      const closed = blocks[j]?.kind === 'fence' && blocks[j].lang === undefined;
+      if (!closed) blocks.splice(at + 2, 0, block(chars('```')));
+    }
     this.b++;
     this.o = lead;
   }
@@ -2817,48 +2786,69 @@ export class Editor {
   }
 
   /**
-   * `code`, **bold** and *italic* as you type: once the character just typed (at `at`)
-   * completes a pair of markers around some text, the markers go and the text is styled,
-   * whichever was typed last: the closing marker, the opening one, or the text between
-   * markers typed first (type ``, ← and the code). Bold and italic open after a space, a
-   * bracket or the line start, with no space just inside; code takes anything. One undo step.
+   * What the text means, as markdown: code blocks (the lines between ``` fences), headings
+   * (`# `), and **bold** *italic* `code` (their markers are characters too, flagged as such).
+   * The fences are read in every block, as they decide what's code; the rest in blocks
+   * `from`..`to` and any edited since their last snapshot (or whose kind just changed).
    */
-  private inlineShortcuts(at: number) {
-    const items = this.blk.items;
-    // (code already styled counts as NUL: markers in it don't pair; a formula as U+0001: bold may hold one, code cannot)
-    const text = items.map((i) => (i.t === 'c' ? (i.c ? '\0' : i.ch) : '\u0001')).join('');
-    if (!/[`*]/.test(text)) return;
-    const patterns: [RegExp, 'b' | 'i' | 'c'][] = [
-      ...(this.note ? [] : [[/(^|[^`])(`)([^`\0\u0001]+)`(?!`)/g, 'c'] as [RegExp, 'c']]),
-      [/(^|[\s(["'])(\*\*)([^\s*\0](?:[^*\0]*[^\s*\0])?)\*\*(?!\*)/g, 'b'],
-      [/(^|[\s(["'])(\*)([^\s*\0](?:[^*\0]*[^\s*\0])?)\*(?!\*)/g, 'i'],
-    ];
-    for (const [re, s] of patterns)
-      for (const m of text.matchAll(re)) {
-        const L = m[2].length;
-        const start = m.index! + m[1].length, end = start + L + m[3].length + L;
-        if (at < start || at >= end) continue;
-        this.learned(s === 'c' ? 'md-code' : 'md-bold');
-        this.checkpoint();
-        for (const it of items.slice(start + L, end - L))
-          if (it.t === 'c') {
-            it[s] = true;
-            if (s === 'c') delete it.b, delete it.i;
-          }
-        items.splice(end - L, L);
-        items.splice(start, L);
-        // the caret stays among the same characters
-        const o = this.o;
-        this.o = o - Math.min(L, Math.max(0, o - start)) - Math.min(L, Math.max(0, o - (end - L)));
-        // the closing marker was typed: the caret is past it, what's typed next plain again
-        // (between markers typed first, it's still inside: the text goes on, and → steps over
-        // the closing marker, now shown)
-        if (at >= end - L) {
-          const st = this.typingStyle();
-          this.pendingStyle = { b: st.b, i: st.i, c: st.c, [s]: false, at: { b: this.b, o: this.o } };
-        }
-        return;
+  derive(from = this.b - 1, to = this.b + 1) {
+    const blocks = this.doc.blocks;
+    const fenceable = (k: BlockKind) => k === 'p' || k === 'h1' || k === 'h2' || k === 'h3' || k === 'code' || k === 'fence';
+    const ticks = (blk: Block) => blk.items[0]?.t === 'c' && (blk.items[0] as Char).ch === '`';
+    let inCode = false;
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const blk = blocks[bi];
+      const was = blk.kind;
+      if (fenceable(blk.kind)) {
+        const t = ticks(blk) ? plainText(blk.items) : '';
+        let lang: string | null = null;
+        if (inCode && t && closesFence(t)) (blk.kind = 'fence'), (inCode = false);
+        else if (inCode) blk.kind = 'code';
+        else if (t && (lang = fenceOf(t)) !== null) (blk.kind = 'fence'), (inCode = true);
+        else if (blk.kind === 'code' || blk.kind === 'fence') blk.kind = 'p';
+        if (lang !== null) blk.lang = lang;
+        else if (blk.lang !== undefined) delete blk.lang;
       }
+      const edited = (bi >= from && bi <= to) || !this.blockSnaps.has(blk) || blk.kind !== was;
+      if (edited && this.deriveBlock(blk) || blk.kind !== was) this.forget(blk);
+    }
+  }
+
+  /** A block's headings and inline styles, from its text (true when that changed anything). */
+  private deriveBlock(blk: Block): boolean {
+    const items = blk.items;
+    const text = plainText(items);
+    let changed = false, prefix = 0;
+    if (blk.kind === 'p' || blk.kind === 'h1' || blk.kind === 'h2' || blk.kind === 'h3') {
+      const h = headingOf(text);
+      const kind: BlockKind = h ? (['h1', 'h2', 'h3'] as const)[Math.min(h.level, 3) - 1] : 'p';
+      if (kind !== blk.kind) (blk.kind = kind), (changed = true);
+      prefix = h?.prefix ?? 0;
+    }
+    const code = blk.kind === 'code' || blk.kind === 'fence';
+    const flags = code ? null : parseInline(text).flags;
+    for (let o = 0; o < items.length; o++) {
+      const it = items[o];
+      if (it.t !== 'c') continue;
+      const f = !flags ? 0 : o < prefix ? MARK : flags[o];
+      const want = [!!(f & BOLD), !!(f & ITALIC), !!(f & CODE), !!(f & MARK)];
+      const keys = ['b', 'i', 'c', 'm'] as const;
+      for (let k = 0; k < 4; k++)
+        if (!!it[keys[k]] !== want[k]) {
+          changed = true;
+          if (want[k]) it[keys[k]] = true;
+          else delete it[keys[k]];
+        }
+    }
+    return changed;
+  }
+
+  /** Drop what's remembered of a block (it changed outside an edit's usual reach). */
+  private forget(blk: Block) {
+    this.blockSnaps.delete(blk);
+    this.idSets.delete(blk);
+    this.blockCounts.delete(blk);
+    this.blockJSON.delete(blk);
   }
 
   /** A formula made by auto-math: space (, ; :) at its end goes straight back to text. */
@@ -2894,168 +2884,80 @@ export class Editor {
   }
 
   /**
-   * Bold / italic for what's typed next (Ctrl+B / Ctrl+I without a selection, or plain right
-   * after a *…* conversion), while the caret stays where it was left.
+   * What shows of the markdown at the caret, as in Obsidian: the markers of the spans the
+   * caret is in or at an edge of, a heading's #s while it's on the heading, and a code
+   * block's fences while it's in the block. Everything else's markers are hidden.
    */
-  private pendingStyle = $state<{ b: boolean; i: boolean; c: boolean; at: Pos } | null>(null);
+  reveal = $state.raw<Reveal | null>(null);
 
-  /** The style a character typed now gets: the pending one, else the character before's. */
-  private typingStyle(): Styles {
-    const st = this.styleHere();
-    if (st !== this.pendingStyle) this.pendingStyle = null;
-    return st;
-  }
-
-  /** typingStyle, without forgetting a pending style left elsewhere (safe while rendering). */
-  private styleHere(): Styles {
-    const p = this.pendingStyle;
-    if (p && p.at.b === this.b && p.at.o === this.o) return p;
-    const prev = this.blk.items[this.o - 1];
-    return prev?.t === 'c' ? { b: !!prev.b, i: !!prev.i, c: !!prev.c } : { b: false, i: false, c: false };
-  }
-
-  // ── markers shown at the caret (as in Obsidian) ──
-
-  /**
-   * Styled runs of the caret's paragraph that the caret is in or at an edge of: their
-   * markdown markers (** * `) show while it's there. At an edge the caret is either inside
-   * the markers or outside them, which is what typing there gets (styleHere).
-   */
-  private caretRuns(): Run[] {
-    if (this.mode !== 'text' || this.b === NOTE_B || this.anchor) return [];
-    const items = this.blk.items, o = this.o, out: Run[] = [];
-    for (const s of ['b', 'i', 'c'] as const) {
-      const has = (k: number) => {
-        const it = items[k];
-        return it?.t === 'c' && !!it[s];
-      };
-      if (!has(o) && !has(o - 1)) continue;
-      let start = o, end = o;
-      while (has(start - 1)) start--;
-      while (has(end)) end++;
-      out.push({ s, start, end });
-    }
-    return out;
-  }
-
-  /**
-   * What to show of the markdown around the caret: each styled run's markers (opening
-   * ones by where they go, outermost first; closing ones innermost first), a heading's #s,
-   * and the fences of a code block.
-   */
-  get reveal(): Reveal | null {
+  /** reveal, worked out again (once an action is done: see touch). */
+  private computeReveal(): Reveal | null {
     if (this.mode !== 'text' || this.b === NOTE_B) return null;
-    const blk = this.blk;
-    const runs = this.caretRuns();
-    const open: Record<number, Run['s'][]> = {}, close: Record<number, Run['s'][]> = {};
-    for (const s of ['b', 'i', 'c'] as const) {
-      const r = runs.find((r) => r.s === s);
-      if (r) (open[r.start] ??= []).push(s);
-    }
-    for (const s of ['c', 'i', 'b'] as const) {
-      const r = runs.find((r) => r.s === s);
-      if (r) (close[r.end] ??= []).push(s);
-    }
-    let code: Reveal['code'] = null;
-    if (blk.kind === 'code') {
+    const blk = this.blk, o = this.o, blocks = this.doc.blocks;
+    const shown = new Set<number>();
+    let hang = 0, code: Reveal['code'] = null;
+    if (blk.kind === 'code' || blk.kind === 'fence') {
+      const opens = (k: number) => blocks[k]?.kind === 'fence' && blocks[k].lang !== undefined;
       let first = this.b, last = this.b;
-      while (this.doc.blocks[first - 1]?.kind === 'code') first--;
-      while (this.doc.blocks[last + 1]?.kind === 'code') last++;
+      if (!opens(first)) while (first > 0 && !opens(first) && (blocks[first - 1].kind === 'code' || blocks[first - 1].kind === 'fence')) first--;
+      const closes = (k: number) => blocks[k]?.kind === 'fence' && blocks[k].lang === undefined;
+      if (!closes(last) || last === first) {
+        while (blocks[last + 1]?.kind === 'code') last++;
+        if (closes(last + 1)) last++;
+      }
       code = { first, last };
-    }
-    const hashes = blk.kind === 'h1' ? 1 : blk.kind === 'h2' ? 2 : blk.kind === 'h3' ? 3 : 0;
-    if (!runs.length && !code && !hashes) return null;
-    return { b: this.b, open, close, hashes, code };
-  }
-
-  /**
-   * ← / → at a styled run's edge step over its markers first (into or out of the style),
-   * one style at a time, before the caret moves on. True when it did.
-   */
-  private stepMarker(d: 1 | -1): boolean {
-    const runs = this.caretRuns();
-    if (!runs.length) return false;
-    const st = this.styleHere(), o = this.o;
-    const at = (s: Run['s'], edge: 'start' | 'end') => runs.some((r) => r.s === s && r[edge] === o);
-    const set = (s: Run['s'], v: boolean) => {
-      this.pendingStyle = { b: st.b, i: st.i, c: st.c, [s]: v, at: { b: this.b, o } };
-      return true;
-    };
-    // (the nearest marker first: closing ones innermost first, opening ones outermost first)
-    const order = { inner: ['c', 'i', 'b'] as const, outer: ['b', 'i', 'c'] as const };
-    if (d > 0) {
-      for (const s of order.inner) if (at(s, 'end') && st[s]) return set(s, false);
-      for (const s of order.outer) if (at(s, 'start') && !st[s]) return set(s, true);
     } else {
-      for (const s of order.inner) if (at(s, 'start') && st[s]) return set(s, false);
-      for (const s of order.outer) if (at(s, 'end') && !st[s]) return set(s, true);
+      for (const s of parseInline(plainText(blk.items)).spans)
+        if (s.start <= o && o <= s.end) {
+          for (let k = 0; k < s.open; k++) shown.add(s.start + k);
+          for (let k = 1; k <= s.close; k++) shown.add(s.end - k);
+        }
+      if (blk.kind === 'h1' || blk.kind === 'h2' || blk.kind === 'h3') {
+        hang = headingOf(plainText(blk.items))?.prefix ?? 0;
+        for (let k = 0; k < hang; k++) shown.add(k);
+      }
     }
-    return false;
-  }
-
-  /** After ← lands on a run's edge: past its closing markers (outside), inside its opening ones. */
-  private landLeft() {
-    const runs = this.caretRuns();
-    if (!runs.length) return;
-    const st = { ...this.styleHere() };
-    for (const r of runs) {
-      if (r.end === this.o) st[r.s] = false;
-      if (r.start === this.o) st[r.s] = true;
-    }
-    this.pendingStyle = { b: st.b, i: st.i, c: st.c, at: { b: this.b, o: this.o } };
+    if (!shown.size && !code) return null;
+    return { b: this.b, shown, hang, code };
   }
 
   /**
-   * Backspace / Delete on a shown marker: as editing the markdown would, the run goes back
-   * to plain text between its markers, less the marker character deleted. True when it did.
+   * Ctrl+B / Ctrl+I / Ctrl+E: the markdown markers around the selection (taken off again
+   * if they're already there), or a pair at the caret to type between.
    */
-  private deleteMarker(d: 1 | -1): boolean {
-    const runs = this.caretRuns();
-    if (!runs.length) return false;
-    const st = this.styleHere(), o = this.o;
-    const find = (order: readonly Run['s'][], edge: 'start' | 'end', inside: boolean) =>
-      order.map((s) => runs.find((r) => r.s === s && r[edge] === o && st[s] === inside)).find((r) => r);
-    const r = d < 0
-      ? (find(['c', 'i', 'b'], 'start', true) ?? find(['b', 'i', 'c'], 'end', false))
-      : (find(['c', 'i', 'b'], 'end', true) ?? find(['b', 'i', 'c'], 'start', false));
-    if (!r) return false;
-    this.checkpoint();
-    const m = MARKER[r.s], L = m.length, items = this.blk.items;
-    for (const it of items.slice(r.start, r.end)) if (it.t === 'c') delete it[r.s];
-    items.splice(r.end, 0, ...chars(m));
-    items.splice(r.start, 0, ...chars(m));
-    // the caret where it was shown, among the text and its markers; then the deletion
-    let p = o === r.start && r.start !== r.end ? (st[r.s] ? r.start + L : r.start) : st[r.s] ? r.end + L : r.end + 2 * L;
-    if (d < 0) items.splice(--p, 1);
-    else items.splice(p, 1);
-    this.o = p;
-    this.pendingStyle = null;
-    return true;
-  }
-
-  /** Ctrl+B / Ctrl+I / Ctrl+E: on the selection (all of it on → off), or for what's typed next. */
   private toggleStyle(s: 'b' | 'i' | 'c') {
+    const m = MARKER[s], L = m.length;
     const sel = this.selection;
+    this.checkpoint();
     if (!sel) {
-      const st = this.typingStyle();
-      this.pendingStyle = { ...st, [s]: !st[s], at: { b: this.b, o: this.o } };
-      this.flash(`${{ b: 'bold', i: 'italic', c: 'code' }[s]} ${this.pendingStyle[s] ? 'on' : 'off'}`);
+      this.blk.items.splice(this.o, 0, ...chars(m + m));
+      this.o += L;
       if (s === 'c') this.tipLater('md-code', 'you can also type `code`');
       else this.tipLater('md-bold', 'you can also type **bold** or *italic*');
       return;
     }
-    const chars = this.selectedItems().flat().filter((it): it is Char => it.t === 'c' && !/\s/.test(it.ch));
-    if (!chars.length) return;
-    this.checkpoint();
-    const on = !chars.every((c) => c[s]);
-    // (the live characters: selectedItems may hand back the document's own objects or copies)
-    const ids = new Set(chars.map((c) => c.id));
-    for (let b = sel.s.b; b <= sel.e.b; b++)
-      for (const it of this.blockAt(b).items)
-        if (it.t === 'c' && ids.has(it.id)) {
-          if (on) it[s] = true;
-          else delete it[s];
-        }
+    if (sel.s.b !== sel.e.b) return this.flash('select within one paragraph');
+    this.learned(s === 'c' ? 'md-code' : 'md-bold');
+    const items = this.blockAt(sel.s.b).items, a = sel.s.o, z = sel.e.o;
+    const at = (i: number) => (i >= 0 && i + L <= items.length ? items.slice(i, i + L).map((x) => (x.t === 'c' ? x.ch : OBJ)).join('') : '');
+    const back = this.anchor && cmpPos(this.anchor, { b: this.b, o: this.o }) > 0;
+    let na = a, nz = z;
+    if (at(a - L) === m && at(z) === m) {
+      items.splice(z, L);
+      items.splice(a - L, L);
+      (na = a - L), (nz = z - L);
+    } else if (z - a >= 2 * L && at(a) === m && at(z - L) === m) {
+      items.splice(z - L, L);
+      items.splice(a, L);
+      nz = z - 2 * L;
+    } else {
+      items.splice(z, 0, ...chars(m));
+      items.splice(a, 0, ...chars(m));
+      (na = a + L), (nz = z + L);
+    }
+    // the same text selected, the caret at the same end
+    this.anchor = { b: sel.s.b, o: back ? nz : na };
+    this.o = back ? na : nz;
   }
 
   /**
@@ -3138,9 +3040,9 @@ export class Editor {
     if (this.note) return; // (a note is no heading or list)
     const blk = this.blk;
     const text = blk.items.slice(0, this.o).map((i) => (i.t === 'c' ? i.ch : '\0')).join('');
-    const map: Record<string, BlockKind> = { '# ': 'h1', '## ': 'h2', '### ': 'h3', '- ': 'li', '* ': 'li', '1. ': 'ol', '1) ': 'ol' };
+    const map: Record<string, BlockKind> = { '- ': 'li', '* ': 'li', '1. ': 'ol', '1) ': 'ol' };
     // (in a list item, `- ` / `1. ` switch its kind instead of being typed)
-    if (map[text] && (blk.kind === 'p' || (isListKind(blk.kind) && isListKind(map[text])))) {
+    if (map[text] && (blk.kind === 'p' || isListKind(blk.kind))) {
       blk.items.splice(0, this.o);
       blk.kind = map[text];
       this.o = 0;
@@ -3324,25 +3226,6 @@ export class Editor {
     if (w.length < 3 || M.isSubstitution(w)) return;
     const g = SUB_GROUPS.find((g) => !g.template && g.subs[w] !== undefined && !this.config.typing.substitutions[g.id]);
     if (g) this.tip('sub-names', `type \\${w} for the symbol, or turn on ${g.label} in settings › substitutions`, 2);
-  }
-
-  /**
-   * Where the caret goes among the markers shown at its edge (viewport x), or null for
-   * where it would go anyway: before the closing markers it's inside, else after them; past
-   * the opening markers it's inside, else before them.
-   */
-  private markerCaretX(): number | null {
-    const rv = this.reveal;
-    if (!rv) return null;
-    const st = this.styleHere(), o = this.o;
-    const el = (k: string) => this.blockEl(this.b)?.querySelector(`[data-mk="${k}"]`)?.getBoundingClientRect() ?? null;
-    const closing = rv.close[o] ?? [], opening = rv.open[o] ?? [];
-    const inClose = closing.find((s) => st[s]);
-    if (inClose) return el(`c${o}${inClose}`)?.left ?? null;
-    const outOpen = opening.find((s) => !st[s]);
-    if (outOpen) return el(`o${o}${outOpen}`)?.left ?? null;
-    if (closing.length && !opening.length) return el(`c${o}${closing[closing.length - 1]}`)?.right ?? null;
-    return null;
   }
 
   /** Anchor offset of a selection inside the formula (same row as the caret). */
@@ -3562,10 +3445,31 @@ export class Editor {
 
   textCommands(): PaletteEntry[] {
     // (every paragraph the selection touches)
+    // (every paragraph the selection touches; headings by their #s, code by fences around)
     const setKind = (kind: BlockKind) => () => {
       this.checkpoint();
       const sel = this.selection;
-      for (let b = sel ? sel.s.b : this.b; b <= (sel ? sel.e.b : this.b); b++) if (this.doc.blocks[b].kind !== 'img') this.doc.blocks[b].kind = kind;
+      const first = sel ? sel.s.b : this.b, last = sel ? sel.e.b : this.b;
+      if (kind === 'code') {
+        this.doc.blocks.splice(last + 1, 0, block(chars('```')));
+        this.doc.blocks.splice(first, 0, block(chars('```')));
+        this.b++;
+        if (this.anchor) this.anchor = { ...this.anchor, b: this.anchor.b + 1 };
+        this.derive(first, last + 2);
+        return;
+      }
+      for (let b = first; b <= last; b++) {
+        const blk = this.doc.blocks[b];
+        if (blk.kind === 'img' || blk.kind === 'code' || blk.kind === 'fence') continue;
+        const had = headingOf(plainText(blk.items))?.prefix ?? 0;
+        const want = /^h[1-3]$/.test(kind) ? '#'.repeat(+kind[1]) + ' ' : '';
+        blk.items.splice(0, had, ...chars(want));
+        if (b === this.b) this.o = Math.max(0, this.o - had + want.length);
+        if (this.anchor?.b === b) this.anchor = { b, o: Math.max(0, this.anchor.o - had + want.length) };
+        blk.kind = kind === 'li' || kind === 'ol' ? kind : 'p';
+        this.forget(blk);
+      }
+      this.derive(first, last);
     };
     return [
       ...this.drawCommands(),
@@ -3665,7 +3569,8 @@ export class Editor {
       const d = JSON.parse(await navigator.clipboard.readText());
       if (!Array.isArray(d.blocks)) throw 0;
       this.checkpoint();
-      this.doc = { blocks: d.blocks, arrows: d.arrows ?? [], marks: d.marks ?? [] };
+      this.doc = withMarkdown({ blocks: d.blocks, arrows: d.arrows ?? [], marks: d.marks ?? [] });
+      this.derive(0, Infinity);
       this.b = 0;
       this.o = 0;
       this.touch();
@@ -4983,7 +4888,7 @@ function welcomeDoc(): Doc {
       P('Getting started', 'h2'),
       P('Type $ to insert math, for example x^2, a/b, e^(-x/2), \\int_0^1, \\sum_(n=1)^\\infty or \\alpha. Press $ or → to exit.', 'li'),
       P('Typing x^2 or a_n in text converts it to math automatically.', 'li'),
-      P('Type 1. to start a numbered list and Tab to indent. **bold** and *italic* work as you type. Ctrl+F to find.', 'li'),
+      P('Type 1. to start a numbered list and Tab to indent. Markdown like **bold**, *italic* and `code` shows its markers only where the caret is. Ctrl+F to find.', 'li'),
       P('Type \\ to open the command palette. \\arrow draws an arrow: choose the start with the arrow keys or a click, then the end.', 'li'),
       P('While choosing, Shift+↑ selects the parent expression, Shift+↓ a child, and Tab shows jump labels.', 'li'),
       P('With an arrow selected, ↑↓ bend it, and t, d, c and l change the arrowheads, dashes, colour and note.', 'li'),
@@ -4997,7 +4902,7 @@ function welcomeDoc(): Doc {
   const word = b1.items.slice(-11, -1).map((i) => i.id);
   doc.arrows.push({ id: uid(), from: [frac.id], to: word, bend: 0.5, head: 'end', dash: true, boxed: false, label: 'makes total mass 1' });
   doc.marks.push({ id: uid(), kind: 'brace', at: [lhs.id], dash: false, label: 'total probability', color: 'blue' });
-  return doc;
+  return withMarkdown(doc);
 }
 
 const MARK_DESC: Record<MarkKind, string> = {

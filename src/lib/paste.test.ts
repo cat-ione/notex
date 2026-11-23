@@ -22,11 +22,11 @@ describe('pasting', () => {
     expect(show(inlineItems('costs $5 and $10 now'))).toBe('costs $5 and $10 now');
     expect(show(inlineItems('a $x$ b'))).toBe('a $x$ b');
   });
-  it('reads markdown as structure', () => {
+  it('keeps markdown as its text, lists as lists', () => {
     const b = parsePaste('# Title\n\nSome **bold** and *it* text.\n\n- one\n  - nested\n1. first\n2. second');
     expect(b.map((x) => [x.kind, x.indent ?? 0, show(x.items)])).toEqual([
-      ['h1', 0, 'Title'],
-      ['p', 0, 'Some [b][o][l][d] and {i}{t} text.'],
+      ['p', 0, '# Title'],
+      ['p', 0, 'Some **bold** and *it* text.'],
       ['li', 0, 'one'],
       ['li', 1, 'nested'],
       ['ol', 0, 'first'],
@@ -39,19 +39,13 @@ describe('pasting', () => {
 });
 
 describe('pasting code', () => {
-  it('keeps inline code as it is', () => {
+  it('keeps inline code as it is, dollars and all', () => {
     const items = inlineItems('run `a $x$ *b*` then $y$');
-    expect(items.filter((i) => i.t === 'c' && i.c).map((i) => (i.t === 'c' ? i.ch : '')).join('')).toBe('a $x$ *b*');
+    expect(show(items)).toBe('run `a $x$ *b*` then $y$');
     expect(items.filter((i) => i.t === 'm').length).toBe(1);
   });
-  it('reads fenced code as code blocks', () => {
+  it('keeps fenced code with its fences, blank lines and all', () => {
     const b = parsePaste('look:\n```python\ndef f(x):\n\n    return $x\n```\ndone');
-    expect(b.map((x) => [x.kind, x.lang, show(x.items)])).toEqual([
-      ['p', undefined, 'look:'],
-      ['code', 'python', 'def f(x):'],
-      ['code', undefined, ''],
-      ['code', undefined, '    return $x'],
-      ['p', undefined, 'done'],
-    ]);
+    expect(b.map((x) => show(x.items))).toEqual(['look:', '```python', 'def f(x):', '', '    return $x', '```', 'done']);
   });
 });

@@ -4,7 +4,7 @@
       ['$', 'inline math ($$ for display math)'], ['\\  or  ctrl+k', 'command palette'],
       ['# ␣   ## ␣   - ␣', 'heading, subheading, bullet list'], ['1. ␣   tab  shift+tab', 'numbered list, indent / outdent'],
       ['ctrl+b  ctrl+i', 'bold, italic (or **bold**, *italic*)'], ['x^2  a_n', 'converted to math automatically'],
-      ['`code`  ctrl+e', 'inline code'], ['```  enter', 'code block (``` or two blank lines to leave)'],
+      ['`code`  ctrl+e', 'inline code'], ['```py  enter', 'code block (closed for you; markdown shows where the caret is)'],
       ['paste / drop / \\image', 'insert an image (type under it for a caption)'], ['alt+← →', 'image: resize (or drag its corner)'],
       ['ctrl+f  F3', 'find, find next'], ['alt+↑ ↓', 'move paragraph up / down'], ['ctrl+s  o  n', 'save, open, new'], ['ctrl+,', 'settings'], ['F1', 'keyboard shortcuts'],
     ]],

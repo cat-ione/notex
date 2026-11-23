@@ -6,7 +6,7 @@ function sample(): Doc {
   const frac = cmd('frac', [[sym('a')], [sym('b')]]);
   const m = math([sym('x'), sym('='), frac]);
   const b0 = block([...chars('see '), m, ...chars(' here')]);
-  const b1 = block(chars('second'), 'h2');
+  const b1 = block(chars('## second'), 'h2');
   const word = b0.items.slice(-4).map((i) => i.id);
   return {
     blocks: [b0, b1, block([math([sym('y')], true)])],
@@ -25,14 +25,14 @@ describe('note format', () => {
     const f = encode(sample());
     expect(f.blocks[0].content[0]).toBe('see ');
     expect(f.blocks[0].content[2]).toBe(' here');
-    expect(f.blocks[1]).toEqual({ kind: 'h2', content: ['second'] });
+    // (a heading is its text: the kind is read from it)
+    expect(f.blocks[1]).toEqual({ kind: 'p', content: ['## second'] });
   });
 
-  it('round-trips text, math and block kinds', () => {
+  it('round-trips text and math', () => {
     const doc = sample();
     const back = deserialize(serialize(doc));
     expect(text(back)).toEqual(text(doc));
-    expect(back.blocks.map((b) => b.kind)).toEqual(['p', 'h2', 'p']);
     expect((back.blocks[2].items[0] as any).display).toBe(true);
   });
 
@@ -83,26 +83,30 @@ describe('lists in the file', () => {
   });
 });
 
-describe('bold and italic in the file', () => {
-  it('are stored as styled runs and come back', () => {
-    const items = chars('plain bold');
-    items.slice(6).forEach((c) => c.t === 'c' && (c.b = true));
-    const text = serialize({ blocks: [block(items)], arrows: [], marks: [] });
-    expect(text).toContain('{"s":"bold","b":1}');
-    const back = deserialize(text).blocks[0].items;
-    expect(back.map((c) => (c.t === 'c' && c.b ? 'B' : '.')).join('')).toBe('......BBBB');
+describe('notes from before the markdown was text', () => {
+  const v1 = (blocks: unknown[]) => JSON.stringify({ format: 'notex', version: 1, blocks, arrows: [] });
+  it('get markers for their styles', () => {
+    const back = deserialize(v1([{ kind: 'p', content: ['plain ', { s: 'bold', b: 1 }, ' and ', { s: 'it ', i: 1 }, { s: 'x`y', c: 1 }] }]));
+    expect(text(back)).toEqual(['plain **bold** and *it* ``x`y``']);
   });
-});
-
-describe('code', () => {
-  it('keeps inline code and code blocks', () => {
-    const p = block(chars('run ls now'));
-    for (const it of p.items.slice(4, 6)) if (it.t === 'c') it.c = true;
-    const c1 = Object.assign(block(chars('x = 1'), 'code'), { lang: 'py' }), c2 = block(chars('  y'), 'code');
-    const back = decode(encode({ blocks: [p, c1, c2], arrows: [], marks: [] }));
-    expect(back.blocks[0].items.map((i) => (i.t === 'c' && i.c ? 'C' : '.')).join('')).toBe('....CC....');
-    expect(back.blocks.slice(1).map((b) => [b.kind, b.lang])).toEqual([['code', 'py'], ['code', undefined]]);
-    expect(back.blocks[2].items.map((i) => (i.t === 'c' ? i.ch : '')).join('')).toBe('  y');
+  it('get #s for their headings and fences for their code', () => {
+    const back = deserialize(v1([
+      { kind: 'h2', content: ['Title'] },
+      { kind: 'code', lang: 'py', content: ['x = 1'] },
+      { kind: 'code', content: ['  y'] },
+      { kind: 'p', content: ['after'] },
+    ]));
+    expect(text(back)).toEqual(['## Title', '```py', 'x = 1', '  y', '```', 'after']);
+  });
+  it('keep their drawings on the same characters', () => {
+    const f = { format: 'notex', version: 1, blocks: [{ kind: 'p', content: ['a ', { s: 'bold', b: 1 }] }], arrows: [], marks: [{ kind: 'circle', at: ['c0.2', 'c0.5'], dash: false, label: '' }] };
+    const back = deserialize(JSON.stringify(f));
+    const items = back.blocks[0].items;
+    expect(back.marks[0].at).toEqual([items[4].id, items[7].id]); // b and d, past the opening **
+  });
+  it('are left alone once they are markdown', () => {
+    const doc = sample();
+    expect(text(deserialize(serialize(deserialize(serialize(doc)))))).toEqual(text(doc));
   });
 });
 
