@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fly, scale, fade } from 'svelte/transition';
   import { cubicOut, backOut } from 'svelte/easing';
-  import { Editor } from '$lib/editor.svelte';
+  import { Editor, MARKER } from '$lib/editor.svelte';
   import MathView from './MathView.svelte';
   import ArrowLayer from './ArrowLayer.svelte';
   import MarkLayer from './MarkLayer.svelte';
@@ -15,7 +15,7 @@
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
   import { isDesktop, setWindowTitle } from '$lib/files';
-  import type { Item } from '$lib/model';
+  import type { Block, Item } from '$lib/model';
 
   const ed = new Editor();
   let page: HTMLElement;
@@ -106,6 +106,8 @@
   const codeEdge = (b: number, d: -1 | 1) => ed.doc.blocks[b].kind === 'code' && ed.doc.blocks[b + d]?.kind !== 'code';
   // inline code's first / last character (its rounded ends)
   const isCode = (it: Item | undefined) => it?.t === 'c' && !!it.c;
+  // the markdown shown at the caret: markers around styled text, #s, code fences
+  const reveal = $derived(ed.reveal);
 
   /** Dragging an image's corner: it grows on both sides (it's centred), one undo step. */
   function resizeImage(e: MouseEvent, b: number) {
@@ -151,6 +153,17 @@
      (Kept on one line: whitespace here would show up in the pre-wrap text.) -->
 {#snippet spacer(id: string)}<span class="nx-sp nx-probe" data-pt={id} style="vertical-align: top">&#8288;</span><span class="nx-sp nx-probe" data-pb={id} style="vertical-align: bottom">&#8288;</span>{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
 
+<!-- What comes before a block's text: an image, a code block's opening fence, a heading's #s. -->
+{#snippet blockHead(blk: Block, b: number)}{#if blk.kind === 'img'}<div class="figure">
+      <!-- (an image's id is on the picture: drawings on it are on the picture, not its caption) -->
+      <img src={blk.src} alt="" draggable="false" data-nx={blk.id} style:width={blk.w ? `${blk.w}px` : undefined} />
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span class="grip" onmousedown={(e) => resizeImage(e, b)} data-tip="drag to resize" data-tip-key="alt+← →"></span>
+    </div>{/if}{#if reveal?.code?.first === b}<div class="mk fence">```{blk.lang ?? ''}</div>{/if}{#if reveal?.b === b && reveal.hashes}<span class="mk hash">{'#'.repeat(reveal.hashes)}&nbsp;</span>{/if}{/snippet}
+
+<!-- Markers shown at item o of block b: the closing ones of a run ending there, then the opening ones of one starting. -->
+{#snippet markers(b: number, o: number)}{#if reveal?.b === b}{#each reveal.close[o] ?? [] as s (s)}<span class="mk" data-mk="c{o}{s}">{MARKER[s]}</span>{/each}{#each reveal.open[o] ?? [] as s (s)}<span class="mk" data-mk="o{o}{s}">{MARKER[s]}</span>{/each}{/if}{/snippet}
+
 <div class="shell">
   <DrawingMenu {ed} />
   <FindBar {ed} />
@@ -183,27 +196,20 @@
           class:cfirst={codeEdge(b, -1)}
           class:clast={codeEdge(b, 1)}
           class:empty={!blk.items.length}
+          class:fenced={!!reveal?.code && b >= reveal.code.first && b <= reveal.code.last}
           data-nx={blk.kind === 'img' ? undefined : blk.id}
           data-depth={blk.indent || undefined}
           data-n={listNums[b]}
           data-lang={blk.kind === 'code' ? blk.lang : undefined}
           style:--indent={blk.indent || undefined}
         >
-          {#if blk.kind === 'img'}
-            <div class="figure">
-              <!-- (an image's id is on the picture: drawings on it are on the picture, not its caption) -->
-              <img src={blk.src} alt="" draggable="false" data-nx={blk.id} style:width={blk.w ? `${blk.w}px` : undefined} />
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <span class="grip" onmousedown={(e) => resizeImage(e, b)} data-tip="drag to resize" data-tip-key="alt+← →"></span>
-            </div>
-          {/if}
-          {#each blk.items as it, o (it.id)}
-            {#if it.t === 'c'}
+          <!-- (no whitespace between these: in the pre-wrap text it would show) -->
+          {@render blockHead(blk, b)}{#each blk.items as it, o (it.id)}{@render markers(b, o)}{#if it.t === 'c'}
               <span class="ch" class:b={it.b} class:i={it.i} class:c={it.c} class:cs={it.c && !isCode(blk.items[o - 1])} class:ce={it.c && !isCode(blk.items[o + 1])} data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {:else}
               <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {/if}
-          {/each}<span class="eol" data-eol={blk.id}>&#8203;</span>
+          {/each}{@render markers(b, blk.items.length)}<span class="eol" data-eol={blk.id}>&#8203;</span>{#if reveal?.code?.last === b}<div class="mk fence">```</div>{/if}
         </div>
       {/each}
 
@@ -469,6 +475,7 @@
     contain-intrinsic-size: auto 200px;
   }
   .figure {
+    white-space: normal;
     position: relative;
     width: fit-content;
     max-width: 100%;
@@ -511,6 +518,27 @@
     transform: translateX(-50%);
     opacity: 0.5;
     pointer-events: none;
+  }
+  /* markdown shown at the caret, quietly: markers, #s, fences (see Editor.reveal) */
+  .mk {
+    font-family: var(--mono);
+    font-weight: 400;
+    font-style: normal;
+    font-size: 0.9em;
+    color: var(--muted);
+    opacity: 0.75;
+    user-select: none;
+  }
+  .mk.hash {
+    font-size: 0.75em;
+  }
+  .mk.fence {
+    font-size: 1em;
+    line-height: 1.6;
+  }
+  /* (the language shows in the fence then) */
+  .block.code.fenced.cfirst::after {
+    display: none;
   }
   /* a code block: its lines in the mono font on one tinted box */
   .block.code {

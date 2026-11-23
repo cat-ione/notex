@@ -29,6 +29,23 @@ import { allIds, block, ch, chars, cloneRow, cmd, isListKind, MAX_INDENT, math, 
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette';
 
+type Styles = { b: boolean; i: boolean; c: boolean };
+/** A run of text in one style: items start..end (exclusive). */
+type Run = { s: 'b' | 'i' | 'c'; start: number; end: number };
+/** What's shown of the markdown at the caret (see Editor.reveal). */
+export type Reveal = {
+  b: number;
+  /** Opening markers before item o (outermost first) / closing ones before item o (innermost first). */
+  open: Record<number, Run['s'][]>;
+  close: Record<number, Run['s'][]>;
+  /** A heading's #s. */
+  hashes: number;
+  /** The code block the caret is in: its first and last lines (for its fences). */
+  code: { first: number; last: number } | null;
+};
+/** Each style's markdown marker. */
+export const MARKER = { b: '**', i: '*', c: '`' } as const;
+
 export type Loc =
   | { k: 'word'; b: number; s: number; e: number }
   | { k: 'item'; b: number; o: number }
@@ -1707,6 +1724,8 @@ export class Editor {
         const y = useprev ? pr!.top : nextIsMath ? r.top + r.height / 2 - h / 2 : r.top;
         caret = { r: relTo({ x, y, w: 2, h }, origin), shape: 'bar' };
       }
+      const mx = caret && this.markerCaretX();
+      if (caret && mx != null) caret.r.x = mx - origin.left;
     }
     this.caret = caret;
     this.selRects = [...this.selectionRects(origin), ...this.mathSelRects(origin)];
@@ -2491,14 +2510,16 @@ export class Editor {
           this.enterMath(true);
           return true;
         }
+        if (!shift && this.stepMarker(-1)) return true;
         const p = this.o > 0 ? { b: this.b, o: this.o - 1 } : this.b > 0 ? { b: this.b - 1, o: this.doc.blocks[this.b - 1].items.length } : null;
         if (p) this.moveTo(p, shift);
+        if (!shift) this.landLeft();
         return true;
       }
       case 'Right': {
         const sel = this.selection;
         if (sel && !shift) return this.moveTo(sel.e, false), true;
-        if (!shift && this.stepOut()) return true;
+        if (!shift && this.stepMarker(1)) return true;
         if (!shift && blk.items[this.o]?.t === 'm') {
           this.enterMath(false);
           return true;
@@ -2584,6 +2605,7 @@ export class Editor {
           return true;
         }
         if (this.o === 0 && this.imageEdge(-1)) return true;
+        if (k === 'Backspace' && this.deleteMarker(-1)) return true;
         if (k === 'C-Backspace' && this.o > 0) {
           const p = this.wordPos(-1);
           this.checkpoint();
@@ -2629,6 +2651,7 @@ export class Editor {
           this.deleteSelection();
           return true;
         }
+        if (k === 'Delete' && this.deleteMarker(1)) return true;
         if (this.o < blk.items.length) {
           this.checkpoint('type');
           const end = k === 'C-Delete' ? this.wordPos(1).o : this.o + 1;
@@ -2680,8 +2703,6 @@ export class Editor {
         if (st.c) c.c = true;
       }
       this.blk.items.splice(this.o, 0, c);
-      const vc = this.closeAt;
-      if (vc && vc.b === this.b && vc.o === this.o && (c[vc.s] || vc.s === 'c')) vc.o++; // (the run grows)
       this.o++;
       if (this.b !== NOTE_B) this.growAnchors(this.blk.items, this.o - 1);
       if (this.pendingStyle) this.pendingStyle.at = { b: this.b, o: this.o };
@@ -2825,26 +2846,15 @@ export class Editor {
         // the caret stays among the same characters
         const o = this.o;
         this.o = o - Math.min(L, Math.max(0, o - start)) - Math.min(L, Math.max(0, o - (end - L)));
-        // the closing marker was typed: what's typed next is plain again (between markers typed
-        // first, it's still inside: the text goes on, and → steps over where the marker was)
-        if (at >= end - L) this.pendingStyle = { ...this.typingStyle(), [s]: false, at: { b: this.b, o: this.o } };
-        else this.closeAt = { b: this.b, o: end - 2 * L, s };
+        // the closing marker was typed: the caret is past it, what's typed next plain again
+        // (between markers typed first, it's still inside: the text goes on, and → steps over
+        // the closing marker, now shown)
+        if (at >= end - L) {
+          const st = this.typingStyle();
+          this.pendingStyle = { b: st.b, i: st.i, c: st.c, [s]: false, at: { b: this.b, o: this.o } };
+        }
         return;
       }
-  }
-
-  /** Where a closing marker was typed before the text it closes (see inlineShortcuts). */
-  private closeAt: { b: number; o: number; s: 'b' | 'i' | 'c' } | null = null;
-
-  /** → at the end of such a run: out of its style first, as if over the marker. */
-  private stepOut(): boolean {
-    const vc = this.closeAt;
-    if (!vc || vc.b !== this.b || vc.o !== this.o) return false;
-    this.closeAt = null;
-    const st = this.typingStyle();
-    if (!st[vc.s]) return false;
-    this.pendingStyle = { ...st, [vc.s]: false, at: { b: this.b, o: this.o } };
-    return true;
   }
 
   /** A formula made by auto-math: space (, ; :) at its end goes straight back to text. */
@@ -2883,15 +2893,140 @@ export class Editor {
    * Bold / italic for what's typed next (Ctrl+B / Ctrl+I without a selection, or plain right
    * after a *…* conversion), while the caret stays where it was left.
    */
-  private pendingStyle: { b: boolean; i: boolean; c: boolean; at: Pos } | null = null;
+  private pendingStyle = $state<{ b: boolean; i: boolean; c: boolean; at: Pos } | null>(null);
 
   /** The style a character typed now gets: the pending one, else the character before's. */
-  private typingStyle(): { b: boolean; i: boolean; c: boolean } {
+  private typingStyle(): Styles {
+    const st = this.styleHere();
+    if (st !== this.pendingStyle) this.pendingStyle = null;
+    return st;
+  }
+
+  /** typingStyle, without forgetting a pending style left elsewhere (safe while rendering). */
+  private styleHere(): Styles {
     const p = this.pendingStyle;
     if (p && p.at.b === this.b && p.at.o === this.o) return p;
-    this.pendingStyle = null;
     const prev = this.blk.items[this.o - 1];
     return prev?.t === 'c' ? { b: !!prev.b, i: !!prev.i, c: !!prev.c } : { b: false, i: false, c: false };
+  }
+
+  // ── markers shown at the caret (as in Obsidian) ──
+
+  /**
+   * Styled runs of the caret's paragraph that the caret is in or at an edge of: their
+   * markdown markers (** * `) show while it's there. At an edge the caret is either inside
+   * the markers or outside them, which is what typing there gets (styleHere).
+   */
+  private caretRuns(): Run[] {
+    if (this.mode !== 'text' || this.b === NOTE_B || this.anchor) return [];
+    const items = this.blk.items, o = this.o, out: Run[] = [];
+    for (const s of ['b', 'i', 'c'] as const) {
+      const has = (k: number) => {
+        const it = items[k];
+        return it?.t === 'c' && !!it[s];
+      };
+      if (!has(o) && !has(o - 1)) continue;
+      let start = o, end = o;
+      while (has(start - 1)) start--;
+      while (has(end)) end++;
+      out.push({ s, start, end });
+    }
+    return out;
+  }
+
+  /**
+   * What to show of the markdown around the caret: each styled run's markers (opening
+   * ones by where they go, outermost first; closing ones innermost first), a heading's #s,
+   * and the fences of a code block.
+   */
+  get reveal(): Reveal | null {
+    if (this.mode !== 'text' || this.b === NOTE_B) return null;
+    const blk = this.blk;
+    const runs = this.caretRuns();
+    const open: Record<number, Run['s'][]> = {}, close: Record<number, Run['s'][]> = {};
+    for (const s of ['b', 'i', 'c'] as const) {
+      const r = runs.find((r) => r.s === s);
+      if (r) (open[r.start] ??= []).push(s);
+    }
+    for (const s of ['c', 'i', 'b'] as const) {
+      const r = runs.find((r) => r.s === s);
+      if (r) (close[r.end] ??= []).push(s);
+    }
+    let code: Reveal['code'] = null;
+    if (blk.kind === 'code') {
+      let first = this.b, last = this.b;
+      while (this.doc.blocks[first - 1]?.kind === 'code') first--;
+      while (this.doc.blocks[last + 1]?.kind === 'code') last++;
+      code = { first, last };
+    }
+    const hashes = blk.kind === 'h1' ? 1 : blk.kind === 'h2' ? 2 : blk.kind === 'h3' ? 3 : 0;
+    if (!runs.length && !code && !hashes) return null;
+    return { b: this.b, open, close, hashes, code };
+  }
+
+  /**
+   * ← / → at a styled run's edge step over its markers first (into or out of the style),
+   * one style at a time, before the caret moves on. True when it did.
+   */
+  private stepMarker(d: 1 | -1): boolean {
+    const runs = this.caretRuns();
+    if (!runs.length) return false;
+    const st = this.styleHere(), o = this.o;
+    const at = (s: Run['s'], edge: 'start' | 'end') => runs.some((r) => r.s === s && r[edge] === o);
+    const set = (s: Run['s'], v: boolean) => {
+      this.pendingStyle = { b: st.b, i: st.i, c: st.c, [s]: v, at: { b: this.b, o } };
+      return true;
+    };
+    // (the nearest marker first: closing ones innermost first, opening ones outermost first)
+    const order = { inner: ['c', 'i', 'b'] as const, outer: ['b', 'i', 'c'] as const };
+    if (d > 0) {
+      for (const s of order.inner) if (at(s, 'end') && st[s]) return set(s, false);
+      for (const s of order.outer) if (at(s, 'start') && !st[s]) return set(s, true);
+    } else {
+      for (const s of order.inner) if (at(s, 'start') && st[s]) return set(s, false);
+      for (const s of order.outer) if (at(s, 'end') && !st[s]) return set(s, true);
+    }
+    return false;
+  }
+
+  /** After ← lands on a run's edge: past its closing markers (outside), inside its opening ones. */
+  private landLeft() {
+    const runs = this.caretRuns();
+    if (!runs.length) return;
+    const st = { ...this.styleHere() };
+    for (const r of runs) {
+      if (r.end === this.o) st[r.s] = false;
+      if (r.start === this.o) st[r.s] = true;
+    }
+    this.pendingStyle = { b: st.b, i: st.i, c: st.c, at: { b: this.b, o: this.o } };
+  }
+
+  /**
+   * Backspace / Delete on a shown marker: as editing the markdown would, the run goes back
+   * to plain text between its markers, less the marker character deleted. True when it did.
+   */
+  private deleteMarker(d: 1 | -1): boolean {
+    const runs = this.caretRuns();
+    if (!runs.length) return false;
+    const st = this.styleHere(), o = this.o;
+    const find = (order: readonly Run['s'][], edge: 'start' | 'end', inside: boolean) =>
+      order.map((s) => runs.find((r) => r.s === s && r[edge] === o && st[s] === inside)).find((r) => r);
+    const r = d < 0
+      ? (find(['c', 'i', 'b'], 'start', true) ?? find(['b', 'i', 'c'], 'end', false))
+      : (find(['c', 'i', 'b'], 'end', true) ?? find(['b', 'i', 'c'], 'start', false));
+    if (!r) return false;
+    this.checkpoint();
+    const m = MARKER[r.s], L = m.length, items = this.blk.items;
+    for (const it of items.slice(r.start, r.end)) if (it.t === 'c') delete it[r.s];
+    items.splice(r.end, 0, ...chars(m));
+    items.splice(r.start, 0, ...chars(m));
+    // the caret where it was shown, among the text and its markers; then the deletion
+    let p = o === r.start && r.start !== r.end ? (st[r.s] ? r.start + L : r.start) : st[r.s] ? r.end + L : r.end + 2 * L;
+    if (d < 0) items.splice(--p, 1);
+    else items.splice(p, 1);
+    this.o = p;
+    this.pendingStyle = null;
+    return true;
   }
 
   /** Ctrl+B / Ctrl+I / Ctrl+E: on the selection (all of it on → off), or for what's typed next. */
@@ -3185,6 +3320,25 @@ export class Editor {
     if (w.length < 3 || M.isSubstitution(w)) return;
     const g = SUB_GROUPS.find((g) => !g.template && g.subs[w] !== undefined && !this.config.typing.substitutions[g.id]);
     if (g) this.tip('sub-names', `type \\${w} for the symbol, or turn on ${g.label} in settings › substitutions`, 2);
+  }
+
+  /**
+   * Where the caret goes among the markers shown at its edge (viewport x), or null for
+   * where it would go anyway: before the closing markers it's inside, else after them; past
+   * the opening markers it's inside, else before them.
+   */
+  private markerCaretX(): number | null {
+    const rv = this.reveal;
+    if (!rv) return null;
+    const st = this.styleHere(), o = this.o;
+    const el = (k: string) => this.blockEl(this.b)?.querySelector(`[data-mk="${k}"]`)?.getBoundingClientRect() ?? null;
+    const closing = rv.close[o] ?? [], opening = rv.open[o] ?? [];
+    const inClose = closing.find((s) => st[s]);
+    if (inClose) return el(`c${o}${inClose}`)?.left ?? null;
+    const outOpen = opening.find((s) => !st[s]);
+    if (outOpen) return el(`o${o}${outOpen}`)?.left ?? null;
+    if (closing.length && !opening.length) return el(`c${o}${closing[closing.length - 1]}`)?.right ?? null;
+    return null;
   }
 
   /** Anchor offset of a selection inside the formula (same row as the caret). */
