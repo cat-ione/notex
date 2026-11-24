@@ -30,6 +30,18 @@
       value: () => (ed.config.typing.autoMath ? 'on' : 'off'),
       change: () => ed.updateConfig({ typing: { ...ed.config.typing, autoMath: !ed.config.typing.autoMath } }),
     },
+    {
+      label: 'close brackets',
+      tip: 'Typing ( [ { or " adds the closing one after the caret. Typing the closing one steps over it, and Backspace between an empty pair removes both. With text selected, the brackets go around it.',
+      value: () => (ed.config.typing.pairBrackets ? 'on' : 'off'),
+      change: () => ed.updateConfig({ typing: { ...ed.config.typing, pairBrackets: !ed.config.typing.pairBrackets } }),
+    },
+    {
+      label: 'close markdown',
+      tip: 'Typing ` adds the closing backtick. Typing *, _, ` or ~ with text selected puts the marker on both sides of it, so selecting a word and typing ** makes it bold.',
+      value: () => (ed.config.typing.pairMarkdown ? 'on' : 'off'),
+      change: () => ed.updateConfig({ typing: { ...ed.config.typing, pairMarkdown: !ed.config.typing.pairMarkdown } }),
+    },
     { label: 'show tips', tip: 'Now and then, a short tip in the status bar about a faster way to do what you just did. Each tip shows at most twice.', value: () => (ed.config.tips ? 'on' : 'off'), change: () => ed.updateConfig({ tips: !ed.config.tips }) },
     { label: 'substitutions…', tip: 'Text replaced as you type, like -> with →. Turn groups of built-in substitutions on or off, and add your own.', act: () => openSubs(), hint: () => `${onCount()} on, ${mineCount()} custom` },
     { label: 'edit config file…', tip: 'All settings as JSON, including custom themes and extra CSS.', act: () => openEditor(), hint: 'themes, css' },

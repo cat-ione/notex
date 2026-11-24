@@ -41,6 +41,11 @@ export type Reveal = {
   /** The code block the caret is in, its fences included. */
   code: { first: number; last: number } | null;
 };
+/** Typed in pairs (config typing.pairBrackets): opening → closing. */
+const PAIRS: Record<string, string> = { '(': ')', '[': ']', '{': '}', '"': '"' };
+const CLOSERS = ')]}"';
+/** Typed around a selection (config typing.pairMarkdown). */
+const MD_PAIRS = '*_`~';
 /** Each style's markdown marker. */
 const MARKER = { b: '**', i: '*', c: '`' } as const;
 
@@ -2617,7 +2622,9 @@ export class Editor {
             return true;
           }
           this.checkpoint('type');
-          blk.items.splice(this.o - 1, 1);
+          // between an empty pair, both go
+          const both = k === 'Backspace' && this.pairAround();
+          blk.items.splice(this.o - 1, both ? 2 : 1);
           this.o--;
         } else if (isListKind(blk.kind) && blk.indent) {
           // at the start of a nested item: out a level first
@@ -2677,6 +2684,7 @@ export class Editor {
         this.openPalette('text');
         return true;
     }
+    if (k.length === 1 && this.pairKey(k)) return true;
     if ((k === '^' || k === '_') && !this.selection && this.config.typing.autoMath && !this.literal && this.autoMath(k)) return true;
     if (k.length === 1) {
       const literal = this.literal;
@@ -2729,6 +2737,57 @@ export class Editor {
     }
     this.b += d;
     this.o = d < 0 ? blocks[this.b].items.length : 0;
+    return true;
+  }
+
+  /** The character at o in the caret's paragraph ('' past either end, OBJ for math). */
+  private charAt(o: number): string {
+    const it = this.blk.items[o];
+    return !it ? '' : it.t === 'c' ? it.ch : OBJ;
+  }
+
+  /** The caret is between an empty pair it would have typed: `(|)`, `"|"`, `` `|` ``. */
+  private pairAround(): boolean {
+    const t = this.config.typing, a = this.charAt(this.o - 1), z = this.charAt(this.o);
+    return (t.pairBrackets && !!a && PAIRS[a] === z) || (t.pairMarkdown && a === '`' && z === '`');
+  }
+
+  /**
+   * Brackets, quotes and markdown typed in pairs (config typing.pairBrackets /
+   * pairMarkdown), as in Obsidian: an opening one types its closing one too when nothing
+   * follows the caret but space or punctuation; a closing one steps over the same one
+   * after the caret; typed over a selection within one paragraph, the pair goes around
+   * it (still selected). True when handled.
+   */
+  private pairKey(k: string): boolean {
+    const t = this.config.typing;
+    const close = t.pairBrackets ? PAIRS[k] : undefined;
+    const md = t.pairMarkdown && MD_PAIRS.includes(k);
+    if (!close && !md && !(t.pairBrackets && CLOSERS.includes(k))) return false;
+    const sel = this.selection;
+    if (sel) {
+      if ((!close && !md) || sel.s.b !== sel.e.b) return false;
+      const items = this.blockAt(sel.s.b).items, back = this.anchor && cmpPos(this.anchor, { b: this.b, o: this.o }) > 0;
+      this.checkpoint();
+      items.splice(sel.e.o, 0, ch(close ?? k));
+      items.splice(sel.s.o, 0, ch(k));
+      this.anchor = { b: sel.s.b, o: back ? sel.e.o + 1 : sel.s.o + 1 };
+      this.o = back ? sel.s.o + 1 : sel.e.o + 1;
+      return true;
+    }
+    const prev = this.charAt(this.o - 1), next = this.charAt(this.o);
+    const steps = (t.pairBrackets && CLOSERS.includes(k)) || (t.pairMarkdown && k === '`');
+    if (steps && next === k) return this.moveTo({ b: this.b, o: this.o + 1 }, false), true;
+    // pairs only before space, the line's end, a closing bracket or punctuation; a quote
+    // or backtick not straight after a word (or another of itself: ``` is typed as it is)
+    const free = next === '' || /[\s)\]}.,;:!?]/.test(next);
+    const quote = k === '"' || k === '`';
+    const pair = close ?? (k === '`' ? '`' : undefined);
+    if (!pair || !free || (quote && (prev === k || /[\p{L}\p{N}]/u.test(prev)))) return false;
+    this.checkpoint('type');
+    this.blk.items.splice(this.o, 0, ch(k), ch(pair));
+    this.o++;
+    if (this.b !== NOTE_B) this.growAnchors(this.blk.items, this.o - 1);
     return true;
   }
 

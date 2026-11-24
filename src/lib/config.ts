@@ -31,6 +31,10 @@ export type Config = {
     latexScripts: boolean;
     /** Text: `x^2` or `a_n` typed in prose turns into math. */
     autoMath: boolean;
+    /** Text: `(` types `()` with the caret between, `)` steps over one already there; quotes likewise. */
+    pairBrackets: boolean;
+    /** Text: `` ` `` types a pair; `*`, `_`, `` ` `` and `~` typed over a selection go around it. */
+    pairMarkdown: boolean;
     /** Built-in math substitutions, by group (see SUB_GROUPS): `alpha` → α only if `greek` is on. */
     substitutions: Record<string, boolean>;
   };
@@ -59,7 +63,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   css: '',
   tips: true,
-  typing: { latexScripts: true, autoMath: true, substitutions: { ...SUB_DEFAULTS } },
+  typing: { latexScripts: true, autoMath: true, pairBrackets: true, pairMarkdown: true, substitutions: { ...SUB_DEFAULTS } },
 };
 
 const LOCAL_KEY = 'notex.config';
