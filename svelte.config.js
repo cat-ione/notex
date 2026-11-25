@@ -12,6 +12,8 @@ const config = {
     adapter: adapter({
       fallback: "index.html",
     }),
+    // GitHub Pages serves the site from /<repo>; the desktop app and `pnpm dev` from /
+    paths: { base: process.env.BASE_PATH ?? "" },
   },
 };
 
