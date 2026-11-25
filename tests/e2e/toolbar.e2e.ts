@@ -177,3 +177,59 @@ test('the toolbar is not printed', async ({ page }) => {
   await page.emulateMedia({ media: 'screen' });
   await page.evaluate(() => (window as any).__nx.ed.endPrint());
 });
+
+test('with the draw menu open, another button closes it and does its thing', async ({ page }) => {
+  await type(page, 'something');
+  await button(page, 'draw').click();
+  await expect(page.locator('.palette')).toBeVisible();
+  await button(page, 'find').click();
+  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.findbar')).toBeVisible();
+  expect(await ed(page, (e) => e.mode)).not.toBe('palette');
+});
+
+test('draw again closes the draw menu', async ({ page }) => {
+  await type(page, 'something');
+  await button(page, 'draw').click();
+  await expect(page.locator('.palette')).toBeVisible();
+  await button(page, 'draw').click();
+  await expect(page.locator('.palette')).toHaveCount(0);
+  // and typing goes to the page again
+  await type(page, '!');
+  expect(await text(page)).toBe('something!');
+});
+
+test('with the right-click menu open, a button closes it and acts', async ({ page }) => {
+  await type(page, 'area ');
+  await page.locator('.block').first().click({ button: 'right' });
+  await expect(page.locator('.dmenu')).toBeVisible();
+  await button(page, 'math').click();
+  await expect(page.locator('.dmenu')).toHaveCount(0);
+  expect(await ed(page, (e) => e.mode)).toBe('math');
+});
+
+test('with settings open, help closes them and opens; settings again just closes', async ({ page }) => {
+  await button(page, 'settings').click();
+  await expect(page.locator('.scrim .panel')).toBeVisible();
+  await button(page, 'help').click();
+  await expect(page.locator('.scrim .panel')).toHaveCount(0);
+  await expect(page.locator('.help')).toBeVisible();
+  await button(page, 'settings').click();
+  await expect(page.locator('.help')).toHaveCount(0);
+  await expect(page.locator('.scrim .panel')).toBeVisible();
+  await button(page, 'settings').click();
+  await expect(page.locator('.scrim .panel')).toHaveCount(0);
+});
+
+test('with the notes list open, new closes it and starts a note; the note button toggles it', async ({ page }) => {
+  await type(page, 'kept');
+  await expect.poll(() => ed(page, (e) => e.dirty)).toBe(false);
+  await page.locator('.toolbar .note').click();
+  await expect(page.locator('.panel .list')).toBeVisible();
+  await page.locator('.toolbar .note').click();
+  await expect(page.locator('.panel .list')).toHaveCount(0);
+  await page.locator('.toolbar .note').click();
+  await button(page, 'new').click();
+  await expect(page.locator('.panel .list')).toHaveCount(0);
+  await expect.poll(() => text(page)).toBe('');
+});
