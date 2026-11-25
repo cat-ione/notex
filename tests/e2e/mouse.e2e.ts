@@ -11,9 +11,10 @@ test("the toolbar's draw opens its menu under the button", async ({ page }) => {
   await type(page, 'something to draw on');
   const b = (await page.locator('.toolbar .b-draw').boundingBox())!;
   await page.locator('.toolbar .b-draw').click();
+  // (it slides in: measured once it's there)
+  await expect.poll(async () => (await page.locator('.palette').boundingBox())!.y).toBeGreaterThanOrEqual(b.y + b.height - 2);
   const p = (await page.locator('.palette').boundingBox())!;
   expect(Math.abs(p.x - b.x)).toBeLessThan(4);
-  expect(p.y).toBeGreaterThanOrEqual(b.y + b.height - 2);
   expect(p.y).toBeLessThan(b.y + b.height + 14);
   // opened by a click, it says what it is instead of waiting for typing
   await expect(page.locator('.palette .prompt')).toContainText('draw');
@@ -23,6 +24,7 @@ test("the toolbar's draw opens its menu under the button", async ({ page }) => {
 test('ctrl+d still opens the draw menu at the caret', async ({ page }) => {
   await type(page, 'something');
   await page.keyboard.press('Control+d');
+  await page.waitForTimeout(250); // (it slides in)
   const caret = (await page.locator('.caret').boundingBox())!;
   const p = (await page.locator('.palette').boundingBox())!;
   expect(Math.abs(p.x - caret.x)).toBeLessThan(6);
