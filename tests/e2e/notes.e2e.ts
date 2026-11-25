@@ -77,7 +77,7 @@ test('ctrl+o lists the notes; untitled ones by their first line', async ({ page 
   await saved(page);
   await page.keyboard.press('Control+o');
   await expect(page.locator('.panel')).toBeVisible();
-  await expect(panelRows(page)).toHaveText(['second note', 'first note', '+ new note', 'open a file…']);
+  await expect(panelRows(page)).toHaveText(['second note', 'first note', '+ new note', 'open a file…', 'the welcome note']);
   // the latest other note is picked: enter goes back to it
   await expect(page.locator('.panel .row.sel .name')).toHaveText('first note');
 });
@@ -115,7 +115,7 @@ test('typing in the list filters it', async ({ page }) => {
   }
   await page.keyboard.press('Control+o');
   await page.keyboard.type('algebra');
-  await expect(panelRows(page)).toHaveText(['algebraic topology', 'linear algebra', '+ new note', 'open a file…']);
+  await expect(panelRows(page)).toHaveText(['algebraic topology', 'linear algebra', '+ new note', 'open a file…', 'the welcome note']);
   await page.keyboard.press('Enter');
   expect(await text(page)).toBe('algebraic topology');
 });
@@ -140,7 +140,7 @@ test('renaming a note with F2, kept after a reload', async ({ page }) => {
   expect((await kept(page))[0].name).toBe('Monday');
 });
 
-test('deleting takes shift+del twice; deleting the open note opens the next', async ({ page }) => {
+test('deleting takes del twice; deleting the open note opens the next', async ({ page }) => {
   await open(page);
   await fresh(page);
   await type(page, 'keep me');
@@ -151,11 +151,11 @@ test('deleting takes shift+del twice; deleting the open note opens the next', as
   await page.keyboard.press('Control+o');
   await page.keyboard.press('ArrowUp'); // the open note
   await expect(page.locator('.panel .row.sel .name')).toHaveText('delete me');
-  await page.keyboard.press('Shift+Delete');
+  await page.keyboard.press('Delete');
   await expect(page.locator('.panel .warn')).toBeVisible();
   expect(await kept(page)).toHaveLength(2);
-  await page.keyboard.press('Shift+Delete');
-  await expect(panelRows(page)).toHaveText(['keep me', '+ new note', 'open a file…']);
+  await page.keyboard.press('Delete');
+  await expect(panelRows(page)).toHaveText(['keep me', '+ new note', 'open a file…', 'the welcome note']);
   expect((await kept(page)).map((n) => n.title)).toEqual(['keep me']);
   expect(await text(page)).toBe('keep me');
 });
@@ -166,7 +166,7 @@ test('escape cancels a pending delete', async ({ page }) => {
   await type(page, 'precious');
   await saved(page);
   await page.keyboard.press('Control+o');
-  await page.keyboard.press('Shift+Delete');
+  await page.keyboard.press('Delete');
   await page.keyboard.press('Escape');
   await expect(page.locator('.panel .warn')).toHaveCount(0);
   await expect(page.locator('.panel')).toBeVisible();
@@ -257,4 +257,69 @@ test('without file pickers, ctrl+s downloads the note', async ({ page }) => {
   // and it's kept in the browser all the same
   await saved(page);
   expect((await kept(page))[0].title).toBe('download me');
+});
+
+test('in the filter, del deletes text first, and only then the note', async ({ page }) => {
+  await open(page);
+  await fresh(page);
+  await type(page, 'abc note');
+  await saved(page);
+  await page.keyboard.press('Control+o');
+  await page.keyboard.type('abc');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Delete');
+  await expect(page.locator('.panel input')).toHaveValue('bc');
+  await expect(page.locator('.panel .warn')).toHaveCount(0);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Delete');
+  await expect(page.locator('.panel .warn')).toHaveText('del again to delete');
+});
+
+test('with the mouse: ✕ turns into a delete button, no key text; moving away cancels', async ({ page }) => {
+  await open(page);
+  for (const t of ['stays', 'goes']) {
+    await fresh(page);
+    await type(page, t);
+    await saved(page);
+  }
+  await page.keyboard.press('Control+o');
+  const row = page.locator('.panel .row', { hasText: 'goes' });
+  await row.hover();
+  await row.locator('.icon.danger').click();
+  await expect(row.locator('.confirm')).toHaveText('delete');
+  await expect(page.locator('.panel .warn')).toHaveCount(0);
+  await expect(page.locator('.panel .foot')).toHaveCount(0);
+  // away and back: it asks again
+  await page.locator('.panel .title').hover();
+  await expect(row.locator('.confirm')).toHaveCount(0);
+  await row.hover();
+  await row.locator('.icon.danger').click();
+  await row.locator('.confirm').click();
+  await expect(panelRows(page)).toHaveText(['stays', '+ new note', 'open a file…', 'the welcome note']);
+  expect((await kept(page)).map((n) => n.title)).toEqual(['stays']);
+});
+
+test('the keys are listed once keys are used, and not after the mouse', async ({ page }) => {
+  await open(page);
+  await page.keyboard.press('Control+o');
+  await expect(page.locator('.panel .foot')).toBeVisible();
+  await page.locator('.panel .title').click();
+  await expect(page.locator('.panel .foot')).toHaveCount(0);
+  await expect(page.locator('.panel kbd')).toHaveCount(0);
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.panel .foot')).toBeVisible();
+});
+
+test('the welcome note can be brought back from the list', async ({ page }) => {
+  await open(page);
+  await fresh(page);
+  await type(page, 'mine');
+  await saved(page);
+  await page.keyboard.press('Control+o');
+  await page.locator('.panel .row', { hasText: 'the welcome note' }).click();
+  await expect(page.locator('.panel')).toHaveCount(0);
+  await expect(page.locator('.block.h1')).toContainText('notex');
+  expect(await ed(page, (e) => e.file.name)).toBe('welcome');
+  // the note before it is still kept
+  expect((await kept(page)).map((n) => n.title)).toContain('mine');
 });
