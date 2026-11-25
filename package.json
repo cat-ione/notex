@@ -1,7 +1,7 @@
 {
   "name": "notex",
   "version": "0.1.0",
-  "description": "",
+  "description": "Fast math notes: type prose and math, draw arrows between parts of equations",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
