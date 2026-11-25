@@ -59,11 +59,26 @@ export function findTables(blocks: Block[]): Map<number, TableRow> {
     if (!isRow(b) || !isRow(b + 1) || !isSeparator(textOf(blocks[b + 1].items))) continue;
     const al = aligns(textOf(blocks[b + 1].items));
     let e = b + 2;
-    while (isRow(e)) e++;
+    // (a row with a separator under it starts a table of its own: two tables stay two)
+    while (isRow(e) && !(isRow(e + 1) && isSeparator(textOf(blocks[e + 1].items)))) e++;
     for (let r = b; r < e; r++) out.set(r, { table: b, role: r === b ? 'head' : r === b + 1 ? 'sep' : 'body', aligns: al, last: r === e - 1 });
     b = e - 1;
   }
   return out;
+}
+
+/**
+ * The table row block `b` is, if it is one: looked up from the run of | lines around it
+ * only (not the whole note, as findTables reads it), for lookups as the caret moves.
+ */
+export function tableRowAt(blocks: Block[], b: number): TableRow | null {
+  const isRow = (k: number) => blocks[k]?.kind === 'p' && firstChar(blocks[k].items) === '|';
+  if (!isRow(b)) return null;
+  let s = b, e = b;
+  while (isRow(s - 1)) s--;
+  while (isRow(e + 1)) e++;
+  const r = findTables(blocks.slice(s, e + 1)).get(b - s);
+  return r ? { ...r, table: r.table + s } : null;
 }
 
 /**

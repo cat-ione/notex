@@ -12,6 +12,7 @@ import type { Step } from './math/latex';
 import { block, chars, math, uid, type Block, type Doc, type Item, type Mark, type MarkKind, type MRow } from './model';
 import { deserialize, withMarkdown } from './format';
 import { docToLatex } from './export';
+import { findTables } from './tables';
 import { toLatex } from './math/latex';
 
 /** A target: nodes i..j of the row at `path` inside formula `f` (index into the scenario's formulas), or words of the text. */
@@ -171,6 +172,8 @@ export function install(ed: Editor) {
     metrics: () => metrics(ed),
     /** The note as LaTeX (as \export copies it). */
     tex: () => docToLatex(ed.snapshot()),
+    /** The tables' rows: [block index, role] (see tables.ts). */
+    tables: () => [...findTables(ed.doc.blocks)].map(([b, r]) => [b, r.role, r.table]),
     /** Each formula's LaTeX, in order. */
     formulas: () => ed.doc.blocks.flatMap((b) => b.items.filter((i) => i.t === 'm').map((m) => toLatex(m.root))),
     /** Top-level nodes of a formula (to pick target indices). */

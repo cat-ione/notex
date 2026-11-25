@@ -23,7 +23,7 @@ import { welcomeDoc } from './welcome';
 import { imageSrc, pickImageFiles } from './images';
 import * as F from './files';
 import * as L from './library';
-import { findTables } from './tables';
+import { findTables, isSeparator, rowLike, tableRowAt, type TableRow } from './tables';
 import * as C from './config';
 import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
 import * as M from './math/edit';
@@ -209,6 +209,11 @@ export class Editor {
   }
 
   touch() {
+    // tables kept whole, whatever the action was (keys, the mouse, paste, undo)
+    this.tidyTables();
+    // a selection's other end, still on the page (an edit may have taken text from under it)
+    const a = this.anchor, ab = a && this.doc.blocks[a.b];
+    if (a && a.b !== NOTE_B && (!ab || a.o > ab.items.length)) this.anchor = ab ? { b: a.b, o: ab.items.length } : null;
     // caret moves leave the blocks as they were: keep their snapshots
     if (this.edits !== this.touchedEdits) {
       this.touchedEdits = this.edits;
@@ -1154,6 +1159,8 @@ export class Editor {
     if (this.mode !== 'text') return;
     this.checkpoint();
     this.deleteSelection();
+    if (this.tableRow()) return this.pasteInTable(text);
+    if (this.blk.kind === 'p' && this.b !== NOTE_B && this.pasteTable(text)) return;
     // our own copy comes back as it was; anything else is read for its math and markdown
     const blocks: PastedBlock[] =
       this.blk.kind === 'code'
@@ -1920,6 +1927,7 @@ export class Editor {
 
   mouseUp() {
     if (this.altDraw) this.endAltDraw();
+    if (this.anchor && this.anchor.b === this.b && this.anchor.o === this.o) this.anchor = null;
     this.dragging = false;
     this.mathDrag = null;
     this.noteDrag = null;
@@ -2660,6 +2668,8 @@ export class Editor {
 
   private keyInner(e: KeyboardEvent) {
     if (e.isComposing) return;
+    // a click leaves the anchor on the caret: that's no selection (an edit would make it one)
+    if (this.anchor && this.anchor.b === this.b && this.anchor.o === this.o) this.anchor = null;
     // Text fields (settings, config editor) handle their own keys.
     if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
     const k = keyName(e);
@@ -2709,7 +2719,24 @@ export class Editor {
     }
     const was = this.b;
     const inText = () => !this.menu && this.mode === 'text' && !this.note;
-    const handled = inText() && this.tableKey(k) ? true : this.menu ? this.menuKey(k) : this.runKey(k);
+    // an edit over a selection touching a table: the selection goes first (see clearCells), then
+    // the key acts where the caret is, in a cell as in a cell
+    const sel = this.selection;
+    if (inText() && sel && (k.length === 1 || /^(C-)?(Backspace|Delete)$|^(S-|C-)?Enter$/.test(k))) {
+      let touches = false;
+      for (let b = sel.s.b; b <= sel.e.b; b++) if (this.tableRow(b)) touches = true;
+      if (touches) {
+        this.checkpoint();
+        this.deleteSelection();
+        if (/Backspace|Delete/.test(k)) {
+          e.preventDefault();
+          this.afterTableKey(was, k);
+          this.touch();
+          return;
+        }
+      }
+    }
+    const handled = inText() && (this.tableKey(k) || this.tableEdgeKey(k)) ? true : this.menu ? this.menuKey(k) : this.runKey(k);
     if (inText()) this.afterTableKey(was, k);
     // Swallow everything except a few browser/devtools keys.
     if (handled || !/^(C-S-i|F12|C-S-r)$/.test(k)) e.preventDefault();
@@ -3317,14 +3344,44 @@ export class Editor {
    */
   private moveBlocks(d: -1 | 1) {
     const s = this.selection;
-    const first = s ? s.s.b : this.b, last = s ? s.e.b : this.b;
+    let first = s ? s.s.b : this.b, last = s ? s.e.b : this.b;
     const blocks = this.doc.blocks;
+    const rows = findTables(blocks);
+    // a table's extent [head, last row]
+    const extent = (t: number) => {
+      let e = t;
+      while (rows.get(e + 1)?.table === t) e++;
+      return [t, e] as const;
+    };
+    const inRange = [...Array(last - first + 1)].map((_, i) => rows.get(first + i)).filter((r) => !!r);
+    if (inRange.length) {
+      const t = inRange[0]!.table;
+      // body rows: within the body
+      if (inRange.length === last - first + 1 && inRange.every((r) => r!.role === 'body' && r!.table === t)) {
+        const to = rows.get(d < 0 ? first - 1 : last + 1);
+        if (to?.role !== 'body' || to.table !== t) return;
+      } else {
+        // the header or separator: the whole table (and what else is selected) moves
+        for (const r of inRange) {
+          const [a, z] = extent(r!.table);
+          first = Math.min(first, a);
+          last = Math.max(last, z);
+        }
+      }
+    }
     if (d < 0 ? first === 0 : last === blocks.length - 1) return;
+    // past the next line, or past a whole table
+    let span = 1;
+    const next = rows.get(d < 0 ? first - 1 : last + 1);
+    if (next && !(inRange.length && inRange.every((r) => r!.role === 'body'))) {
+      const [a, z] = extent(next.table);
+      span = z - a + 1;
+    }
     this.checkpoint();
     const moved = blocks.splice(first, last - first + 1);
-    blocks.splice(first + d, 0, ...moved);
-    this.b += d;
-    if (this.anchor) this.anchor = { b: this.anchor.b + d, o: this.anchor.o };
+    blocks.splice(first + d * span, 0, ...moved);
+    this.b += d * span;
+    if (this.anchor) this.anchor = { b: this.anchor.b + d * span, o: this.anchor.o };
   }
 
   /** Last text snippet expansion, so an immediate Backspace can undo it. */
@@ -4619,7 +4676,7 @@ export class Editor {
 
   /** The table row a block is, if it is one. */
   private tableRow(b = this.b) {
-    return findTables(this.doc.blocks).get(b) ?? null;
+    return tableRowAt(this.doc.blocks, b);
   }
 
   /** A row's cells' contents: from after each | to the next (a closing | has none), spaces trimmed. */
@@ -4721,7 +4778,8 @@ export class Editor {
 
   /** After a key in text: tidy the table rows it was in and is in, and keep the caret in a cell. */
   private afterTableKey(was: number, k: string) {
-    for (const b of new Set([was, this.b])) this.tidyRow(b);
+    // (rows are tidied in touch, after this)
+    void was;
     const dir = /(Right|End|Tab|Down|PageDown)$/.test(k) && !/S-Tab$/.test(k) ? 1 : /(Left|Home|Backspace|Up|PageUp)$/.test(k) || /S-Tab$/.test(k) ? -1 : 0;
     let p = this.snapPos({ b: this.b, o: this.o }, /(Up|Down|PageUp|PageDown)$/.test(k) ? 0 : dir);
     // the arrows go past the separator (a click on the line under the header edits it)
@@ -4744,17 +4802,29 @@ export class Editor {
    * each | (but the first), nothing before the first, and (once the caret has left it) a
    * closing |. What's typed in the cells stays as typed.
    */
-  private tidyRow(b: number) {
-    if (!this.tableRow(b)) return;
+  private tidyRow(b: number, known?: TableRow) {
+    const row = known ?? this.tableRow(b);
+    if (!row) return;
     const blk = this.doc.blocks[b];
     const items = blk.items;
     const pipes: number[] = [];
     items.forEach((it, o) => it.t === 'c' && it.ch === '|' && pipes.push(o));
     if (!pipes.length) return;
     const sp = (it: Item | undefined) => it?.t === 'c' && it.ch === ' ';
+    // already tidy (most rows, most of the time): nothing to build
+    const str = items.map((it) => (it.t === 'c' ? it.ch : '§')).join('');
+    if (this.b === b) {
+      if (!pipes[0] && !/[^ ]\|/.test(str) && !/\|[^ ]/.test(str)) return;
+    } else if (/^(\| (?:[^ |](?:[^|]*[^ |])?)? )+\|$/.test(str)) {
+      const n = pipes.length - 1, want = row.role === 'head' ? 0 : this.columns(row.table);
+      const dashes = row.role !== 'sep' || str.split('|').slice(1, -1).every((c) => c.includes('-'));
+      if (dashes && (!want || (row.role === 'sep' ? n === want : n >= want))) return;
+    }
     let next: Item[];
     if (this.b !== b) {
-      // | cell | cell |: one space either side of each cell's text, a closing |
+      // | cell | cell |: one space either side of each cell's text, a closing |, and as many
+      // cells as the header (a short row gets empty ones, the separator exactly as many)
+      const want = row.role === 'head' ? 0 : this.columns(row.table);
       const out: Item[] = [];
       for (let k = 0; k < pipes.length; k++) {
         const p = pipes[k], end = pipes[k + 1] ?? items.length;
@@ -4766,8 +4836,22 @@ export class Editor {
           out.push(items[p]);
           break;
         }
-        out.push(items[p], sp(items[p + 1]) ? items[p + 1] : ch(' '), ...items.slice(s, e), sp(items[e]) && e < end ? items[e] : ch(' '));
+        // (a separator's cell without a dash gets its dashes back)
+        const text = row.role === 'sep' && !items.slice(s, e).some((it) => it.t === 'c' && it.ch === '-') ? chars('---') : items.slice(s, e);
+        out.push(items[p], sp(items[p + 1]) ? items[p + 1] : ch(' '), ...text, sp(items[e]) && e < end ? items[e] : ch(' '));
         if (last) out.push(ch('|'));
+      }
+      // (out ends with the closing |)
+      let cells = out.filter((it) => it.t === 'c' && it.ch === '|').length - 1;
+      if (want && cells < want) {
+        const close = out.pop()!;
+        for (; cells < want; cells++) out.push(ch('|'), ch(' '), ...(row.role === 'sep' ? chars('---') : []), ch(' '));
+        out.push(close);
+      }
+      if (want && row.role === 'sep' && cells > want) {
+        let k = 0, cut = out.length - 1;
+        out.forEach((it, i) => it.t === 'c' && it.ch === '|' && k++ === want && (cut = i));
+        out.splice(cut, out.length - 1 - cut);
       }
       next = out;
     } else {
@@ -4791,16 +4875,73 @@ export class Editor {
       const lead = pipes[0];
       if (lead) next.splice(0, lead), (o = Math.max(0, o - lead));
       if (next.length === items.length && next.every((it, i) => it === items[i])) return;
-      this.checkpoint('type');
-      blk.items = next;
+      this.tidied(blk, next);
       this.o = o;
-      this.forget(blk);
       return;
     }
     if (next.length === items.length && next.every((it, i) => it === items[i])) return;
-    this.checkpoint('type');
-    blk.items = next;
+    this.tidied(blk, next);
+  }
+
+  /** A row tidied: part of the edit before it (no undo step of its own: it's only spacing). */
+  private tidied(blk: Block, items: Item[]) {
+    blk.items = items;
     this.forget(blk);
+    this.edits++;
+    this.dirty = true;
+  }
+
+  /** When the rows were last tidied: the edits by then, the note, the caret's line. */
+  private tidiedAt: { edits: number; doc: Doc | null; b: number } = { edits: -1, doc: null, b: -1 };
+
+  /** Every table row tidy, and the caret in a cell (see tidyRow, snapPos). */
+  private tidyTables() {
+    // after an edit every row is looked at; after a caret move only the rows it left and entered
+    const moved = this.edits === this.tidiedAt.edits && this.doc === this.tidiedAt.doc;
+    const from = this.tidiedAt.b;
+    this.tidiedAt = { edits: this.edits, doc: this.doc, b: this.b };
+    if (moved) {
+      for (const b of new Set([from, this.b])) this.tidyRow(b);
+    } else {
+      const rows = findTables(this.doc.blocks);
+      if (!rows.size) return;
+      for (const [b, row] of rows) this.tidyRow(b, row);
+    }
+    this.tidiedAt.edits = this.edits;
+    if (this.mode === 'text' && !this.note) {
+      const p = this.snapPos({ b: this.b, o: this.o });
+      this.b = p.b;
+      this.o = p.o;
+      if (this.anchor) this.anchor = this.snapPos(this.anchor);
+    }
+  }
+
+  /**
+   * Backspace at the start of the line after a table, delete at the end of the line before
+   * one: an empty line goes, a line with text stays as it is (it isn't joined to a row).
+   */
+  private tableEdgeKey(k: string): boolean {
+    if (this.selection || this.tableRow()) return false;
+    const blk = this.blk;
+    if ((k === 'Backspace' || k === 'C-Backspace') && this.o === 0 && this.tableRow(this.b - 1)) {
+      if (!blk.items.length) {
+        this.checkpoint();
+        this.doc.blocks.splice(this.b, 1);
+      }
+      const p = this.snapPos({ b: this.b - 1, o: this.doc.blocks[this.b - 1].items.length }, -1);
+      this.b = p.b;
+      this.o = p.o;
+      return true;
+    }
+    if ((k === 'Delete' || k === 'C-Delete') && this.o === blk.items.length && this.tableRow(this.b + 1)) {
+      if (!blk.items.length) {
+        this.checkpoint();
+        this.doc.blocks.splice(this.b, 1);
+        this.o = this.snapPos({ b: this.b, o: 0 }, 1).o;
+      }
+      return true;
+    }
+    return false;
   }
 
   /** Keys that work differently in a table cell (null: not in one, or nothing different). */
@@ -4811,6 +4952,17 @@ export class Editor {
     if (c < 0) return false;
     const [s, e] = spans[c];
     const sel = this.selection;
+    // the separator: only its dashes and colons (the alignment) change, and a dash stays in each cell
+    if (this.tableRow()!.role === 'sep') {
+      const items = this.blk.items;
+      const dashes = items.slice(s, e).filter((it) => it.t === 'c' && it.ch === '-').length;
+      const at = (o: number) => (items[o]?.t === 'c' ? (items[o] as Char).ch : '');
+      // (and the space and | that typing one out by hand needs)
+      if (k.length === 1 && !':- |'.includes(k)) return true;
+      if (k.startsWith('C-') && /Backspace|Delete/.test(k)) return true;
+      if (k === 'Backspace' && !sel && this.o > s && at(this.o - 1) === '-' && dashes <= 1) return true;
+      if (k === 'Delete' && !sel && this.o < e && at(this.o) === '-' && dashes <= 1) return true;
+    }
     switch (k) {
       // a cell's own start and end
       case 'Home': case 'End': case 'S-Home': case 'S-End': {
@@ -4863,16 +5015,23 @@ export class Editor {
       // | as when a row is typed out by hand: the row's first | is there already, at a cell's
       // end it goes on to the next cell, and after the last one it starts a new cell
       case '|': {
-        if (sel) return false;
         const items = this.blk.items;
-        if (c === 0 && this.o === s && s === e) return true;
-        if (this.o !== e) return false;
-        if (spans[c + 1]) return (this.o = spans[c + 1][0]), true;
-        if (e === items.length) {
-          this.checkpoint('type');
-          items.splice(this.o, 0, ch('|'), ch(' '));
-          this.o += 2;
+        if (!sel) {
+          if (c === 0 && this.o === s && s === e) return true;
+          if (this.o === e && spans[c + 1]) return (this.o = spans[c + 1][0]), true;
+          if (this.o === e && e === items.length) {
+            this.checkpoint('type');
+            items.splice(this.o, 0, ch('|'), ch(' '));
+            this.o += 2;
+            return true;
+          }
+          if (this.o === e) return true;
         }
+        // in a cell's text: ∣, which looks like a | but doesn't split the cell
+        this.checkpoint('type');
+        this.deleteSelection();
+        this.blk.items.splice(this.o, 0, ch('∣'));
+        this.o++;
         return true;
       }
     }
@@ -4880,30 +5039,102 @@ export class Editor {
   }
 
   /**
-   * A selection across cells of one table, deleted: what's selected in each cell goes, the
-   * pipes and the spaces by them stay (true when it was such a selection).
+   * A selection touching a table, deleted (true when it was one this handles): in a table it
+   * covers only in part, the cells' text it covers goes and the pipes stay (and the
+   * separator); everything else (text around, and whole tables it covers) goes as usual,
+   * without joining a line to a row.
    */
   private clearCells(r: { s: Pos; e: Pos }): boolean {
-    const first = this.tableRow(r.s.b), last = this.tableRow(r.e.b);
-    if (!first || !last || first.table !== last.table) return false;
-    const spans = this.cellSpans(r.s.b)!;
-    const inOne = r.s.b === r.e.b && spans.some(([s, e]) => r.s.o >= s && r.e.o <= e);
-    if (inOne) return false;
-    for (let b = r.e.b; b >= r.s.b; b--) {
-      // (the separator's dashes stay: without them it's no table)
-      if (this.tableRow(b)?.role === 'sep') continue;
-      const items = this.doc.blocks[b].items;
-      const from = b === r.s.b ? r.s.o : 0, to = b === r.e.b ? r.e.o : items.length;
-      for (const [s, e] of [...(this.cellSpans(b) ?? [])].reverse()) {
-        const a = Math.max(s, from), z = Math.min(e, to);
-        if (z > a) items.splice(a, z - a);
+    const rows = findTables(this.doc.blocks);
+    let touches = false;
+    for (let b = r.s.b; b <= r.e.b; b++) if (rows.has(b)) touches = true;
+    if (!touches) return false;
+    // in the separator: nothing goes (its dashes make the table)
+    if (r.s.b === r.e.b && rows.get(r.s.b)?.role === 'sep') {
+      this.b = r.s.b;
+      this.o = r.s.o;
+      return true;
+    }
+    // one cell's text: as usual
+    const one = this.cellSpans(r.s.b);
+    if (r.s.b === r.e.b && one?.some(([s, e]) => r.s.o >= s && r.e.o <= e)) return false;
+    // the tables it covers whole, from before them to after them, go like text (all of a
+    // table's cells selected, and nothing else, only empties them)
+    const whole = new Set<number>();
+    for (const [b, row] of rows) {
+      if (row.role !== 'head') continue;
+      let last = b;
+      while (rows.get(last + 1)?.table === b) last++;
+      if (cmpPos(r.s, { b, o: 0 }) <= 0 && cmpPos(r.e, { b: last, o: this.doc.blocks[last].items.length }) >= 0) whole.add(b);
+    }
+    const kept = (b: number) => rows.has(b) && !whole.has(rows.get(b)!.table);
+    if (![...Array(r.e.b - r.s.b + 1)].some((_, i) => kept(r.s.b + i))) return false;
+    // from the end: runs of ordinary lines deleted as usual, kept rows' cells emptied
+    let b = r.e.b;
+    while (b >= r.s.b) {
+      if (kept(b)) {
+        if (rows.get(b)!.role !== 'sep') {
+          const items = this.doc.blocks[b].items;
+          const from = b === r.s.b ? r.s.o : 0, to = b === r.e.b ? r.e.o : items.length;
+          for (const [s, e] of [...(this.cellSpans(b) ?? [])].reverse()) {
+            const lo = Math.max(s, from), hi = Math.min(e, to);
+            if (hi > lo) items.splice(lo, hi - lo);
+          }
+          this.forget(this.doc.blocks[b]);
+        }
+        b--;
+        continue;
       }
-      this.forget(this.doc.blocks[b]);
+      let a = b;
+      while (a > r.s.b && !kept(a - 1)) a--;
+      const first = this.doc.blocks[a], last = this.doc.blocks[b];
+      const so = a === r.s.b ? r.s.o : 0, eo = b === r.e.b ? r.e.o : last.items.length;
+      first.items.splice(so, Infinity, ...last.items.slice(eo));
+      if (b > a) this.doc.blocks.splice(a + 1, b - a);
+      this.forget(first);
+      b = a - 1;
     }
     const p = this.snapPos(r.s, 1);
     this.b = p.b;
     this.o = p.o;
     return true;
+  }
+
+  /** A markdown table pasted onto a line: its rows go between the line's halves (true if it was one). */
+  private pasteTable(text: string): boolean {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2 || !lines.every(rowLike) || !isSeparator(lines[1])) return false;
+    const blk = this.blk;
+    const tail = blk.items.splice(this.o);
+    const rows = lines.map((l) => block(inlineItems(l.trim())));
+    const at = blk.items.length ? this.b + 1 : this.b;
+    this.doc.blocks.splice(at, blk.items.length ? 0 : 1, ...rows, ...(tail.length ? [block(tail)] : []));
+    this.derive(at, at + rows.length);
+    this.b = at + rows.length - 1;
+    this.o = this.blk.items.length;
+    this.touch();
+    return true;
+  }
+
+  /** Paste in a table cell: a pasted table's rows as rows under this one, else one line. */
+  private pasteInTable(text: string) {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    const row = this.tableRow()!;
+    if (lines.length > 1 && lines.every(rowLike)) {
+      const rows = lines.filter((l) => !isSeparator(l)).map((l) => block(inlineItems(l.trim())));
+      const after = row.role === 'head' && this.tableRow(this.b + 1)?.role === 'sep' ? this.b + 1 : this.b;
+      this.doc.blocks.splice(after + 1, 0, ...rows);
+      this.b = after + 1;
+      this.o = 0;
+      this.tidyRow(this.b);
+      this.o = this.snapPos({ b: this.b, o: 0 }, 1).o;
+      return this.touch();
+    }
+    const line = text.replace(/\s*\r?\n\s*/g, ' ').replace(/\t/g, ' ').replace(/\|/g, '∣');
+    const items = inlineItems(line);
+    this.blk.items.splice(this.o, 0, ...items);
+    this.o += items.length;
+    this.touch();
   }
 
   /** How many columns a table has: its header's cells. */

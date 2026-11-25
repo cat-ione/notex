@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aligns, cellRanges, cellTexts, findTables, isSeparator, rowLike } from './tables';
+import { aligns, cellRanges, cellTexts, findTables, isSeparator, rowLike, tableRowAt } from './tables';
 import { block, chars, math, sym, type BlockKind, type Item } from './model';
 
 const P = (s: string, kind: BlockKind = 'p') => block(chars(s), kind);
@@ -42,6 +42,14 @@ describe('tables', () => {
     expect(t.get(5)!.last).toBe(true);
   });
 
+  it('two tables one under the other stay two', () => {
+    const t = findTables([P('| a |'), P('| - |'), P('| 1 |'), P('| b | c |'), P('| - | - |'), P('| 2 | 3 |')]);
+    expect([0, 1, 2, 3, 4, 5].map((b) => [t.get(b)!.table, t.get(b)!.role])).toEqual([
+      [0, 'head'], [0, 'sep'], [0, 'body'], [3, 'head'], [3, 'sep'], [3, 'body'],
+    ]);
+    expect(t.get(2)!.last).toBe(true);
+  });
+
   it('cells start at their pipes; a closing pipe is a cell of its own', () => {
     const items = chars('| a | bc |');
     expect(cellRanges(items).map(([s, e]) => text(items.slice(s, e)))).toEqual(['| a ', '| bc ', '|']);
@@ -53,6 +61,12 @@ describe('tables', () => {
     const items = [...chars('| x '), math([sym('a')]), ...chars(' | y |')];
     expect(cellTexts(items).map(text)).toEqual([' x § ', ' y ']);
     expect(cellTexts(chars('| a | b')).map(text)).toEqual([' a ', ' b']);
+  });
+
+  it('looking up one row (from the lines around it) agrees with reading them all', () => {
+    const blocks = [P('text'), P('| a |'), P('| - |'), P('| 1 |'), P('| b | c |'), P('| - | - |'), P('| 2 | 3 |'), P('gap'), P('|x| alone'), P('| y |'), P('| - |')];
+    const all = findTables(blocks);
+    for (let b = 0; b < blocks.length; b++) expect(tableRowAt(blocks, b), `block ${b}`).toEqual(all.get(b) ?? null);
   });
 
   it('rowLike', () => {
