@@ -103,6 +103,9 @@ node tools/label-lab/lab.mjs <name>             # note layout scenarios + typing
 
 Both use `playwright-core`; set `CHROME` to a Chrome/Chromium executable if it can't find one.
 
+**Branches.** Work happens on `dev`, where every push runs the tests and type-check. Merge
+into `main` once it works: `main` is what the site and releases are built from.
+
 **Releasing.** Every push to `main` rebuilds the browser version on GitHub Pages. Pushing a
 tag like `v0.1.0` builds the installers for all three systems into a draft release; publish it
 from the Releases page. Bump the version in `package.json`, `src-tauri/tauri.conf.json` and
