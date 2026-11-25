@@ -19,6 +19,7 @@ import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
 import { BOLD, CODE, ITALIC, MARK, OBJ, closesFence, fenceOf, headingOf, parseInline } from './markdown';
 import { withMarkdown } from './format';
+import { welcomeDoc } from './welcome';
 import { imageSrc, pickImageFiles } from './images';
 import * as F from './files';
 import * as C from './config';
@@ -5026,43 +5027,6 @@ export function hintLabels(n: number): string[] {
     for (const c of alpha) out.push(h + c);
   }
   return out.slice(off, off + n).sort();
-}
-
-function welcomeDoc(): Doc {
-  const P = (s: string, kind: BlockKind = 'p') => block(chars(s), kind);
-  const x = sym('x');
-  const eq = math([
-    sym('f'), cmd('paren', [[x]]), sym('='),
-    cmd('frac', [[sym('1')], [cmd('sqrt', [[sym('2'), sym('\\pi')]])]]),
-    sym('e'), cmd('sup', [[sym('-'), cmd('frac', [[sym('x'), cmd('sup', [[sym('2')]])], [sym('2')]])]]),
-  ]);
-  const lhs = math([sym('\\int'), cmd('subsup', [[sym('-'), sym('\\infty')], [sym('\\infty')]]), sym('f'), cmd('paren', [[sym('x')]]), sym('\\,'), sym('d'), sym('x'), sym('='), sym('1')], true);
-  const b1 = block([...chars('The standard normal density is '), eq, ...chars(' and it is normalized:')]);
-  const b2 = block([lhs]);
-  const doc: Doc = {
-    blocks: [
-      P('notex', 'h1'),
-      P('A notes app for math. Press F1 for keyboard shortcuts.'),
-      b1,
-      b2,
-      P('Getting started', 'h2'),
-      P('Type $ to insert math, for example x^2, a/b, e^(-x/2), \\int_0^1, \\sum_(n=1)^\\infty or \\alpha. Press $ or → to exit.', 'li'),
-      P('Typing x^2 or a_n in text converts it to math automatically.', 'li'),
-      P('Type 1. to start a numbered list and Tab to indent. Markdown like **bold**, *italic* and `code` shows its markers only where the caret is. Ctrl+F to find.', 'li'),
-      P('Type \\ to open the command palette. \\arrow draws an arrow: choose the start with the arrow keys or a click, then the end.', 'li'),
-      P('While choosing, Shift+↑ selects the parent expression, Shift+↓ a child, and Tab shows jump labels.', 'li'),
-      P('With an arrow selected, ↑↓ bend it, and t, d, c and l change the arrowheads, dashes, colour and note.', 'li'),
-      P('Select some text and type \\circle, \\box, \\underline, \\highlight or \\brace to mark it. Click a drawing to edit it.', 'li'),
-    ],
-    arrows: [],
-    marks: [],
-  };
-  // An example arrow: from the normalizing constant to the "normalized" word.
-  const frac = eq.root[3];
-  const word = b1.items.slice(-11, -1).map((i) => i.id);
-  doc.arrows.push({ id: uid(), from: [frac.id], to: word, bend: 0.5, head: 'end', dash: true, boxed: false, label: 'makes total mass 1' });
-  doc.marks.push({ id: uid(), kind: 'brace', at: [lhs.id], dash: false, label: 'total probability', color: 'blue' });
-  return withMarkdown(doc);
 }
 
 const MARK_DESC: Record<MarkKind, string> = {
