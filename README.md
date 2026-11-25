@@ -5,11 +5,7 @@ and draw arrows and boxes *between parts of equations*.
 
 ![notex](docs/screenshot.png)
 
-- **Try it in the browser:** https://cat-ione.github.io/notex/
-- **Download the desktop app** (Windows, macOS, Linux): [Releases](https://github.com/cat-ione/notex/releases)
-
-The installers aren't code-signed yet, so Windows shows a SmartScreen warning ("More info" →
-"Run anyway") and macOS asks you to open the app from right-click → Open the first time.
+**Try it in the browser:** https://cat-ione.github.io/notex/
 
 ## What it does
 
@@ -106,10 +102,10 @@ Both use `playwright-core`; set `CHROME` to a Chrome/Chromium executable if it c
 **Branches.** Work happens on `dev`, where every push runs the tests and type-check. Merge
 into `main` once it works: `main` is what the site and releases are built from.
 
-**Releasing.** Every push to `main` rebuilds the browser version on GitHub Pages. Pushing a
-tag like `v0.1.0` builds the installers for all three systems into a draft release; publish it
-from the Releases page. Bump the version in `package.json`, `src-tauri/tauri.conf.json` and
-`src-tauri/Cargo.toml` first.
+**Releasing.** Every push to `main` rebuilds the browser version on GitHub Pages. There are no
+desktop releases yet; when there are, pushing a tag like `v0.1.0` builds the installers for all
+three systems into a draft release to publish from the Releases page (bump the version in
+`package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` first).
 
 ### How it works
 
