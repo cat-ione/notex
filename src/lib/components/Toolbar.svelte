@@ -30,11 +30,16 @@
     { id: 'hide', glyph: '▴', tip: 'hide the toolbar (settings or \\toolbar bring it back)', run: () => ed.toggleBar('toolbar') },
   ];
 
-  // (buttons act without taking the caret away from the page)
+  // A button acts without taking the caret away from the page. It closes whatever menu or
+  // panel is open first; its own (open) one it just closes.
   const press = (e: MouseEvent, b: Button) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.button === 0) b.run((e.currentTarget as HTMLElement).getBoundingClientRect());
+    if (e.button !== 0) return;
+    const open = ed.openByToolbar;
+    ed.closeMenus();
+    if (open === b.id) return;
+    b.run((e.currentTarget as HTMLElement).getBoundingClientRect());
   };
 
   onMount(() => {
@@ -58,7 +63,7 @@
 {/snippet}
 
 <header class="toolbar" class:quiet={quiet && ed.config.ui.fadeToolbar}>
-  <button class="b note" onmousedown={(e) => press(e, { id: 'notes', glyph: '≡', tip: '', run: () => ed.openNote() })} onclick={(e) => e.preventDefault()} data-tip={`${isDesktop() ? 'open a note' : 'your notes'} · ${ed.savedWhere === 'not saved' ? 'this one is not saved yet' : `saved ${ed.savedWhere}`}`} data-tip-key="ctrl+o" aria-label="notes">
+  <button class="b note b-notes" onmousedown={(e) => press(e, { id: 'notes', glyph: '≡', tip: '', run: () => ed.openNote() })} onclick={(e) => e.preventDefault()} data-tip={`${isDesktop() ? 'open a note' : 'your notes'} · ${ed.savedWhere === 'not saved' ? 'this one is not saved yet' : `saved ${ed.savedWhere}`}`} data-tip-key="ctrl+o" aria-label="notes">
     <span class="g">≡</span><span class="name">{shownName({ name: ed.file.name, title: '' })}</span>{#if ed.dirty}<span class="dot">●</span>{/if}
   </button>
   {#each left as b (b.id)}{@render button(b)}{/each}
@@ -70,6 +75,9 @@
 
 <style>
   .toolbar {
+    /* over the panels' backdrops: a button works while one is open (and closes it) */
+    position: relative;
+    z-index: 35;
     display: flex;
     align-items: center;
     gap: 2px;

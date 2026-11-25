@@ -4613,6 +4613,22 @@ export class Editor {
     this.showHelp = false;
   }
 
+  /** What's open over the page, by the toolbar button that opens it (null: nothing, or something else). */
+  get openByToolbar(): 'draw' | 'settings' | 'help' | 'notes' | null {
+    if (this.palette?.ctx === 'draw' && this.paletteAt) return 'draw';
+    return this.showSettings ? 'settings' : this.showHelp ? 'help' : this.showNotes ? 'notes' : null;
+  }
+
+  /** Close every menu and panel (a toolbar button was clicked: it acts instead). */
+  closeMenus() {
+    if (this.mode === 'palette') this.closePalette();
+    this.menu = null;
+    this.showSettings = false;
+    this.settingsEditing = false;
+    this.showHelp = false;
+    this.showNotes = false;
+  }
+
   /** Show or hide one of the bars around the page. */
   toggleBar(bar: 'toolbar' | 'statusBar') {
     this.updateConfig({ ui: { ...this.config.ui, [bar]: !this.config.ui[bar] } });
