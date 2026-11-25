@@ -11,4 +11,4 @@ vite.config.ts.timestamp-*
 /notes
 
 # demo video
-notex-demo.mp4
+notex-demo*.mp4
