@@ -2,6 +2,10 @@
 // clicked, and hints say what fits the last thing used (keys to press, or what to click).
 import { test, expect, open, fresh, type, ed } from './helpers';
 
+/** Wait until the menu has finished sliding in (the prompt's caret blinks on: not that). */
+const settled = (page: import('@playwright/test').Page) =>
+  expect.poll(() => page.locator('.palette').evaluate((e) => e.getAnimations({ subtree: true }).filter((x) => x.effect?.getTiming().iterations !== Infinity).length)).toBe(0);
+
 test.beforeEach(async ({ page }) => {
   await open(page);
   await fresh(page);
@@ -11,10 +15,10 @@ test("the toolbar's draw opens its menu under the button", async ({ page }) => {
   await type(page, 'something to draw on');
   const b = (await page.locator('.toolbar .b-draw').boundingBox())!;
   await page.locator('.toolbar .b-draw').click();
-  // (it slides in: measured once it's there)
-  await expect.poll(async () => (await page.locator('.palette').boundingBox())!.y).toBeGreaterThanOrEqual(b.y + b.height - 2);
+  await settled(page);
   const p = (await page.locator('.palette').boundingBox())!;
   expect(Math.abs(p.x - b.x)).toBeLessThan(4);
+  expect(p.y).toBeGreaterThanOrEqual(b.y + b.height - 2);
   expect(p.y).toBeLessThan(b.y + b.height + 14);
   // opened by a click, it says what it is instead of waiting for typing
   await expect(page.locator('.palette .prompt')).toContainText('draw');
@@ -24,7 +28,7 @@ test("the toolbar's draw opens its menu under the button", async ({ page }) => {
 test('ctrl+d still opens the draw menu at the caret', async ({ page }) => {
   await type(page, 'something');
   await page.keyboard.press('Control+d');
-  await page.waitForTimeout(250); // (it slides in)
+  await settled(page);
   const caret = (await page.locator('.caret').boundingBox())!;
   const p = (await page.locator('.palette').boundingBox())!;
   expect(Math.abs(p.x - caret.x)).toBeLessThan(6);

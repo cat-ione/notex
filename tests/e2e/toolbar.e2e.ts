@@ -233,3 +233,14 @@ test('with the notes list open, new closes it and starts a note; the note button
   await expect(page.locator('.panel .list')).toHaveCount(0);
   await expect.poll(() => text(page)).toBe('');
 });
+
+test('the buttons stay put as the note is saved and changed', async ({ page }) => {
+  const at = () => button(page, 'draw').boundingBox().then((b) => b!.x);
+  await expect.poll(() => ed(page, (e) => e.dirty)).toBe(false);
+  const saved = await at();
+  await type(page, 'x');
+  expect(await ed(page, (e) => e.dirty)).toBe(true);
+  expect(await at()).toBe(saved);
+  await expect.poll(() => ed(page, (e) => e.dirty)).toBe(false);
+  expect(await at()).toBe(saved);
+});
