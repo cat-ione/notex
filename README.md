@@ -1,9 +1,87 @@
 # notex
 
-Fast math notes. Type prose and math without reaching for the mouse (though it works too),
-and draw arrows *between parts of equations*.
+Math notes at lecture speed. Type prose and math in one flow, without reaching for the mouse,
+and draw arrows and boxes *between parts of equations*.
 
-Stack: Svelte 5 + SvelteKit (SPA) + Tauri 2, KaTeX for rendering, pnpm.
+![notex](docs/screenshot.png)
+
+- **Try it in the browser:** https://cat-ione.github.io/notex/
+- **Download the desktop app** (Windows, macOS, Linux): [Releases](https://github.com/cat-ione/notex/releases)
+
+The installers aren't code-signed yet, so Windows shows a SmartScreen warning ("More info" →
+"Run anyway") and macOS asks you to open the app from right-click → Open the first time.
+
+## What it does
+
+- **Math the way you say it.** `$` starts a formula. `a/b` is a fraction, `x^2` and `a_n` are
+  scripts, `e^(-x^2/2)` groups, and `\name` gives any LaTeX symbol. Typing `x^2` or `a_n` in a
+  sentence turns it into math by itself.
+- **Draw on your notes.** Alt+drag from one word or symbol to another draws an arrow;
+  Alt+Shift+drag draws a box, circle, underline or brace. Press `L` to write a note on it.
+  Drawings stay attached to what they point at as you keep editing.
+- **Markdown, like Obsidian.** `# ` headings, `- ` and `1. ` lists, `**bold**`, `*italic*`,
+  `` `code` `` and code blocks. The markers hide once the caret moves on.
+- **Images.** Paste or drop them in; they're kept inside the note.
+- **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
+  type, and your own CSS (Ctrl+,).
+- **Export to LaTeX.** `\export` copies the note as LaTeX, drawings included (tikz).
+
+Press **F1** in the app for every shortcut.
+
+## Keys worth knowing
+
+| | |
+|---|---|
+| `$` / `$$` | inline / display math |
+| `\` or Ctrl+K | command palette |
+| `/` `^` `_` | fraction, superscript, subscript |
+| space / Tab | leave a box / next box |
+| `$`, → or Esc | back to text |
+| Alt+drag, Alt+Shift+drag | arrow, shape |
+| Ctrl+D | draw menu |
+| Ctrl+B / Ctrl+I | bold / italic |
+| Tab / Shift+Tab | indent / outdent a list item |
+| Ctrl+F | find |
+| Ctrl+S / Ctrl+O / Ctrl+N | save / open / new |
+
+## Files
+
+Notes are `.ntx` files. Once a note has a file it saves itself as you type, and there's a
+backup of the open note in case the app closes unexpectedly. The format is compact JSON (see
+`src/lib/format.ts`).
+
+In the browser version, Ctrl+S downloads the note and Ctrl+O opens one from your computer.
+
+## Customizing
+
+Ctrl+, opens settings and an editor for the config file. On desktop the file is `config.json`
+in the app's config directory; you can also open it in your own editor, and changes load when
+you switch back to notex.
+
+```jsonc
+{
+  "theme": "ember",                       // built-in: midnight, phosphor, paper
+  "fontSize": 16,
+  "pageWidth": 820,
+  "fonts": { "prose": "", "mono": "" },   // any CSS font-family
+  "typing": { "pairBrackets": true, "autoMath": true },
+  "snippets": {
+    "math": {                             // expand while typing in math; # = caret
+      "norm": "\\left\\| # \\right\\|",
+      "pd": "\\frac{\\partial #}{\\partial }"
+    },
+    "text": { "->": "→" }                 // text may contain $math$
+  },
+  "themes": {                             // CSS variable overrides on a base theme
+    "ember": { "base": "midnight", "colors": { "accent": "#ff9e64" } }
+  },
+  "css": ".block.h1 { letter-spacing: 0.02em; }"
+}
+```
+
+## Development
+
+Svelte 5 + SvelteKit (SPA) + Tauri 2, KaTeX for rendering, pnpm.
 
 ```sh
 pnpm install
@@ -11,6 +89,7 @@ pnpm tauri dev     # desktop app
 pnpm dev           # browser only, http://localhost:1420
 pnpm check         # type-check
 pnpm test          # unit tests
+pnpm tauri build   # desktop installer for this system
 ```
 
 With `pnpm dev` running (or a production build served with `?lab` in the URL):
@@ -22,7 +101,12 @@ node tools/label-lab/lab.mjs <name>             # note layout scenarios + typing
 
 Both use `playwright-core`; set `CHROME` to a Chrome/Chromium executable if it can't find one.
 
-## How it works
+**Releasing.** Every push to `main` rebuilds the browser version on GitHub Pages. Pushing a
+tag like `v0.1.0` builds the installers for all three systems into a draft release; publish it
+from the Releases page. Bump the version in `package.json`, `src-tauri/tauri.conf.json` and
+`src-tauri/Cargo.toml` first.
+
+### How it works
 
 - **Document model** (`src/lib/model.ts`): blocks of items; an item is a character or a
   math item. Math is a tree of `sym`s and slot-bearing `cmd`s (frac, sqrt, scripts,
@@ -34,62 +118,8 @@ Both use `playwright-core`; set `CHROME` to a Chrome/Chromium executable if it c
 - **Arrows and shapes** anchor to *ids*, not to positions, so they follow their endpoints as you edit.
   Geometry is recomputed from the DOM after each render (`src/lib/arrows.ts`).
 - **Editor** (`src/lib/editor.svelte.ts`): ordinary text editing by default; focused modes only
-  for math, choosing arrow endpoints and styling arrows.
+  for math, choosing arrow endpoints and styling drawings.
 
-## Using it (F1 in the app)
+## License
 
-It edits like any normal editor: click to place the caret, drag or Shift+arrows to select,
-Ctrl+C/X/V (math survives copy/paste), Ctrl+Z/Y, Ctrl+←/→ by word. On top of that:
-
-| | |
-|--------|------|
-| text   | `$` math (`$$` centered block) · `\` or Ctrl+K commands · `# ` `## ` `- ` block shortcuts |
-| math   | `/` fraction from previous operand · `^ _` · `( [ {` · `"` text · `;a` greek · `sum int lim sqrt` · `-> => <= oo xx` · `\name` any command · space leaves a box · Tab next box · `&`/Enter grow matrix · `$`, → or Esc back to text · click anywhere inside a formula · Shift+←/→ selects (growing out of boxes), Ctrl+A all; `/`, `(` or a `\command` wraps the selection; copy gives `$LaTeX$` |
-| `\arrow` | arrow keys or click to choose · Shift+↑/↓ whole expression / inside it · Shift+←/→ extend · Tab jump labels · Enter confirm (start, then end). With text selected, the arrow starts there |
-| shapes | `\circle` `\box` `\underline` `\highlight` `\brace` `\strike`: choose the target like an arrow end, or select text first to draw on it at once |
-| inside math | Ctrl+D opens the draw menu (also works in text); in the math `\` menu, drawing commands show up marked ✎ below the math ones. Select part of a formula first to draw on it; Enter/Esc afterwards returns to the formula |
-| changing drawings | click one, or `\drawings`; a selected arrow has dots to drag its ends and bend. Arrows: ↑/↓ bend · `0` straight · `t` heads · `b` box ends · `r` reverse · `s`/`e` move the start/tip. Shapes: `t` or ←/→ next shape · `e` move it. Both: `d` dashed · `c` colour · `l` label (may contain `$math$`) · Del remove · Enter done |
-
-Arrow picking also accepts `hjkl`/`HJKL` for people who like them.
-
-## Files
-
-Notes are `.ntx` files (Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+N). Once a note has a file it
-autosaves. The format is compact JSON: text is stored as plain strings and math as a tree
-(see `src/lib/format.ts`).
-
-`\export` copies the note as LaTeX, drawings included: shapes become `\boxed`, `\underline`,
-`\underbrace`, `\cancel`, `\colorbox`…, and arrows and circles are drawn with tikz over
-`\tikzmarknode`s (compile twice). The packages it needs are listed at the top.
-
-## Customizing
-
-Ctrl+, opens settings (theme, text size, page width) and an editor for the config file. On
-desktop the file lives in the app config directory as `config.json` and can also be opened in
-your own editor; changes load when you switch back to notex.
-
-```jsonc
-{
-  "theme": "ember",                       // built-in: midnight, phosphor, paper
-  "fontSize": 16,
-  "pageWidth": 820,
-  "fonts": { "prose": "", "mono": "" },   // any CSS font-family
-  "snippets": {
-    "math": {                             // expand while typing in math; # = caret
-      "norm": "\\left\\| # \\right\\|",
-      "pd": "\\frac{\\partial #}{\\partial }"
-    },
-    "text": { "->": "→", ":)": "nice $\\heartsuit$" }   // text may contain $math$
-  },
-  "themes": {                             // CSS variable overrides on a base theme
-    "ember": { "base": "midnight", "colors": { "accent": "#ff9e64" } }
-  },
-  "css": ".block.h1 { letter-spacing: 0.02em; }"
-}
-```
-
-## Roadmap / ideas
-
-- **Customization**: keymaps, user palette commands, scripting hooks.
-- **Files**: a notes sidebar / recent files, search across notes.
-- **Drawing**: multi-segment arrows, endpoint side control, free-standing notes in the margin.
+MIT
