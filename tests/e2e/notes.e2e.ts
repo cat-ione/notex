@@ -133,7 +133,7 @@ test('renaming a note with F2, kept after a reload', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(page.locator('.panel .row.sel .name')).toHaveText('Monday');
   await page.keyboard.press('Escape');
-  await expect(page.locator('.status .file')).toContainText('Monday');
+  await expect(page.locator('.toolbar .note')).toContainText('Monday');
   await page.reload();
   await page.waitForFunction(() => (window as any).__nx);
   expect(await ed(page, (e) => e.file.name)).toBe('Monday');
@@ -212,7 +212,7 @@ test('ctrl+s saves to a file, then every edit saves there too', async ({ page })
   await saved(page);
   await expect.poll(() => fileText(page, 'lecture.ntx')).toContain('to disk and back');
   expect((await kept(page))[0].file).toBe('lecture.ntx');
-  await expect(page.locator('.status .file')).toHaveAttribute('data-tip', 'in this browser and in lecture.ntx');
+  await expect(page.locator('.toolbar .note')).toHaveAttribute('data-tip', 'your notes · saved in this browser and in lecture.ntx');
   // after a reload it still saves to the file
   await page.reload();
   await page.waitForFunction(() => (window as any).__nx);
