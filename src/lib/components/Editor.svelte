@@ -491,6 +491,8 @@
   .ch.c {
     font-family: var(--mono);
     font-size: 0.88em;
+    /* code shows what was typed: -> stays two characters */
+    font-variant-ligatures: none;
     color: var(--code-fg, var(--fg));
     background: color-mix(in srgb, var(--fg) 9%, transparent);
     padding: 0.12em 0;
@@ -584,6 +586,7 @@
   .block.fence {
     font-family: var(--mono);
     font-size: 0.88em;
+    font-variant-ligatures: none;
     /* whole pixels: a fraction leaves a seam between the lines' backgrounds */
     line-height: round(1.6em, 1px);
     min-height: round(1.6em, 1px);
