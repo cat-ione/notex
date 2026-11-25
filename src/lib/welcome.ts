@@ -1,6 +1,7 @@
 // The welcome note: what notex does, most eye-catching first, as a note to play with.
 
 import { withMarkdown } from './format';
+import { isDesktop } from './files';
 import { parseLatex } from './math/parse';
 import { block, chars, math, uid, type Arrow, type Block, type BlockKind, type Doc, type Id, type Item, type Mark, type MarkKind, type MathItem, type MNode, type MRow } from './model';
 
@@ -50,10 +51,10 @@ export function welcomeDoc(): Doc {
   // ── drawings ──
   const euler = M('e^{i\\pi}+1=0', true);
   const eulerIntro = P('Euler’s identity, where a turn round the circle meets arithmetic:');
-  marks.push(mark('circle', [symbol(euler, 'e'), command(euler, 'sup')], { color: 'red', label: 'half a turn' }));
+  marks.push(mark('circle', [symbol(euler, 'e'), command(euler, 'sup')], { color: 'red' }));
   marks.push(mark('circle', [symbol(euler, '1')], { color: 'purple' }));
   marks.push(mark('circle', [symbol(euler, '0')], { color: 'green' }));
-  arrows.push(arrow(word(eulerIntro, 'a turn round the circle'), [symbol(euler, 'e')], { bend: -0.3, dash: true, color: 'blue' }));
+  arrows.push(arrow(word(eulerIntro, 'a turn round the circle'), [symbol(euler, 'e')], { bend: -0.3, dash: true, color: 'blue', label: 'half a turn' }));
   const eulerAfter = P('Each circle is drawn on part of the formula, and the arrow starts at words. Edit them and the drawings follow.');
 
   const density = M('f(x)=\\frac{1}{\\sqrt{2\\pi}}e^{-x^2/2}');
@@ -123,7 +124,13 @@ export function welcomeDoc(): Doc {
       P('All of it is in a config file you can edit, with your own themes, snippets and CSS.', 'li'),
 
       P('Keep it and share it', 'h2'),
-      P('Ctrl+S saves the note as a .ntx file; from then on it saves itself as you type.', 'li'),
+      ...(isDesktop()
+        ? [P('Ctrl+S saves the note as a .ntx file; from then on it saves itself as you type.', 'li')]
+        : [
+            P('Every note is kept in this browser as you type; Ctrl+O lists them, Ctrl+N starts a new one.', 'li'),
+            P('Ctrl+S also saves the note to a .ntx file, and keeps saving to it.', 'li'),
+            P('Once opened, notex works offline, and the browser can install it as an app.', 'li'),
+          ]),
       P('\\pdf saves it as a PDF, drawings and all, and Ctrl+P prints it.', 'li'),
       P('\\export copies it as LaTeX, drawings included.', 'li'),
       P('Press F1 for every shortcut, and type \\welcome to bring this note back.'),
