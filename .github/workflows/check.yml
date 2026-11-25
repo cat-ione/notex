@@ -1,4 +1,5 @@
-# Tests and type-check on dev and on pull requests, before anything reaches main (and the site).
+# Unit and browser tests and the type-check on dev and on pull requests, before anything
+# reaches main (and the site).
 name: check
 
 on:
@@ -20,3 +21,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm check
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-results
+          path: test-results/
+          retention-days: 7

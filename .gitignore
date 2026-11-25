@@ -12,3 +12,7 @@ vite.config.ts.timestamp-*
 
 # demo video
 notex-demo*.mp4
+
+# browser tests
+/test-results
+/playwright-report

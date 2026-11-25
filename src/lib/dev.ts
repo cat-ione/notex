@@ -11,6 +11,8 @@ import { rowAt } from './math/edit';
 import type { Step } from './math/latex';
 import { block, chars, math, uid, type Block, type Doc, type Item, type Mark, type MarkKind, type MRow } from './model';
 import { deserialize, withMarkdown } from './format';
+import { docToLatex } from './export';
+import { toLatex } from './math/latex';
 
 /** A target: nodes i..j of the row at `path` inside formula `f` (index into the scenario's formulas), or words of the text. */
 type Target = { f: number; i: number; j?: number; path?: [number, number][] } | { words: [number, number] };
@@ -167,6 +169,10 @@ export function install(ed: Editor) {
     loadBig: (opts?: Parameters<typeof bigDoc>[0]) => ed.load(withMarkdown(bigDoc(opts)), { path: null, name: 'big' }),
     load: (scs: Scenario[]) => ed.load(withMarkdown(buildDoc(scs)), { path: null, name: 'lab' }),
     metrics: () => metrics(ed),
+    /** The note as LaTeX (as \export copies it). */
+    tex: () => docToLatex(ed.snapshot()),
+    /** Each formula's LaTeX, in order. */
+    formulas: () => ed.doc.blocks.flatMap((b) => b.items.filter((i) => i.t === 'm').map((m) => toLatex(m.root))),
     /** Top-level nodes of a formula (to pick target indices). */
     probe: (tex: string) => describe(parseLatex(tex).row),
   };
