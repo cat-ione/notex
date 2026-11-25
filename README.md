@@ -44,11 +44,12 @@ Press **F1** in the app for every shortcut.
 
 ## Files
 
-Notes are `.ntx` files. Once a note has a file it saves itself as you type, and there's a
-backup of the open note in case the app closes unexpectedly. The format is compact JSON (see
-`src/lib/format.ts`).
+In the browser, every note is kept there as you type: Ctrl+O lists them (type to filter, F2
+renames, Shift+Del deletes) and Ctrl+N starts a new one. Ctrl+S also saves the note to a
+`.ntx` file and keeps saving to it (in Chrome and Edge; other browsers download it). Once
+opened, the site works offline and can be installed as an app.
 
-In the browser version, Ctrl+S downloads the note and Ctrl+O opens one from your computer.
+Notes are `.ntx` files: compact JSON (see `src/lib/format.ts`).
 
 ## Customizing
 
@@ -87,6 +88,7 @@ pnpm tauri dev     # desktop app
 pnpm dev           # browser only, http://localhost:1420
 pnpm check         # type-check
 pnpm test          # unit tests
+pnpm test:e2e      # browser tests (builds the site; CHROME=<path> to use your own Chrome)
 pnpm tauri build   # desktop installer for this system
 ```
 
@@ -99,7 +101,7 @@ node tools/label-lab/lab.mjs <name>             # note layout scenarios + typing
 
 Both use `playwright-core`; set `CHROME` to a Chrome/Chromium executable if it can't find one.
 
-**Branches.** Work happens on `dev`, where every push runs the tests and type-check. Merge
+**Branches.** Work happens on `dev`, where every push runs the unit and browser tests and the type-check. Merge
 into `main` once it works: `main` is what the site and releases are built from.
 
 **Releasing.** Every push to `main` rebuilds the browser version on GitHub Pages. There are no

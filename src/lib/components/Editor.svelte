@@ -14,7 +14,9 @@
   import StatusLine from './StatusLine.svelte';
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
+  import NotesPanel from './NotesPanel.svelte';
   import { isDesktop, setWindowTitle } from '$lib/files';
+  import { base } from '$app/paths';
   import type { Block, Item } from '$lib/model';
 
   const ed = new Editor();
@@ -62,6 +64,9 @@
       on('afterprint', () => ed.endPrint()),
     ];
     ed.loadConfig();
+    ed.initLibrary();
+    // offline (see src/service-worker.ts): the built site in a browser, not the desktop app
+    if (!import.meta.env.DEV && !isDesktop() && 'serviceWorker' in navigator) navigator.serviceWorker.register(`${base}/service-worker.js`).catch(() => {});
     // Height changes come from content, which lays out after rendering anyway;
     // only a change of width (window, settings) needs a fresh layout here.
     let width = page.clientWidth;
@@ -303,6 +308,10 @@
   </div>
 
   <StatusLine {ed} />
+
+  {#if ed.showNotes}
+    <NotesPanel {ed} />
+  {/if}
 
   {#if ed.showSettings}
     <Settings {ed} />

@@ -52,7 +52,7 @@
     <span class="keys">{ed.mode === 'style' ? styleHint : ed.note && ed.mode === 'text' ? HINTS.label : HINTS[ed.mode]}</span>
   {/if}
   <span class="spacer"></span>
-  <span class="file" data-tip={ed.file.path ?? 'not saved'} data-tip-key="ctrl+s">
+  <span class="file" data-tip={ed.savedWhere} data-tip-key="ctrl+s">
     {ed.file.name}{#if ed.dirty}<span class="dot" class:warn={!ed.file.path} in:fly={{ y: -4, duration: 150 }}>●</span>{/if}
   </span>
   <span class="stat">{counts.words}w · {counts.maths}∑ · {counts.drawings}↗</span>

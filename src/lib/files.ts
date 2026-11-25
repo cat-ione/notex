@@ -65,7 +65,64 @@ export async function savePdf(path: string, paper: { w: number; h: number }, mar
   await invoke('save_pdf', { path, width: paper.w, height: paper.h, margin });
 }
 
-/** Browser fallback: download the note. */
+// ── files in the browser (Chrome, Edge): picked once, then saved to as you type ──
+
+type Picker = { types: { description: string; accept: Record<string, string[]> }[]; suggestedName?: string };
+type FilePickers = {
+  showSaveFilePicker(o: Picker): Promise<FileSystemFileHandle>;
+  showOpenFilePicker(o: Picker): Promise<FileSystemFileHandle[]>;
+};
+type Permissions = {
+  queryPermission(o: { mode: 'readwrite' }): Promise<PermissionState>;
+  requestPermission(o: { mode: 'readwrite' }): Promise<PermissionState>;
+};
+const pickers = () => window as unknown as FilePickers;
+const PICK: Picker = { types: [{ description: 'notex note', accept: { 'application/json': [`.${EXT}`] } }] };
+
+/** Whether this browser can save to files on disk (else notes download). */
+export const canUseFiles = () => !isDesktop() && typeof window !== 'undefined' && 'showSaveFilePicker' in window;
+
+/** A file chosen to save to, or null if cancelled. */
+export async function pickSaveFile(name: string): Promise<FileSystemFileHandle | null> {
+  try {
+    return await pickers().showSaveFilePicker({ ...PICK, suggestedName: `${name}.${EXT}` });
+  } catch (e) {
+    if ((e as DOMException)?.name === 'AbortError') return null;
+    throw e;
+  }
+}
+
+/** A note file chosen to open, or null if cancelled. */
+export async function pickOpenFile(): Promise<FileSystemFileHandle | null> {
+  try {
+    return (await pickers().showOpenFilePicker(PICK))[0] ?? null;
+  } catch (e) {
+    if ((e as DOMException)?.name === 'AbortError') return null;
+    throw e;
+  }
+}
+
+export async function writeFile(h: FileSystemFileHandle, doc: Doc) {
+  const w = await h.createWritable();
+  await w.write(serialize(doc));
+  await w.close();
+}
+
+export async function readFile(h: FileSystemFileHandle): Promise<Doc> {
+  return deserialize(await (await h.getFile()).text());
+}
+
+/**
+ * Whether we may write to the file. After a reload the browser asks again; `ask` asks the
+ * user then (only from a key press or click), otherwise it's just a question.
+ */
+export async function mayWrite(h: FileSystemFileHandle, ask: boolean): Promise<boolean> {
+  const p = h as unknown as Permissions;
+  if ((await p.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
+  return ask && (await p.requestPermission({ mode: 'readwrite' })) === 'granted';
+}
+
+/** Browser fallback (no file pickers): download the note. */
 export function downloadNote(name: string, doc: Doc) {
   const url = URL.createObjectURL(new Blob([serialize(doc)], { type: 'application/json' }));
   const a = Object.assign(document.createElement('a'), { href: url, download: `${name}.${EXT}` });
