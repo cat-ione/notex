@@ -771,6 +771,15 @@
   :global(html.nx-print) .block {
     content-visibility: visible;
   }
+  /* everything where it ends up at once (notes glide to new places on screen), and no glow:
+     a shadow on every letter turns a PDF into pictures */
+  :global(html.nx-print *),
+  :global(html.nx-print *::before),
+  :global(html.nx-print *::after) {
+    transition: none !important;
+    animation: none !important;
+    text-shadow: none !important;
+  }
   /* margins at a page break are dropped in print, which would move the text from where it
      was measured: padding and borders instead, which stay */
   :global(html.nx-print) .block.h1 {
