@@ -14,6 +14,8 @@ const config = {
     }),
     // GitHub Pages serves the site from /<repo>; the desktop app and `pnpm dev` from /
     paths: { base: process.env.BASE_PATH ?? "" },
+    // registered by the page, and only in the browser (not in the desktop app)
+    serviceWorker: { register: false },
   },
 };
 
