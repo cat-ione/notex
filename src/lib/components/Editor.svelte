@@ -912,6 +912,12 @@
   .block.tr.tsep:not(.current) .ch {
     visibility: hidden;
   }
+  /* (a strip to click on, to edit it) */
+  .block.tr.tsep:not(.current) > .td {
+    padding-top: 3px;
+    padding-bottom: 3px;
+    cursor: text;
+  }
   /* code blocks' colours, by kind of token (a theme can set --code-kw and the rest) */
   .ch[data-tk='kw'] { color: var(--code-kw, var(--ink-purple)); }
   .ch[data-tk='str'] { color: var(--code-str, var(--ink-green)); }
