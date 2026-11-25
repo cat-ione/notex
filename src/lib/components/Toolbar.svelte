@@ -64,7 +64,7 @@
 
 <header class="toolbar" class:quiet={quiet && ed.config.ui.fadeToolbar}>
   <button class="b note b-notes" onmousedown={(e) => press(e, { id: 'notes', glyph: '≡', tip: '', run: () => ed.openNote() })} onclick={(e) => e.preventDefault()} data-tip={`${isDesktop() ? 'open a note' : 'your notes'} · ${ed.savedWhere === 'not saved' ? 'this one is not saved yet' : `saved ${ed.savedWhere}`}`} data-tip-key="ctrl+o" aria-label="notes">
-    <span class="g">≡</span><span class="name">{shownName({ name: ed.file.name, title: '' })}</span>{#if ed.dirty}<span class="dot">●</span>{/if}
+    <span class="g">≡</span><span class="name">{shownName({ name: ed.file.name, title: '' })}</span><span class="dot" class:off={!ed.dirty}>●</span>
   </button>
   {#each left as b (b.id)}{@render button(b)}{/each}
   <span class="sep"></span>
@@ -119,7 +119,9 @@
   .b.glyph { padding: 0 7px; }
   .note { color: var(--fg); max-width: 28ch; }
   .note .name { overflow: hidden; text-overflow: ellipsis; }
+  /* (its place is kept when saved: the buttons after it don't move) */
   .dot { font-size: 8px; color: var(--muted); }
+  .dot.off { visibility: hidden; }
   .sep {
     width: 1px;
     height: 14px;

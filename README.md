@@ -16,7 +16,8 @@ and draw arrows and boxes *between parts of equations*.
   Alt+Shift+drag draws a box, circle, underline or brace. Press `L` to write a note on it.
   Drawings stay attached to what they point at as you keep editing.
 - **Markdown, like Obsidian.** `# ` headings, `- ` and `1. ` lists, `**bold**`, `*italic*`,
-  `` `code` `` and code blocks. The markers hide once the caret moves on.
+  `` `code` `` and code blocks, coloured by their language (Python, C++, Julia,
+  R, MATLAB and more). The markers hide once the caret moves on.
 - **Images.** Paste or drop them in; they're kept inside the note.
 - **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
   type, and your own CSS (Ctrl+,).

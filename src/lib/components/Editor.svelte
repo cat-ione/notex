@@ -19,6 +19,7 @@
   import { isDesktop, setWindowTitle } from '$lib/files';
   import { base } from '$app/paths';
   import type { Block, Item } from '$lib/model';
+  import { highlight, type Tk } from '$lib/highlight';
 
   const ed = new Editor();
   let page: HTMLElement;
@@ -149,6 +150,31 @@
   /** A fence of a code block the caret isn't in: its line shows nothing (but the language). */
   const veiled = (b: number) => ed.doc.blocks[b].kind === 'fence' && !(reveal?.code && b >= reveal.code.first && b <= reveal.code.last);
 
+  // Code blocks' colours: each line's characters' kinds of token, by line. A block is read
+  // whole (a string or comment can run over lines), in the language its opening fence names.
+  const codeTokens = $derived.by(() => {
+    const out = new Map<string, (Tk | undefined)[]>();
+    if (!ed.config.highlightCode) return out;
+    const blocks = ed.doc.blocks;
+    for (let b = 0; b < blocks.length; b++) {
+      const open = blocks[b];
+      if (open.kind !== 'fence' || !open.lang) continue;
+      let e = b + 1;
+      while (blocks[e]?.kind === 'code') e++;
+      const lines = blocks.slice(b + 1, e);
+      // (a character per item; a code point may take two places in the string)
+      const texts = lines.map((l) => l.items.map((i) => (i.t === 'c' ? i.ch : ' ')));
+      const kinds = highlight(texts.map((t) => t.join('')).join('\n'), open.lang);
+      let at = 0;
+      lines.forEach((l, k) => {
+        out.set(l.id, texts[k].map((ch) => ((at += ch.length), kinds[at - ch.length])));
+        at++;
+      });
+      b = e - 1;
+    }
+    return out;
+  });
+
   /** Dragging an image's corner: it grows on both sides (it's centred), one undo step. */
   function resizeImage(e: MouseEvent, b: number) {
     if (e.button !== 0) return;
@@ -255,6 +281,7 @@
                 class:mk={it.m}
                 class:cs={codeText(it) && !codeText(blk.items[o - 1])}
                 class:ce={codeText(it) && !codeText(blk.items[o + 1])}
+                data-tk={blk.kind === 'code' ? codeTokens.get(blk.id)?.[o] : undefined}
                 data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
             {:else}
               <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}
@@ -845,6 +872,15 @@
   :global(html.nx-print) .block.hang {
     text-indent: 0;
   }
+  /* code blocks' colours, by kind of token (a theme can set --code-kw and the rest) */
+  .ch[data-tk='kw'] { color: var(--code-kw, var(--ink-purple)); }
+  .ch[data-tk='str'] { color: var(--code-str, var(--ink-green)); }
+  .ch[data-tk='com'] { color: var(--code-com, var(--muted)); font-style: italic; }
+  .ch[data-tk='num'] { color: var(--code-num, var(--arrow)); }
+  .ch[data-tk='fn'] { color: var(--code-fn, var(--ink-blue)); }
+  .ch[data-tk='type'] { color: var(--code-type, var(--accent)); }
+  .ch[data-tk='op'] { color: var(--code-op, var(--fg)); }
+  .ch[data-tk='pun'] { color: var(--code-pun, var(--muted)); }
   .toast {
     position: fixed;
     right: 14px;

@@ -40,6 +40,8 @@ export type Config = {
   };
   /** PDFs and printing: the theme the page is printed in, and the paper size. */
   pdf: { theme: string; paper: Paper };
+  /** Colour code blocks by their language (```py, ```cpp …); the colours are --code-* in a theme. */
+  highlightCode: boolean;
   /** The bars around the page: the toolbar (and whether it fades while you type) and the status bar. */
   ui: { toolbar: boolean; fadeToolbar: boolean; statusBar: boolean };
 };
@@ -75,6 +77,7 @@ export const DEFAULT_CONFIG: Config = {
   typing: { latexScripts: true, autoMath: true, pairBrackets: true, pairMarkdown: true, substitutions: { ...SUB_DEFAULTS } },
   pdf: { theme: 'paper', paper: 'A4' },
   ui: { toolbar: true, fadeToolbar: true, statusBar: true },
+  highlightCode: true,
 };
 
 const LOCAL_KEY = 'notex.config';

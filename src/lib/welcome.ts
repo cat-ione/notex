@@ -110,7 +110,7 @@ export function welcomeDoc(): Doc {
       P('Tab indents an item, Shift+Tab brings it back', 'ol'),
       P('like this', 'li', 1),
       P('and this', 'li', 2),
-      P('- starts a bullet list, # a heading, ``` a code block:', 'ol'),
+      P('- starts a bullet list, # a heading, ``` a code block, coloured by its language:', 'ol'),
       { ...P('def mean(xs):', 'code'), lang: 'py' },
       P('    return sum(xs) / len(xs)', 'code'),
 
