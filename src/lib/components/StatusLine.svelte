@@ -15,6 +15,14 @@
     palette: 'enter accept · ↑↓ choose · esc cancel',
     label: 'enter save · esc cancel',
   };
+  // after a click: what the mouse can do (the keys again after a key)
+  const MOUSE: Record<string, string> = {
+    text: 'right-click for more · alt+drag draws an arrow, alt+shift+drag a box',
+    math: 'click outside the formula to leave it · right-click for more',
+    pick: 'click what it starts at, then where it ends · esc cancel',
+    palette: 'click one to choose · type to filter',
+    style: 'drag its dots to reshape it · scroll over it to change it · click elsewhere when done',
+  };
   // typing a note: NOTE (in its math: MATH, as on the page)
   const name = $derived(ed.note && ed.mode === 'text' ? 'NOTE' : LABEL[ed.mode]);
   // a drawing's keys, from the same table as its menu
@@ -49,7 +57,7 @@
   {:else if ed.tipText}
     <span class="tip" in:fade={{ duration: 300 }}><span class="tag">tip</span>{ed.tipText}</span>
   {:else}
-    <span class="keys">{ed.mode === 'style' ? styleHint : ed.note && ed.mode === 'text' ? HINTS.label : HINTS[ed.mode]}</span>
+    <span class="keys">{ed.note && ed.mode === 'text' ? HINTS.label : ed.input === 'mouse' && MOUSE[ed.mode] ? MOUSE[ed.mode] : ed.mode === 'style' ? styleHint : HINTS[ed.mode]}</span>
   {/if}
   <span class="spacer"></span>
   <!-- (the toolbar shows the note's name) -->

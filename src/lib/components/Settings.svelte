@@ -247,8 +247,8 @@
       <div class="actions">
         <button onclick={() => (text = configToText(DEFAULT_CONFIG))}>reset to defaults</button>
         <span class="spacer"></span>
-        <button onclick={() => (ed.settingsEditing = false)}>cancel <kbd>esc</kbd></button>
-        <button class="primary" onclick={saveText}>save <kbd>ctrl+⏎</kbd></button>
+        <button onclick={() => (ed.settingsEditing = false)}>cancel{#if ed.input === 'keys'} <kbd>esc</kbd>{/if}</button>
+        <button class="primary" onclick={saveText}>save{#if ed.input === 'keys'} <kbd>ctrl+⏎</kbd>{/if}</button>
       </div>
     {:else if ed.settingsView === 'subs'}
       <div class="title">
@@ -288,7 +288,7 @@
         <button class="save" tabindex="-1" onclick={saveForm}>{editing ? 'save' : 'add'}</button>
       </div>
       {#if formError}<div class="error inset" transition:fly={{ y: -4, duration: 150 }}>{formError}</div>{/if}
-      <div class="foot">
+      <div class="foot" class:hidden={ed.input === 'mouse'}>
         {#if subSel < SUB_GROUPS.length}↑↓ choose · ←→ switch · a add · esc back
         {:else if subSel < subCount - 1}↑↓ choose · ⏎ edit · del remove · esc back
         {:else}⏎ add · esc done{/if}
@@ -305,11 +305,11 @@
               <button tabindex="-1" onclick={(e) => { e.stopPropagation(); r.change?.(1); }}>›</button>
             </span>
           {:else}
-            <span class="hint">{typeof r.hint === 'function' ? r.hint() : r.hint} ⏎</span>
+            <span class="hint">{typeof r.hint === 'function' ? r.hint() : r.hint} {ed.input === 'mouse' ? '›' : '⏎'}</span>
           {/if}
         </div>
       {/each}
-      <div class="foot">↑↓ choose · ←→ change · esc close</div>
+      <div class="foot" class:hidden={ed.input === 'mouse'}>↑↓ choose · ←→ change · esc close</div>
     {/if}
   </div>
 </div>
@@ -481,4 +481,6 @@
   .actions button:hover { border-color: var(--accent); color: var(--accent); }
   .actions .primary { border-color: var(--accent); color: var(--accent); }
   kbd { font: inherit; color: var(--muted); margin-left: 4px; }
+  /* (the keys, for those using keys: with the mouse the rows are clicked) */
+  .foot.hidden { visibility: hidden; }
 </style>

@@ -128,6 +128,10 @@ export class Editor {
   private handle = $state.raw<FileSystemFileHandle | null>(null);
   /** Browser: the list of notes is open (ctrl+o). */
   showNotes = $state(false);
+  /** What was used last, keys or the mouse: hints show the way that fits (keys, or what to click). */
+  input = $state<'keys' | 'mouse'>('keys');
+  /** Where the palette opens when it isn't at the caret (the toolbar's draw button); page coordinates. */
+  private paletteAt = $state.raw<Rect | null>(null);
   dirty = $state(false);
   private edits = 0;
 
@@ -3631,7 +3635,13 @@ export class Editor {
 
   private openPalette(ctx: 'math' | 'text' | 'draw' | 'style') {
     this.palette = { ctx, query: '', sel: 0 };
+    this.paletteAt = null;
     this.setMode('palette');
+  }
+
+  /** Choose the palette's `i`th item (a click on it). */
+  pickPalette(i: number) {
+    if (this.palette) this.acceptPalette(this.paletteItems[i]);
   }
 
   private closePalette() {
@@ -3811,7 +3821,7 @@ export class Editor {
       ...(F.isDesktop() ? [] : [{ name: 'notes', desc: 'your notes  ctrl+o', run: () => this.openNote() }]),
       { name: 'save', desc: 'save  ctrl+s', run: () => this.saveNote() },
       { name: 'saveas', desc: 'save as…  ctrl+shift+s', run: () => this.saveNoteAs() },
-      { name: 'welcome', desc: 'open the welcome note', run: async () => { if (await this.okToReplace()) this.load(welcomeDoc(), { path: null, name: 'welcome', ...(F.isDesktop() ? {} : { id: uid() }) }); } },
+      { name: 'welcome', desc: 'open the welcome note', run: () => this.openWelcome() },
       { name: 'help', desc: 'keyboard shortcuts  F1', run: () => (this.showHelp = !this.showHelp) },
     ];
   }
@@ -4540,6 +4550,7 @@ export class Editor {
 
   /** Where the palette opens (page coordinates): at the caret, or under the selected drawing. */
   get paletteAnchor(): Rect | null {
+    if (this.palette && this.paletteAt) return this.paletteAt;
     if (this.caret) return this.caret.r;
     return this.styling ? this.drawingRect(this.styling) : null;
   }
@@ -4583,11 +4594,23 @@ export class Editor {
   });
 
   /** Open find (with the selected text, if a word or so is selected), or focus it again. */
-  /** The draw menu (ctrl+d), from text or math. Whether it opened. */
-  openDrawMenu(): boolean {
+  /** The draw menu (ctrl+d), from text or math: at the caret, or under `under` (a button). Whether it opened. */
+  openDrawMenu(under?: DOMRect): boolean {
     if ((this.mode !== 'text' && this.mode !== 'math') || this.note) return false;
     this.openPalette('draw');
+    if (under && this.page) {
+      const pr = this.page.getBoundingClientRect();
+      this.paletteAt = { x: under.left - pr.left, y: under.bottom - pr.top - 4, w: under.width, h: 0 };
+    }
     return true;
+  }
+
+  /** The welcome note, as it comes (a new copy: one made your own is kept as it is). */
+  async openWelcome() {
+    if (!(await this.okToReplace())) return;
+    this.load(welcomeDoc(), { path: null, name: 'welcome', ...(F.isDesktop() ? {} : { id: uid() }) });
+    this.showNotes = false;
+    this.showHelp = false;
   }
 
   /** Show or hide one of the bars around the page. */

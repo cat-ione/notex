@@ -12,14 +12,14 @@
   /** Faded while typing (until the mouse moves). */
   let quiet = $state(false);
 
-  type Button = { id: string; glyph: string; label?: string; tip: string; keys?: string; run: () => unknown; when?: () => boolean };
+  type Button = { id: string; glyph: string; label?: string; tip: string; keys?: string; run: (at: DOMRect) => unknown };
   const left: Button[] = [
     { id: 'new', glyph: '+', label: 'new', tip: 'new note', keys: 'ctrl+n', run: () => ed.newNote() },
     { id: 'save', glyph: '↓', label: 'save', tip: isDesktop() ? 'save' : 'save to a file', keys: 'ctrl+s', run: () => ed.saveNote() },
   ];
   const insert: Button[] = [
     { id: 'math', glyph: '$', label: 'math', tip: 'a formula ($$ for a centred one)', keys: '$', run: () => ed.mode === 'text' && ed.insertMath(false) },
-    { id: 'draw', glyph: '✎', label: 'draw', tip: 'draw: arrows, boxes, circles… (alt+drag draws an arrow)', keys: 'ctrl+d', run: () => ed.openDrawMenu() },
+    { id: 'draw', glyph: '✎', label: 'draw', tip: 'draw: arrows, boxes, circles… (alt+drag draws an arrow)', keys: 'ctrl+d', run: (at) => ed.openDrawMenu(at) },
     { id: 'image', glyph: '▣', label: 'image', tip: 'an image (or paste / drop one)', run: () => ed.chooseImages() },
   ];
   const right: Button[] = [
@@ -34,7 +34,7 @@
   const press = (e: MouseEvent, b: Button) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.button === 0) b.run();
+    if (e.button === 0) b.run((e.currentTarget as HTMLElement).getBoundingClientRect());
   };
 
   onMount(() => {

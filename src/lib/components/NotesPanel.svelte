@@ -1,6 +1,7 @@
 <script lang="ts">
   // The notes kept in the browser (ctrl+o in the web version): open, rename, delete, and
-  // files from disk. Type to filter; ↑ ↓ and Enter open; F2 renames; shift+del deletes.
+  // files from disk, and the welcome note. Type to filter; ↑ ↓ and Enter open; F2 renames;
+  // del twice deletes. With the mouse: click to open, ✎ renames, ✕ then "delete" deletes.
   import { onMount, tick } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
@@ -16,16 +17,16 @@
   /** The note being renamed, and its new name. */
   let renaming = $state<string | null>(null);
   let newName = $state('');
-  /** The note waiting for a second shift+del. */
-  let deleting = $state<string | null>(null);
+  /** The note waiting for its delete to be confirmed: a second del (keys), or a click on "delete" (mouse). */
+  let deleting = $state<{ id: string; by: 'keys' | 'mouse' } | null>(null);
   let input: HTMLInputElement | undefined = $state();
   let nameInput: HTMLInputElement | undefined = $state();
 
-  type Row = { kind: 'note'; note: NoteMeta } | { kind: 'new' } | { kind: 'file' };
+  type Row = { kind: 'note'; note: NoteMeta } | { kind: 'new' } | { kind: 'file' } | { kind: 'welcome' };
   const shown = $derived(
     notes.filter((n) => !query.trim() || `${shownName(n)} ${n.title} ${n.file ?? ''}`.toLowerCase().includes(query.trim().toLowerCase())),
   );
-  const rows = $derived<Row[]>([...shown.map((note) => ({ kind: 'note' as const, note })), { kind: 'new' }, { kind: 'file' }]);
+  const rows = $derived<Row[]>([...shown.map((note) => ({ kind: 'note' as const, note })), { kind: 'new' }, { kind: 'file' }, { kind: 'welcome' }]);
 
   async function refresh() {
     notes = await listNotes();
@@ -39,6 +40,7 @@
   async function act(r: Row) {
     if (r.kind === 'note') await ed.openKept(r.note.id);
     else if (r.kind === 'new') (close(), await ed.newNote());
+    else if (r.kind === 'welcome') await ed.openWelcome();
     else await ed.openFromDisk();
   }
 
@@ -57,8 +59,8 @@
     input?.focus();
   }
 
-  async function remove(n: NoteMeta) {
-    if (deleting !== n.id) return void (deleting = n.id);
+  async function remove(n: NoteMeta, by: 'keys' | 'mouse') {
+    if (deleting?.id !== n.id) return void (deleting = { id: n.id, by });
     deleting = null;
     await ed.deleteKept(n.id);
     await refresh();
@@ -80,7 +82,14 @@
       case 'ArrowUp': sel = (sel - 1 + rows.length) % rows.length; deleting = null; break;
       case 'Enter': if (r) act(r); break;
       case 'F2': if (r?.kind === 'note') startRename(r.note); break;
-      case 'Delete': if (e.shiftKey && r?.kind === 'note') remove(r.note); else return; break;
+      case 'Delete': {
+        // (in the filter, del first deletes what's after its caret)
+        const t = e.target as HTMLInputElement;
+        const atEnd = t !== input || (t.selectionStart === t.value.length && t.selectionEnd === t.value.length);
+        if (r?.kind === 'note' && atEnd) remove(r.note, 'keys');
+        else return;
+        break;
+      }
       default:
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') (close(), ed.newNote());
         else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') close();
@@ -118,31 +127,44 @@
     <div class="search"><span class="sigil">/</span><input bind:this={input} bind:value={query} placeholder="filter" spellcheck="false" aria-label="filter notes" /></div>
     <div class="list">
       {#each rows as r, i (r.kind === 'note' ? r.note.id : r.kind)}
-        <div class="row" class:sel={i === sel} class:action={r.kind !== 'note'} onmousemove={() => (sel = i)} onclick={() => renaming !== (r.kind === 'note' ? r.note.id : '') && act(r)}>
+        <div
+          class="row"
+          class:sel={i === sel}
+          class:action={r.kind !== 'note'}
+          onmousemove={() => (sel = i)}
+          onmouseleave={() => deleting?.by === 'mouse' && r.kind === 'note' && deleting.id === r.note.id && (deleting = null)}
+          onclick={() => renaming !== (r.kind === 'note' ? r.note.id : '') && act(r)}
+        >
           {#if r.kind === 'note'}
             {@const n = r.note}
             {#if renaming === n.id}
               <input class="rename" bind:this={nameInput} bind:value={newName} onblur={finishRename} onclick={(e) => e.stopPropagation()} aria-label="new name" />
             {:else}
               <span class="name" class:current={n.id === ed.file.id}>{shownName(n) || 'untitled'}</span>
-              {#if deleting === n.id}
-                <span class="warn">shift+del again to delete</span>
+              {#if deleting?.id === n.id && deleting.by === 'keys'}
+                <span class="warn">del again to delete</span>
               {:else}
                 {#if n.file}<span class="file" title="also saved to this file">↔ {n.file}</span>{/if}
                 <span class="when">{n.id === ed.file.id ? 'open' : ago(n.updated)}</span>
               {/if}
               <button class="icon" title="rename (F2)" aria-label="rename" onclick={(e) => (e.stopPropagation(), startRename(n))}>✎</button>
-              <button class="icon danger" title="delete (shift+del)" aria-label="delete" onclick={(e) => (e.stopPropagation(), remove(n))}>✕</button>
+              {#if deleting?.id === n.id && deleting.by === 'mouse'}
+                <button class="confirm" aria-label="delete this note" onclick={(e) => (e.stopPropagation(), remove(n, 'mouse'))}>delete</button>
+              {:else}
+                <button class="icon danger" title="delete (del twice)" aria-label="delete" onclick={(e) => (e.stopPropagation(), remove(n, 'mouse'))}>✕</button>
+              {/if}
             {/if}
           {:else if r.kind === 'new'}
-            <span class="name">+ new note</span><kbd>ctrl+n</kbd>
-          {:else}
+            <span class="name">+ new note</span>{#if ed.input === 'keys'}<kbd>ctrl+n</kbd>{/if}
+          {:else if r.kind === 'file'}
             <span class="name">open a file…</span><span class="when">{canUseFiles() ? 'saves back to it' : '.ntx'}</span>
+          {:else}
+            <span class="name">the welcome note</span><span class="when">everything notex does</span>
           {/if}
         </div>
       {/each}
     </div>
-    <div class="foot">⏎ open · F2 rename · shift+del delete · esc close</div>
+    {#if ed.input === 'keys'}<div class="foot">⏎ open · F2 rename · del twice to delete · esc close</div>{/if}
   </div>
 </div>
 
@@ -224,6 +246,16 @@
   .file, .when, kbd { color: var(--muted); font-size: 11px; white-space: nowrap; font-family: inherit; }
   .file { max-width: 30%; overflow: hidden; text-overflow: ellipsis; }
   .warn { color: var(--danger); font-size: 11px; }
+  .confirm {
+    background: var(--danger);
+    border: none;
+    border-radius: 3px;
+    padding: 1px 7px;
+    color: var(--bg);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
   .rename {
     border-bottom: 1px solid var(--accent);
     padding: 1px 0;

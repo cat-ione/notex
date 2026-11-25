@@ -46,7 +46,12 @@
       return () => window.removeEventListener(type, f);
     };
     const offs = [
-      on('keydown', (e) => ed.key(e)),
+      // keys or the mouse, whichever was used last (bare modifiers, as for alt+drag, aren't typing)
+      on('keydown', (e) => {
+        if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) ed.input = 'keys';
+        ed.key(e);
+      }),
+      on('pointerdown', () => (ed.input = 'mouse')),
       on('copy', (e) => ed.copy(e, false)),
       on('cut', (e) => ed.copy(e, true)),
       on('paste', (e) => ed.paste(e)),
@@ -293,14 +298,17 @@
       {#if ed.palette && ed.paletteAnchor}
         {@const at = ed.paletteAnchor}
         {@const up = (ed.page?.getBoundingClientRect().top ?? 0) + at.y + at.h + 300 > window.innerHeight - 30}
+        <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
         <div
           class="palette"
           style="left: {at.x}px; top: {up ? at.y - 6 : at.y + at.h + 6}px; {up ? 'transform: translateY(-100%);' : ''}"
           transition:fly={{ y: up ? 6 : -6, duration: 140, easing: cubicOut }}
+          onmousedown={(e) => (e.stopPropagation(), e.preventDefault())}
         >
-          <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {ed.palette.ctx === 'draw' ? '' : '\\'}{ed.palette.query}<span class="blink">▏</span></div>
+          <!-- (typing filters it; opened by a click, it says what it is until something is typed) -->
+          <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {#if ed.input === 'mouse' && !ed.palette.query}<span class="what">{ed.palette.ctx === 'draw' ? 'draw' : 'commands'}</span>{:else}{ed.palette.ctx === 'draw' ? '' : '\\'}{ed.palette.query}<span class="blink">▏</span>{/if}</div>
           {#each ed.paletteItems as item, i (item.name)}
-            <div class="opt" class:sel={i === ed.palette.sel}>
+            <div class="opt" class:sel={i === ed.palette.sel} onmouseenter={() => ed.palette && (ed.palette.sel = i)} onclick={() => ed.pickPalette(i)}>
               <span class="name">{#if item.draw && ed.palette.ctx !== 'draw'}<span class="pen">✎</span>{/if}{item.name}</span><span class="desc">{item.desc}</span>
             </div>
           {:else}
@@ -333,7 +341,7 @@
   {#if ed.showHelp}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="help-wrap" transition:fade={{ duration: 120 }} onmousedown={(e) => e.target === e.currentTarget && (ed.showHelp = false)}>
-      <Help />
+      <Help {ed} />
     </div>
   {/if}
 </div>
@@ -753,7 +761,11 @@
     gap: 24px;
     padding: 2px 10px;
     color: var(--muted);
+    cursor: pointer;
     transition: background-color 80ms ease;
+  }
+  .prompt .what {
+    color: var(--muted);
   }
   .opt .name {
     color: var(--fg);

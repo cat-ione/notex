@@ -1,4 +1,8 @@
 <script lang="ts">
+  import type { Editor } from '$lib/editor.svelte';
+
+  let { ed }: { ed: Editor } = $props();
+
   const sections: [string, [string, string][]][] = [
     ['writing', [
       ['$', 'inline math ($$ for display math)'], ['\\  or  ctrl+k', 'command palette'],
@@ -49,7 +53,10 @@
       </section>
     {/each}
   </div>
-  <div class="foot">F1 or esc to close</div>
+  <div class="foot">
+    <button class="welcome" onclick={() => ed.openWelcome()}>open the welcome note</button>
+    <span>{ed.input === 'mouse' ? 'click outside to close' : 'F1 or esc to close'}</span>
+  </div>
 </div>
 
 <style>
@@ -75,5 +82,15 @@
   .row { display: flex; gap: 12px; padding: 1px 0; }
   kbd { min-width: 150px; color: var(--accent); font-family: inherit; font-variant-ligatures: none; }
   span { color: var(--fg); }
-  .foot { margin-top: 14px; color: var(--muted); }
+  .foot { margin-top: 14px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .welcome {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+  }
+  .welcome:hover { border-color: var(--accent); color: var(--accent); }
 </style>
