@@ -40,6 +40,8 @@ export type Config = {
   };
   /** PDFs and printing: the theme the page is printed in, and the paper size. */
   pdf: { theme: string; paper: Paper };
+  /** The bars around the page: the toolbar (and whether it fades while you type) and the status bar. */
+  ui: { toolbar: boolean; fadeToolbar: boolean; statusBar: boolean };
 };
 
 export type Paper = 'A4' | 'Letter';
@@ -72,6 +74,7 @@ export const DEFAULT_CONFIG: Config = {
   tips: true,
   typing: { latexScripts: true, autoMath: true, pairBrackets: true, pairMarkdown: true, substitutions: { ...SUB_DEFAULTS } },
   pdf: { theme: 'paper', paper: 'A4' },
+  ui: { toolbar: true, fadeToolbar: true, statusBar: true },
 };
 
 const LOCAL_KEY = 'notex.config';
@@ -94,6 +97,7 @@ export function withDefaults(user: Partial<Config> | null | undefined): Config {
       substitutions: { ...SUB_DEFAULTS, ...(u.typing?.substitutions ?? {}) },
     },
     pdf: { ...DEFAULT_CONFIG.pdf, ...(u.pdf ?? {}) },
+    ui: { ...DEFAULT_CONFIG.ui, ...(u.ui ?? {}) },
   };
 }
 

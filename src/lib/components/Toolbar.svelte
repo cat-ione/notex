@@ -1,0 +1,127 @@
+<script lang="ts">
+  // The toolbar: the things otherwise behind keys, each showing its keys when hovered. It
+  // fades while you type and comes back when the mouse moves; it can be hidden (▴, the
+  // settings, or \toolbar).
+  import { onMount } from 'svelte';
+  import type { Editor } from '$lib/editor.svelte';
+  import { isDesktop } from '$lib/files';
+  import { shownName } from '$lib/library';
+
+  let { ed }: { ed: Editor } = $props();
+
+  /** Faded while typing (until the mouse moves). */
+  let quiet = $state(false);
+
+  type Button = { id: string; glyph: string; label?: string; tip: string; keys?: string; run: () => unknown; when?: () => boolean };
+  const left: Button[] = [
+    { id: 'new', glyph: '+', label: 'new', tip: 'new note', keys: 'ctrl+n', run: () => ed.newNote() },
+    { id: 'save', glyph: '↓', label: 'save', tip: isDesktop() ? 'save' : 'save to a file', keys: 'ctrl+s', run: () => ed.saveNote() },
+  ];
+  const insert: Button[] = [
+    { id: 'math', glyph: '$', label: 'math', tip: 'a formula ($$ for a centred one)', keys: '$', run: () => ed.mode === 'text' && ed.insertMath(false) },
+    { id: 'draw', glyph: '✎', label: 'draw', tip: 'draw: arrows, boxes, circles… (alt+drag draws an arrow)', keys: 'ctrl+d', run: () => ed.openDrawMenu() },
+    { id: 'image', glyph: '▣', label: 'image', tip: 'an image (or paste / drop one)', run: () => ed.chooseImages() },
+  ];
+  const right: Button[] = [
+    { id: 'find', glyph: '/', label: 'find', tip: 'find', keys: 'ctrl+f', run: () => ed.openFind() },
+    { id: 'pdf', glyph: '⎙', label: 'pdf', tip: 'save as PDF', keys: 'ctrl+p prints', run: () => ed.exportPdf() },
+    { id: 'settings', glyph: '⚙', tip: 'settings', keys: 'ctrl+,', run: () => (ed.showSettings = true) },
+    { id: 'help', glyph: '?', tip: 'keyboard shortcuts', keys: 'F1', run: () => (ed.showHelp = !ed.showHelp) },
+    { id: 'hide', glyph: '▴', tip: 'hide the toolbar (settings or \\toolbar bring it back)', run: () => ed.toggleBar('toolbar') },
+  ];
+
+  // (buttons act without taking the caret away from the page)
+  const press = (e: MouseEvent, b: Button) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.button === 0) b.run();
+  };
+
+  onMount(() => {
+    const typed = (e: KeyboardEvent) => {
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) quiet = true;
+    };
+    const moved = () => (quiet = false);
+    window.addEventListener('keydown', typed, true);
+    window.addEventListener('mousemove', moved, true);
+    return () => {
+      window.removeEventListener('keydown', typed, true);
+      window.removeEventListener('mousemove', moved, true);
+    };
+  });
+</script>
+
+{#snippet button(b: Button)}
+  <button class="b b-{b.id}" class:glyph={!b.label} onmousedown={(e) => press(e, b)} onclick={(e) => e.preventDefault()} data-tip={b.tip} data-tip-key={b.keys} aria-label={b.tip}>
+    <span class="g">{b.glyph}</span>{#if b.label}<span class="l">{b.label}</span>{/if}
+  </button>
+{/snippet}
+
+<header class="toolbar" class:quiet={quiet && ed.config.ui.fadeToolbar}>
+  <button class="b note" onmousedown={(e) => press(e, { id: 'notes', glyph: '≡', tip: '', run: () => ed.openNote() })} onclick={(e) => e.preventDefault()} data-tip={`${isDesktop() ? 'open a note' : 'your notes'} · ${ed.savedWhere === 'not saved' ? 'this one is not saved yet' : `saved ${ed.savedWhere}`}`} data-tip-key="ctrl+o" aria-label="notes">
+    <span class="g">≡</span><span class="name">{shownName({ name: ed.file.name, title: '' })}</span>{#if ed.dirty}<span class="dot">●</span>{/if}
+  </button>
+  {#each left as b (b.id)}{@render button(b)}{/each}
+  <span class="sep"></span>
+  {#each insert as b (b.id)}{@render button(b)}{/each}
+  <span class="spacer"></span>
+  {#each right as b (b.id)}{@render button(b)}{/each}
+</header>
+
+<style>
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 30px;
+    padding: 0 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-variant-ligatures: none;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    transition: opacity 400ms ease;
+  }
+  .toolbar.quiet {
+    opacity: 0;
+    transition-duration: 900ms;
+  }
+  .b {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .b:hover {
+    background: var(--sel-bg);
+    color: var(--fg);
+  }
+  .b:hover .g { color: var(--accent); }
+  .g { color: var(--muted); }
+  .b.glyph { padding: 0 7px; }
+  .note { color: var(--fg); max-width: 28ch; }
+  .note .name { overflow: hidden; text-overflow: ellipsis; }
+  .dot { font-size: 8px; color: var(--muted); }
+  .sep {
+    width: 1px;
+    height: 14px;
+    margin: 0 6px;
+    background: var(--border);
+  }
+  .spacer { flex: 1; }
+  /* narrow windows: the glyphs only */
+  @media (max-width: 720px) {
+    .l { display: none; }
+    .note { max-width: 16ch; }
+  }
+</style>

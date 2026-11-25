@@ -2689,8 +2689,7 @@ export class Editor {
       e.preventDefault();
       return;
     }
-    if (k === 'C-d' && (this.mode === 'text' || this.mode === 'math') && !this.note) {
-      this.openPalette('draw');
+    if (k === 'C-d' && this.openDrawMenu()) {
       e.preventDefault();
       return;
     }
@@ -3798,6 +3797,8 @@ export class Editor {
       { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c') },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
+      { name: 'toolbar', desc: `${this.config.ui.toolbar ? 'hide' : 'show'} the toolbar`, run: () => this.toggleBar('toolbar') },
+      { name: 'statusbar', desc: `${this.config.ui.statusBar ? 'hide' : 'show'} the status bar`, run: () => this.toggleBar('statusBar') },
       { name: 'substitutions', desc: 'edit substitutions', run: () => ((this.settingsView = 'subs'), (this.showSettings = true)) },
       { name: 'config', desc: 'edit the config file', run: () => this.editConfig() },
       { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
@@ -4582,6 +4583,18 @@ export class Editor {
   });
 
   /** Open find (with the selected text, if a word or so is selected), or focus it again. */
+  /** The draw menu (ctrl+d), from text or math. Whether it opened. */
+  openDrawMenu(): boolean {
+    if ((this.mode !== 'text' && this.mode !== 'math') || this.note) return false;
+    this.openPalette('draw');
+    return true;
+  }
+
+  /** Show or hide one of the bars around the page. */
+  toggleBar(bar: 'toolbar' | 'statusBar') {
+    this.updateConfig({ ui: { ...this.config.ui, [bar]: !this.config.ui[bar] } });
+  }
+
   openFind() {
     const s = this.selection;
     let q = this.find?.q ?? this.lastFind;

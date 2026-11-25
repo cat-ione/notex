@@ -53,6 +53,10 @@ Notes are `.ntx` files: compact JSON (see `src/lib/format.ts`).
 
 ## Customizing
 
+The toolbar along the top has notes, saving, math, drawing, images, find and PDF, each
+showing its keys when hovered; it fades while you type. It and the status bar can be hidden
+(settings, `\toolbar`, `\statusbar`), and everything stays on its keys.
+
 Ctrl+, opens settings and an editor for the config file. On desktop the file is `config.json`
 in the app's config directory; you can also open it in your own editor, and changes load when
 you switch back to notex.

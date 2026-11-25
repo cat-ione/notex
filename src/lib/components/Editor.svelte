@@ -12,6 +12,7 @@
   import FindBar from './FindBar.svelte';
   import Tooltip from './Tooltip.svelte';
   import StatusLine from './StatusLine.svelte';
+  import Toolbar from './Toolbar.svelte';
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
   import NotesPanel from './NotesPanel.svelte';
@@ -199,6 +200,9 @@
   <DrawingMenu {ed} />
   <FindBar {ed} />
   <Tooltip {ed} />
+  {#if ed.config.ui.toolbar}
+    <Toolbar {ed} />
+  {/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="scroller"
@@ -307,7 +311,12 @@
     </div>
   </div>
 
-  <StatusLine {ed} />
+  {#if ed.config.ui.statusBar}
+    <StatusLine {ed} />
+  {:else if ed.message}
+    <!-- (no status bar: what it would say, for a moment) -->
+    <div class="toast" transition:fade={{ duration: 150 }}>{ed.message}</div>
+  {/if}
 
   {#if ed.showNotes}
     <NotesPanel {ed} />
@@ -322,7 +331,8 @@
   {/if}
 
   {#if ed.showHelp}
-    <div class="help-wrap" transition:fade={{ duration: 120 }}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="help-wrap" transition:fade={{ duration: 120 }} onmousedown={(e) => e.target === e.currentTarget && (ed.showHelp = false)}>
       <Help />
     </div>
   {/if}
@@ -822,6 +832,22 @@
   }
   :global(html.nx-print) .block.hang {
     text-indent: 0;
+  }
+  .toast {
+    position: fixed;
+    right: 14px;
+    bottom: 12px;
+    z-index: 20;
+    max-width: min(60ch, 80vw);
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--panel);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
   }
   .veil {
     position: fixed;
