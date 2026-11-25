@@ -477,9 +477,16 @@ export class Editor {
     this.cullScreens = Infinity;
     this.printing = true;
     const settle = () => {
-      // making room for drawings changes heights, which moves drawings further down
-      for (let i = 0; i < 3; i++) flushSync(), this.relayoutAll();
-      flushSync();
+      // notes placed properly at once (not provisionally, as while typing), and room made
+      // for them, which changes heights and moves drawings further down
+      this.quickLabels = false;
+      try {
+        for (let i = 0; i < 3; i++) flushSync(), this.relayoutAll();
+        flushSync();
+      } finally {
+        this.quickLabels = true;
+        clearTimeout(this.settleTimer);
+      }
     };
     settle();
     // A block that would straddle a page break gets a spacer before it, up to the break.
@@ -1921,7 +1928,6 @@ export class Editor {
         : { id: sm, a: { x: first.x - 2, y: y(first) }, b: { x: last.x + last.w + 2, y: y(last) } };
     } else if (this.markEnds) this.markEnds = null;
     this.markGeos = mgeos;
-    this.makeRoom(mgeos, origin, active, near);
 
     // Arrows
     const geos: Record<Id, ArrowGeo> = {};
@@ -1945,6 +1951,8 @@ export class Editor {
       if (g) geos[a.id] = g;
     }
     this.arrowGeos = geos;
+    // (after the arrows: room is made for their notes too)
+    this.makeRoom(mgeos, origin, active, near);
 
     // Keep the caret in view (after an action; not while the page is being scrolled)
     if (this.version !== this.followed) {
@@ -2249,6 +2257,22 @@ export class Editor {
         const y = g.label.below ? g.label.y - 12 + origin.top : g.label.y + 3 - s.h + origin.top;
         items.push({ anchor: g.label.below ? last : first, side: g.label.below ? 'below' : 'above', r: { x, y, w: s.w, h: s.h } });
       }
+    }
+
+    // Arrows: their notes (standing just above the curve's middle, as LabelLayer draws
+    // them), or the top of the curve.
+    // They answer to the line of the higher end (above) or the lower end (below).
+    const itemOf = (id: Id) => (this.el(id)?.closest('.ch, .math') as HTMLElement | null)?.dataset.nx;
+    for (const a of this.doc.arrows) {
+      const g = this.arrowGeos[a.id];
+      const from = itemOf(a.from[0]), to = itemOf(a.to[0]);
+      if (!g || !from || !to || a.note) continue;
+      const fromHigher = g.from.y <= g.to.y;
+      const top = Math.min(g.from.y, g.to.y), bottom = Math.max(g.from.y + g.from.h, g.to.y + g.to.h);
+      const s = a.label ? this.noteSize(a) : { w: 4, h: 4 };
+      const r = { x: g.mid.x - s.w / 2 + origin.left, y: (a.label ? g.mid.y - 1 - s.h : g.mid.y - 2) + origin.top, w: s.w, h: s.h };
+      if (r.y < top + origin.top - 4) items.push({ anchor: fromHigher ? from : to, side: 'above', r });
+      else if (r.y + r.h > bottom + origin.top + 4) items.push({ anchor: fromHigher ? to : from, side: 'below', r });
     }
 
     // ink near each anchor: its own block and the blocks on either side
