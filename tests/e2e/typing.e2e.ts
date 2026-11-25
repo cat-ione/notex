@@ -106,3 +106,14 @@ test('alt+up moves a paragraph up', async ({ page }) => {
   await page.keyboard.press('Alt+ArrowUp');
   expect(await text(page)).toBe('second\nfirst');
 });
+
+test('a click and then backspace takes one character, and leaves nothing selected', async ({ page }) => {
+  await type(page, 'hello world');
+  const box = (await page.locator('.ch').nth(5).boundingBox())!;
+  await page.mouse.click(box.x + 1, box.y + box.height / 2);
+  await page.keyboard.press('Backspace');
+  expect(await text(page)).toBe('hell world');
+  expect(await ed(page, (e) => e.selection)).toBeNull();
+  await page.keyboard.press('Delete');
+  expect(await text(page)).toBe('hellworld');
+});

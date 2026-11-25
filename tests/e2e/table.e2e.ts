@@ -355,3 +355,188 @@ test('undo takes back an edit in a cell, table intact', async ({ page }) => {
   expect((await text(page)).split('\n')[0]).toBe('| ab | cd |');
   await expect(page.locator('.block.tr')).toHaveCount(3);
 });
+
+// ── editing around a table: natural, and the table stays whole ──
+
+/** Above, a table (| ab | cd |, | ef | gh |), below; the caret at the start of "Above". */
+async function tableBetween(page: Page) {
+  await type(page, 'Above it');
+  await page.keyboard.press('Enter');
+  await type(page, '| ab | cd |');
+  await page.keyboard.press('Enter');
+  await type(page, '| - | - |');
+  await page.keyboard.press('Enter');
+  await type(page, '| ef | gh |');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await type(page, 'Below it');
+  await page.keyboard.press('Control+Home');
+}
+const lines = async (page: Page) => (await text(page)).split('\n');
+const pasteText = (page: Page, t: string) =>
+  page.evaluate((t) => (window as any).__nx.ed.paste({ clipboardData: { getData: (k: string) => (k === 'text/plain' ? t : ''), types: ['text/plain'], files: [] }, preventDefault() {} }), t);
+
+test('a selection from the text above into the table: the text goes, the cells empty, nothing is joined', async ({ page }) => {
+  await tableBetween(page);
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight'); // "Above| it"
+  await page.keyboard.press('Shift+ArrowDown'); // into the header
+  await page.keyboard.press('Delete');
+  const l = await lines(page);
+  expect(l[0]).toBe('Above');
+  expect(l.slice(2)).toEqual(['| - | - |', '| ef | gh |', 'Below it']);
+  expect(l[1]).toMatch(/^\| .* \| .* \|$/);
+  await expect(page.locator('.block.tr')).toHaveCount(3);
+});
+
+test('a selection from a cell into the text below, typed over', async ({ page }) => {
+  await tableBetween(page);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown'); // the body row
+  await page.keyboard.press('Shift+Control+End');
+  await type(page, 'X');
+  const l = await lines(page);
+  expect(l.slice(0, 3)).toEqual(['Above it', '| ab | cd |', '| - | - |']);
+  expect(l[3]).toMatch(/^\| .*X.* \| .* \|$/);
+  await expect(page.locator('.block.tr')).toHaveCount(3);
+});
+
+test('a selection over the whole table and around it takes the table too', async ({ page }) => {
+  await tableBetween(page);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Shift+Control+End');
+  await page.keyboard.press('Shift+Home');
+  await page.keyboard.press('Delete');
+  expect(await lines(page)).toEqual(['Above itBelow it']);
+});
+
+test('backspace at the start of the line after a table: no joining; an empty line goes', async ({ page }) => {
+  await tableBetween(page);
+  // "Below it" is right after the table: backspace at its start joins nothing
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Backspace');
+  expect(await lines(page)).toEqual(['Above it', '| ab | cd |', '| - | - |', '| ef | gh |', 'Below it']);
+  // and the caret went to the last cell's end
+  expect(await ed(page, (e) => [e.b, e.o])).toEqual([3, 9]);
+  // an empty line after the table: backspace takes it
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  expect(await lines(page)).toEqual(['Above it', '| ab | cd |', '| - | - |', '| ef | gh |', '', 'Below it']);
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Backspace');
+  expect(await lines(page)).toEqual(['Above it', '| ab | cd |', '| - | - |', '| ef | gh |', 'Below it']);
+});
+
+test('delete at the end of the line before a table: no joining; an empty line goes', async ({ page }) => {
+  await tableBetween(page);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Delete');
+  expect((await lines(page)).slice(0, 2)).toEqual(['Above it', '| ab | cd |']);
+  await page.keyboard.press('Enter'); // an empty line before the table
+  expect((await lines(page)).slice(0, 3)).toEqual(['Above it', '', '| ab | cd |']);
+  await page.keyboard.press('Delete');
+  expect((await lines(page)).slice(0, 2)).toEqual(['Above it', '| ab | cd |']);
+});
+
+test('alt+arrows: rows move within the body, the header moves the table, lines go past it', async ({ page }) => {
+  await tableBetween(page);
+  // a second body row, then move it up: above the first, not above the separator
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await type(page, 'ij');
+  await page.keyboard.press('Alt+ArrowUp');
+  expect((await lines(page)).slice(1, 5)).toEqual(['| ab | cd |', '| - | - |', '| ij |  |', '| ef | gh |']);
+  await page.keyboard.press('Alt+ArrowUp');
+  expect((await lines(page)).slice(1, 5)).toEqual(['| ab | cd |', '| - | - |', '| ij |  |', '| ef | gh |']);
+  // the line above, moved down: past the whole table
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Alt+ArrowDown');
+  expect(await lines(page)).toEqual(['| ab | cd |', '| - | - |', '| ij |  |', '| ef | gh |', 'Above it', 'Below it']);
+  // the header, moved down: the whole table goes past the next line
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Alt+ArrowDown');
+  expect(await lines(page)).toEqual(['Above it', '| ab | cd |', '| - | - |', '| ij |  |', '| ef | gh |', 'Below it']);
+  await expect(page.locator('.block.tr')).toHaveCount(4);
+});
+
+test('pasting lines into a cell makes one line of them; a pasted table adds rows', async ({ page }) => {
+  await tableBetween(page);
+  await page.keyboard.press('ArrowDown');
+  await pasteText(page, 'one\ntwo | three');
+  expect((await lines(page))[1]).toBe('| one two ∣ threeab | cd |');
+  await page.keyboard.press('Control+z');
+  expect((await lines(page))[1]).toBe('| ab | cd |');
+  await pasteText(page, '| x | y |\n| - | - |\n| 1 | 2 |');
+  await page.keyboard.press('Control+End');
+  expect((await lines(page)).slice(1, 6)).toEqual(['| ab | cd |', '| - | - |', '| x | y |', '| 1 | 2 |', '| ef | gh |']);
+});
+
+test('a table pasted onto a line of text goes between its halves', async ({ page }) => {
+  await type(page, 'before after');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowLeft');
+  await pasteText(page, '| a | b |\n| - | - |\n| 1 | 2 |');
+  await page.keyboard.press('Control+Home');
+  expect(await lines(page)).toEqual(['before ', '| a | b |', '| - | - |', '| 1 | 2 |', 'after']);
+  await expect(page.locator('.block.tr')).toHaveCount(3);
+});
+
+test('| in the middle of a cell is a | to read, not a new column', async ({ page }) => {
+  await tableBetween(page);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowRight');
+  await type(page, '|');
+  expect((await lines(page))[1]).toBe('| a∣b | cd |');
+  await expect(page.locator('.block.tr').first().locator(':scope > .td')).toHaveCount(3);
+});
+
+test('the separator keeps its dashes', async ({ page }) => {
+  await tableBetween(page);
+  // a click on the line under the header, then letters and deleting
+  const sep = (await page.locator('.block.tr.tsep').boundingBox())!;
+  await page.mouse.click(sep.x + 30, sep.y + sep.height / 2);
+  await type(page, 'abc');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Delete');
+  await page.keyboard.press('Shift+End');
+  await page.keyboard.press('Delete');
+  await page.keyboard.press('Control+Home');
+  expect((await lines(page))[2]).toMatch(/^\| :?-+:? \| :?-+:? \|$/);
+  await expect(page.locator('.block.tr')).toHaveCount(3);
+  // its alignment can still change
+  await page.mouse.click(sep.x + 30, sep.y + sep.height / 2);
+  await page.keyboard.press('Home');
+  await type(page, ':');
+  await page.keyboard.press('Control+Home');
+  expect((await lines(page))[2]).toMatch(/^\| :-+ \|/);
+});
+
+test('two tables, one right under the other, stay two', async ({ page }) => {
+  await tableBetween(page);
+  // an empty line right after the table, and a table pasted onto it
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowUp');
+  await pasteText(page, '| x | y | z |\n| - | - | - |\n| 1 | 2 | 3 |');
+  await expect(page.locator('.block.tr.thead')).toHaveCount(2);
+  await expect(page.locator('.block.tr.tsep')).toHaveCount(2);
+});
+
+test('a short row gets its missing cells once the caret leaves it', async ({ page }) => {
+  await type(page, '| a | b | c |');
+  await page.keyboard.press('Enter');
+  await type(page, '| - | - | - |');
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => {
+    const e = (window as any).__nx.ed;
+    e.doc.blocks[e.b].items = [...'| 1 |'].map((ch, i) => ({ t: 'c', ch, id: 's' + i }));
+    e.o = 2;
+    e.touch();
+  });
+  await page.keyboard.press('ArrowUp');
+  expect((await lines(page))[2]).toBe('| 1 |  |  |');
+});
