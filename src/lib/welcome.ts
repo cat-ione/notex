@@ -113,6 +113,12 @@ export function welcomeDoc(): Doc {
       P('- starts a bullet list, # a heading, ``` a code block, coloured by its language:', 'ol'),
       { ...P('def mean(xs):', 'code'), lang: 'py' },
       P('    return sum(xs) / len(xs)', 'code'),
+      P('Tables as in markdown (or \\table): Tab goes to the next cell, Enter adds a row.'),
+      P('| test | the series converges when |'),
+      P('| --- | --- |'),
+      T(['| ratio | ', M('\\lim_{n\\to\\infty} \\left|\\frac{a_{n+1}}{a_n}\\right| < 1'), ' |']),
+      T(['| root | ', M('\\limsup_{n\\to\\infty} \\sqrt[n]{\\left|a_n\\right|} < 1'), ' |']),
+      T(['| integral | ', M('\\int_1^\\infty f(x)\\,dx < \\infty'), ' |']),
 
       P('Find your way around', 'h2'),
       P('\\ or Ctrl+K opens the command palette: every command, searchable.', 'li'),

@@ -23,6 +23,7 @@ import { welcomeDoc } from './welcome';
 import { imageSrc, pickImageFiles } from './images';
 import * as F from './files';
 import * as L from './library';
+import { findTables } from './tables';
 import * as C from './config';
 import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
 import * as M from './math/edit';
@@ -2838,6 +2839,7 @@ export class Editor {
         this.deleteSelection();
         const b = this.blk;
         if (b.kind === 'code' || b.kind === 'fence') return this.codeEnter(), true;
+        if (this.tableEnter()) return true;
         const list = isListKind(b.kind);
         // Enter on an empty item: out a level, then out of the list
         if (list && b.items.length === 0) {
@@ -2917,6 +2919,7 @@ export class Editor {
         return true;
       // nest / un-nest a list item (anywhere in it); in code, indent
       case 'Tab': case 'S-Tab':
+        if (this.tableTab(k === 'Tab' ? 1 : -1)) return true;
         if (blk.kind === 'code') this.codeIndent(k === 'Tab' ? 1 : -1);
         else if (isListKind(blk.kind)) {
           const d = Math.max(0, Math.min(MAX_INDENT, (blk.indent ?? 0) + (k === 'Tab' ? 1 : -1)));
@@ -3803,6 +3806,7 @@ export class Editor {
       { name: 'bold', desc: 'bold  ctrl+b', run: () => this.toggleStyle('b') },
       { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i') },
       { name: 'code', desc: 'code block  ```', run: setKind('code') },
+      { name: 'table', desc: 'insert a table (tab: next cell, enter: new row)', run: () => this.insertTable() },
       { name: 'image', desc: 'insert an image (or paste / drop one)', run: () => void this.chooseImages() },
       { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c') },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
@@ -4603,6 +4607,105 @@ export class Editor {
       this.paletteAt = { x: under.left - pr.left, y: under.bottom - pr.top - 4, w: under.width, h: 0 };
     }
     return true;
+  }
+
+  // ── tables (markdown's | rows, see tables.ts) ──
+
+  /** The table row a block is, if it is one. */
+  private tableRow(b = this.b) {
+    return findTables(this.doc.blocks).get(b) ?? null;
+  }
+
+  /** A row's cells' contents: from after each | to the next (a closing | has none), spaces trimmed. */
+  private cells(b: number): { p: number; s: number; e: number }[] {
+    const items = this.doc.blocks[b].items;
+    const pipes: number[] = [];
+    items.forEach((it, o) => it.t === 'c' && it.ch === '|' && pipes.push(o));
+    const sp = (o: number) => items[o]?.t === 'c' && (items[o] as Char).ch === ' ';
+    const out: { p: number; s: number; e: number }[] = [];
+    pipes.forEach((p, k) => {
+      const end = pipes[k + 1] ?? items.length;
+      if (k === pipes.length - 1 && end === p + 1) return; // the closing |
+      let s = p + 1, e = end;
+      while (s < e && sp(s)) s++;
+      while (e > s && sp(e - 1)) e--;
+      // (an empty cell: just inside its |, after a space if there is one)
+      if (s === e) s = e = Math.min(p + 2, end);
+      out.push({ p, s, e });
+    });
+    return out;
+  }
+
+  /** Select a cell's contents (typing replaces them), or put the caret in an empty one. */
+  private toCell(b: number, c: { s: number; e: number }) {
+    this.b = b;
+    this.o = c.e;
+    this.anchor = c.s < c.e ? { b, o: c.s } : null;
+  }
+
+  /** Tab / shift+tab in a table: the next / previous cell; past the last row, a new row. */
+  private tableTab(dir: 1 | -1): boolean {
+    const row = this.tableRow();
+    if (!row) return false;
+    const cells = this.cells(this.b);
+    const pos = this.selection ? this.selection.s.o : this.o;
+    // (the cell is the one whose | comes last before the caret)
+    const at = Math.max(0, cells.filter((c) => c.p < pos).length - 1);
+    const next = at + dir;
+    if (cells[next]) return this.toCell(this.b, cells[next]), true;
+    // the next / previous row (not the separator)
+    let b = this.b + dir;
+    if (this.tableRow(b)?.role === 'sep') b += dir;
+    const other = this.tableRow(b);
+    if (other?.table === row.table) {
+      const cs = this.cells(b);
+      return this.toCell(b, dir > 0 ? cs[0] : cs[cs.length - 1]), true;
+    }
+    if (dir < 0) return true;
+    this.addRow(this.b, Math.max(1, cells.length));
+    return true;
+  }
+
+  /** A new empty row of `n` cells after block `b`, the caret in its first cell. */
+  private addRow(b: number, n: number) {
+    this.checkpoint();
+    this.doc.blocks.splice(b + 1, 0, block(chars('|' + '  |'.repeat(n))));
+    this.derive(b + 1, b + 1);
+    this.b = b + 1;
+    this.o = 2;
+    this.anchor = null;
+  }
+
+  /** Enter in a table: a new row under this one; on an empty last row, out of the table. */
+  private tableEnter(): boolean {
+    const row = this.tableRow();
+    if (!row) return false;
+    const blk = this.blk;
+    const cells = this.cells(this.b);
+    if (row.role === 'body' && row.last && cells.every((c) => c.s === c.e)) {
+      blk.items.splice(0);
+      this.o = 0;
+      return true;
+    }
+    // (under the header: under its separator)
+    const after = row.role === 'head' && this.tableRow(this.b + 1)?.role === 'sep' ? this.b + 1 : this.b;
+    this.doc.blocks.splice(after + 1, 0, block(chars('|' + '  |'.repeat(Math.max(1, cells.length)))));
+    this.b = after + 1;
+    this.o = 2;
+    return true;
+  }
+
+  /** A table to start from (\table, the toolbar): two columns, the first header selected. */
+  insertTable() {
+    if (this.mode !== 'text' || this.note) return;
+    this.checkpoint();
+    this.anchor = null;
+    const rows = ['| column | column |', '| --- | --- |', '|  |  |'].map((t) => block(chars(t)));
+    const here = this.blk;
+    const at = here.kind === 'p' && !here.items.length ? this.b : this.b + 1;
+    this.doc.blocks.splice(at, at === this.b ? 1 : 0, ...rows);
+    this.derive(at, at + 2);
+    this.toCell(at, this.cells(at)[0]);
   }
 
   /** The welcome note, as it comes (a new copy: one made your own is kept as it is). */

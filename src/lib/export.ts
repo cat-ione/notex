@@ -6,6 +6,7 @@
 // \tikzmarknode{...}{...} and is drawn in a tikz overlay after the paragraph.
 
 import type { Arrow, Doc, Id, Item, Mark, MRow } from './model';
+import { findTables } from './tables';
 import { toLatex, toLatexWrapped, type Wraps } from './math/latex';
 import { CMDS } from './math/defs';
 import { noteRuns, noteTex } from './labels';
@@ -205,9 +206,11 @@ export function docToLatex(doc: Doc): string {
   // bold / italic runs as \textbf / \emph (closed around a drawing's wrapper, so they nest)
   const OPEN: Record<string, string> = { b: '\\textbf{', i: '\\emph{', bi: '\\textbf{\\emph{', c: '\\texttt{' };
   const CLOSE: Record<string, string> = { b: '}', i: '}', bi: '}}', c: '}' };
-  const inline = (items: Item[], b: number) => {
+  // (`base`: where `items` start in their block, for a cell of a table row)
+  const inline = (items: Item[], b: number, base = 0) => {
     let out = '', cur = '';
-    items.forEach((it, o) => {
+    items.forEach((it, i) => {
+      const o = base + i;
       const pre = opens(before.get(`${b}:${o}`)), post = closes(after.get(`${b}:${o}`));
       const st = it.t === 'c' ? (it.c ? 'c' : (it.b ? 'b' : '') + (it.i ? 'i' : '')) : '';
       if (st !== cur || pre) (out += CLOSE[cur] ?? ''), (cur = '');
@@ -225,7 +228,28 @@ export function docToLatex(doc: Doc): string {
   const lists: ('itemize' | 'enumerate')[] = [];
   const pad = (n: number) => '  '.repeat(n);
   let images = 0;
+  const tables = findTables(doc.blocks);
   doc.blocks.forEach((blk, b) => {
+    // a table row: a tabular's row, its cells between the pipes
+    const row = tables.get(b);
+    if (row) {
+      if (row.role === 'sep') return;
+      const pipes: number[] = [];
+      blk.items.forEach((it, o) => it.t === 'c' && it.ch === '|' && pipes.push(o));
+      const cells: string[] = [];
+      for (let k = 0; k < pipes.length; k++) {
+        const s = pipes[k] + 1, e = pipes[k + 1] ?? blk.items.length;
+        if (k === pipes.length - 1 && s === e) break;
+        cells.push(inline(blk.items.slice(s, e), b, s).trim());
+      }
+      if (row.role === 'head') {
+        const n = Math.max(cells.length, row.aligns.length);
+        const cols = Array.from({ length: n }, (_, c) => ({ left: 'l', center: 'c', right: 'r' })[row.aligns[c] ?? 'left'] ?? 'l').join(' ');
+        out.push(`\\begin{tabular}{${cols}}`, `  ${cells.join(' & ')} \\\\ \\hline`);
+      } else out.push(`  ${cells.join(' & ')} \\\\`);
+      if (row.last) out.push('\\end{tabular}\n');
+      return;
+    }
     // an image: a figure for a file of its own (the image itself lives in the note)
     if (blk.kind === 'img') {
       need.add('graphicx');

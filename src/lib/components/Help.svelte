@@ -9,6 +9,7 @@
       ['# ␣   ## ␣   - ␣', 'heading, subheading, bullet list'], ['1. ␣   tab  shift+tab', 'numbered list, indent / outdent'],
       ['ctrl+b  ctrl+i', 'bold, italic (or **bold**, *italic*)'], ['x^2  a_n', 'converted to math automatically'],
       ['`code`  ctrl+e', 'inline code'], ['```py  enter', 'code block (closed for you; markdown shows where the caret is)'],
+      ['\\table   | a | b |', 'table: tab next cell, enter new row'],
       ['paste / drop / \\image', 'insert an image (type under it for a caption)'], ['alt+← →', 'image: resize (or drag its corner)'],
       ['ctrl+f  F3', 'find, find next'], ['alt+↑ ↓', 'move paragraph up / down'], ['ctrl+s  o  n', 'save, open, new'], ['\\pdf  ctrl+p', 'save as PDF, print'], ['ctrl+,', 'settings'], ['\\toolbar  \\statusbar', 'show / hide the bars'], ['F1', 'keyboard shortcuts'],
     ]],

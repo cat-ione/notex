@@ -103,3 +103,29 @@ describe('images', () => {
     expect(tex).toContain('usepackage{graphicx}');
   });
 });
+
+describe('tables', () => {
+  const P = (s: string) => block(chars(s));
+  it('a table becomes a tabular: columns aligned as the separator says, a rule under the header', () => {
+    const doc: Doc = { blocks: [P('| x | f(x) | note |'), P('| :-- | :-: | --: |'), P('| 1 | 2 | small |'), P('| 3 | 4 | & big |'), P('after')], arrows: [], marks: [] };
+    const tex = docToLatex(doc);
+    expect(tex).toContain(String.raw`\begin{tabular}{l c r}`);
+    expect(tex).toContain(String.raw`  x & f(x) & note \\ \hline`);
+    expect(tex).toContain(String.raw`  1 & 2 & small \\`);
+    // a cell's text is escaped like any text
+    expect(tex).toContain(String.raw`  3 & 4 & \& big \\`);
+    expect(tex).toContain(String.raw`\end{tabular}`);
+    expect(tex.indexOf(String.raw`\end{tabular}`)).toBeLessThan(tex.indexOf('after'));
+    expect(tex).not.toContain('---');
+  });
+
+  it('formulas in cells stay formulas', () => {
+    const doc: Doc = { blocks: [P('| n | a_n |'), P('| - | - |'), block([...chars('| 1 | '), math([sym('x')]), ...chars(' |')])], arrows: [], marks: [] };
+    expect(docToLatex(doc)).toContain(String.raw`  1 & $x$ \\`);
+  });
+
+  it('lines starting with | but no separator are not a table', () => {
+    const tex = docToLatex({ blocks: [P('|x| is small')], arrows: [], marks: [] });
+    expect(tex).not.toContain('tabular');
+  });
+});

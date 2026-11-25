@@ -20,6 +20,7 @@
   const insert: Button[] = [
     { id: 'math', glyph: '$', label: 'math', tip: 'a formula ($$ for a centred one)', keys: '$', run: () => ed.mode === 'text' && ed.insertMath(false) },
     { id: 'draw', glyph: '✎', label: 'draw', tip: 'draw: arrows, boxes, circles… (alt+drag draws an arrow)', keys: 'ctrl+d', run: (at) => ed.openDrawMenu(at) },
+    { id: 'table', glyph: '▦', label: 'table', tip: 'a table (tab: next cell, enter: new row)', run: () => ed.insertTable() },
     { id: 'image', glyph: '▣', label: 'image', tip: 'an image (or paste / drop one)', run: () => ed.chooseImages() },
   ];
   const right: Button[] = [

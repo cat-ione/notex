@@ -18,6 +18,8 @@ and draw arrows and boxes *between parts of equations*.
 - **Markdown, like Obsidian.** `# ` headings, `- ` and `1. ` lists, `**bold**`, `*italic*`,
   `` `code` `` and code blocks, coloured by their language (Python, C++, Julia,
   R, MATLAB and more). The markers hide once the caret moves on.
+- **Tables**, as in markdown (`| a | b |` with a `| --- |` line under the header), or `\table`.
+  Tab moves between cells, Enter adds a row; formulas and drawings work inside them.
 - **Images.** Paste or drop them in; they're kept inside the note.
 - **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
   type, and your own CSS (Ctrl+,).

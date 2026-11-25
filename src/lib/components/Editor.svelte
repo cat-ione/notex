@@ -20,6 +20,7 @@
   import { base } from '$app/paths';
   import type { Block, Item } from '$lib/model';
   import { highlight, type Tk } from '$lib/highlight';
+  import { cellRanges, findTables } from '$lib/tables';
 
   const ed = new Editor();
   let page: HTMLElement;
@@ -150,6 +151,9 @@
   /** A fence of a code block the caret isn't in: its line shows nothing (but the language). */
   const veiled = (b: number) => ed.doc.blocks[b].kind === 'fence' && !(reveal?.code && b >= reveal.code.first && b <= reveal.code.last);
 
+  // Tables (markdown's | rows): their rows, by block index.
+  const tableRows = $derived(findTables(ed.doc.blocks));
+
   // Code blocks' colours: each line's characters' kinds of token, by line. A block is read
   // whole (a string or comment can run over lines), in the language its opening fence names.
   const codeTokens = $derived.by(() => {
@@ -219,6 +223,19 @@
      (Kept on one line: whitespace here would show up in the pre-wrap text.) -->
 {#snippet spacer(id: string)}<span class="nx-sp nx-probe" data-pt={id} style="vertical-align: top">&#8288;</span><span class="nx-sp nx-probe" data-pb={id} style="vertical-align: bottom">&#8288;</span>{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
 
+<!-- One item of a block: a character, or a formula (with what makes room for drawings). -->
+{#snippet item(blk: Block, b: number, it: Item, o: number)}{#if it.t === 'c'}<span
+      class="ch"
+      class:b={it.b && !it.m}
+      class:i={it.i && !it.m}
+      class:c={it.c}
+      class:mk={it.m}
+      class:cs={codeText(it) && !codeText(blk.items[o - 1])}
+      class:ce={codeText(it) && !codeText(blk.items[o + 1])}
+      class:pipe={it.ch === '|' && tableRows.has(b)}
+      data-tk={blk.kind === 'code' ? codeTokens.get(blk.id)?.[o] : undefined}
+      data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}{:else}<MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}{/if}{/snippet}
+
 <!-- What comes before a block's text: an image. -->
 {#snippet blockHead(blk: Block, b: number)}{#if blk.kind === 'img'}<div class="figure">
       <!-- (an image's id is on the picture: drawings on it are on the picture, not its caption) -->
@@ -256,8 +273,13 @@
         <div class="findhit" class:cur={f.cur} style="transform: translate({f.r.x - 1}px, {f.r.y}px); width: {f.r.w + 2}px; height: {f.r.h}px;"></div>
       {/each}
       {#each ed.doc.blocks as blk, b (blk.id)}
+        {@const row = tableRows.get(b)}
         <div
           class="block {blk.kind}"
+          class:tr={!!row}
+          class:thead={row?.role === 'head'}
+          class:tsep={row?.role === 'sep'}
+          class:tlast={row?.last}
           class:current={ed.b === b}
           class:cfirst={codeTop(b)}
           class:clast={codeBottom(b)}
@@ -272,21 +294,7 @@
           style:--hang={reveal?.b === b && reveal.hang ? reveal.hang : undefined}
         >
           <!-- (no whitespace between these: in the pre-wrap text it would show) -->
-          {@render blockHead(blk, b)}{#each blk.items as it, o (it.id)}{#if it.t === 'c'}
-              <span
-                class="ch"
-                class:b={it.b && !it.m}
-                class:i={it.i && !it.m}
-                class:c={it.c}
-                class:mk={it.m}
-                class:cs={codeText(it) && !codeText(blk.items[o - 1])}
-                class:ce={codeText(it) && !codeText(blk.items[o + 1])}
-                data-tk={blk.kind === 'code' ? codeTokens.get(blk.id)?.[o] : undefined}
-                data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}
-            {:else}
-              <MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}
-            {/if}
-          {/each}<span class="eol" data-eol={blk.id}>&#8203;</span>
+          {#if row}{@const cells = cellRanges(blk.items)}{#each cells as [s, e], c (c)}<span class="td" style:text-align={row.aligns[c] ?? undefined}>{#each blk.items.slice(s, e) as it, k (it.id)}{@render item(blk, b, it, s + k)}{/each}{#if c === cells.length - 1}<span class="eol" data-eol={blk.id}>&#8203;</span>{/if}</span>{/each}{:else}{@render blockHead(blk, b)}{#each blk.items as it, o (it.id)}{@render item(blk, b, it, o)}{/each}<span class="eol" data-eol={blk.id}>&#8203;</span>{/if}
         </div>
       {/each}
 
@@ -871,6 +879,38 @@
   }
   :global(html.nx-print) .block.hang {
     text-indent: 0;
+  }
+  /* a table: its rows line up as a grid (consecutive table rows make one table), a cell
+     from its | to the next, the pipes faint like the edges of the columns */
+  .block.tr {
+    display: table-row;
+    content-visibility: visible;
+  }
+  .block.tr > .td {
+    display: table-cell;
+    padding-right: 0.8em;
+  }
+  .block.tr > .td:last-child {
+    padding-right: 0;
+  }
+  .ch.pipe {
+    color: var(--border);
+    margin-right: 0.4em;
+  }
+  .block.tr.thead {
+    font-weight: 600;
+    color: var(--heading);
+  }
+  .block.tr.thead > .td {
+    border-bottom: 1px solid var(--border);
+  }
+  /* the separator: just the line under the header, but as text when the caret is on it */
+  .block.tr.tsep:not(.current) {
+    font-size: 0;
+    line-height: 0;
+  }
+  .block.tr.tsep:not(.current) .ch {
+    visibility: hidden;
   }
   /* code blocks' colours, by kind of token (a theme can set --code-kw and the rest) */
   .ch[data-tk='kw'] { color: var(--code-kw, var(--ink-purple)); }
