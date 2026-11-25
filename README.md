@@ -24,7 +24,8 @@ The installers aren't code-signed yet, so Windows shows a SmartScreen warning ("
 - **Images.** Paste or drop them in; they're kept inside the note.
 - **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
   type, and your own CSS (Ctrl+,).
-- **Export to LaTeX.** `\export` copies the note as LaTeX, drawings included (tikz).
+- **PDF and LaTeX.** `\pdf` saves the note as a PDF, drawings and all (Ctrl+P prints it);
+  `\export` copies it as LaTeX, drawings included (tikz).
 
 Press **F1** in the app for every shortcut.
 
@@ -43,6 +44,7 @@ Press **F1** in the app for every shortcut.
 | Tab / Shift+Tab | indent / outdent a list item |
 | Ctrl+F | find |
 | Ctrl+S / Ctrl+O / Ctrl+N | save / open / new |
+| `\pdf` / Ctrl+P | save as PDF / print |
 
 ## Files
 

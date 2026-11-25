@@ -48,6 +48,23 @@ export async function writeNote(path: string, doc: Doc) {
   await invoke('write_note', { path, contents: serialize(doc) });
 }
 
+/** The Windows app writes PDFs itself; elsewhere a PDF comes from the print dialog. */
+export const canSavePdf = () => isDesktop() && navigator.userAgent.includes('Windows');
+
+/** Ask where to save a PDF, next to the note (a path) or named after it. Null if cancelled. */
+export async function choosePdfPath(note: string): Promise<string | null> {
+  const defaultPath = note.replace(new RegExp(`\\.${EXT}$`, 'i'), '') + '.pdf';
+  const path = await (await dialog()).save({ defaultPath, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  if (!path) return null;
+  return path.toLowerCase().endsWith('.pdf') ? path : `${path}.pdf`;
+}
+
+/** Write the page as it would print to a PDF file (sizes in inches). */
+export async function savePdf(path: string, paper: { w: number; h: number }, margin: number) {
+  const { invoke } = await core();
+  await invoke('save_pdf', { path, width: paper.w, height: paper.h, margin });
+}
+
 /** Browser fallback: download the note. */
 export function downloadNote(name: string, doc: Doc) {
   const url = URL.createObjectURL(new Blob([serialize(doc)], { type: 'application/json' }));

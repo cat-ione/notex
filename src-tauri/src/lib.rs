@@ -50,6 +50,56 @@ fn open_config(app: tauri::AppHandle) -> Result<String, String> {
     Ok(shown)
 }
 
+/// Write the page, as it prints, to a PDF file (sizes in inches). Windows only: elsewhere
+/// the page is printed through the system's dialog, which can save a PDF too.
+#[cfg(windows)]
+#[tauri::command]
+async fn save_pdf(window: tauri::WebviewWindow, path: String, width: f64, height: f64, margin: f64) -> Result<(), String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Environment6, ICoreWebView2_7};
+    use webview2_com::PrintToPdfCompletedHandler;
+    use windows::core::{Interface, HSTRING};
+
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let failed = tx.clone();
+    window
+        .with_webview(move |wv| {
+            let start = || -> windows::core::Result<()> {
+                unsafe {
+                    let view: ICoreWebView2_7 = wv.controller().CoreWebView2()?.cast()?;
+                    let env: ICoreWebView2Environment6 = wv.environment().cast()?;
+                    let s = env.CreatePrintSettings()?;
+                    s.SetPageWidth(width)?;
+                    s.SetPageHeight(height)?;
+                    s.SetMarginTop(margin)?;
+                    s.SetMarginBottom(margin)?;
+                    s.SetMarginLeft(margin)?;
+                    s.SetMarginRight(margin)?;
+                    s.SetShouldPrintBackgrounds(true)?;
+                    s.SetShouldPrintHeaderAndFooter(false)?;
+                    let done = PrintToPdfCompletedHandler::create(Box::new(move |hr, ok| {
+                        let ok = hr.is_ok() && bool::from(ok);
+                        let _ = tx.send(if ok { Ok(()) } else { Err("the PDF could not be written".into()) });
+                        Ok(())
+                    }));
+                    view.PrintToPdf(&HSTRING::from(path.as_str()), &s, &done)
+                }
+            };
+            if let Err(e) = start() {
+                let _ = failed.send(Err(e.to_string()));
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|e| e.to_string())?)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+async fn save_pdf() -> Result<(), String> {
+    Err("saving a PDF directly works on Windows only; print and choose PDF instead".into())
+}
+
 /// A bare Alt press and release (often the tail of another app's Alt+… shortcut) puts a
 /// Windows window into keyboard menu mode, even with no menu bar: keys then go to the
 /// invisible menu until Esc. The window turns that request down. (Alt+Space still opens
@@ -94,7 +144,8 @@ pub fn run() {
             write_note,
             load_config,
             save_config,
-            open_config
+            open_config,
+            save_pdf
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

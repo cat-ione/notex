@@ -6,7 +6,7 @@
       ['ctrl+b  ctrl+i', 'bold, italic (or **bold**, *italic*)'], ['x^2  a_n', 'converted to math automatically'],
       ['`code`  ctrl+e', 'inline code'], ['```py  enter', 'code block (closed for you; markdown shows where the caret is)'],
       ['paste / drop / \\image', 'insert an image (type under it for a caption)'], ['alt+← →', 'image: resize (or drag its corner)'],
-      ['ctrl+f  F3', 'find, find next'], ['alt+↑ ↓', 'move paragraph up / down'], ['ctrl+s  o  n', 'save, open, new'], ['ctrl+,', 'settings'], ['F1', 'keyboard shortcuts'],
+      ['ctrl+f  F3', 'find, find next'], ['alt+↑ ↓', 'move paragraph up / down'], ['ctrl+s  o  n', 'save, open, new'], ['\\pdf  ctrl+p', 'save as PDF, print'], ['ctrl+,', 'settings'], ['F1', 'keyboard shortcuts'],
     ]],
     ['math', [
       ['/', 'fraction'], ['^  _', 'superscript / subscript: x^2, x^10, e^-x'], ['^(…)  _(…)', 'longer scripts: e^(-x^2/2), \\int_0^(2\\pi)'],

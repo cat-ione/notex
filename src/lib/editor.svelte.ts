@@ -11,7 +11,7 @@
 //   palette — command palette (transient)
 //   label   — typing an arrow label (transient)
 
-import { tick } from 'svelte';
+import { flushSync, tick } from 'svelte';
 import { arrowGeo, attachAt, curveThrough, defaultBend, nextSide, sideName, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
@@ -447,6 +447,104 @@ export class Editor {
     if (!(await this.writeTo(path))) return false;
     this.file = { path, name: F.baseName(path) };
     return true;
+  }
+
+  /** Laid out for paper (see beginPrint); the screen shows a veil meanwhile. */
+  printing = $state(false);
+  private endPrinting: (() => void) | null = null;
+
+  /**
+   * Lay the note out as it will be printed: the paper's text width, the PDF theme and every
+   * drawing placed. A block that would straddle a page break starts the next page instead
+   * (the browser would move its lines there, but not the drawings measured here).
+   */
+  beginPrint() {
+    if (this.endPrinting || !this.page) return;
+    const page = this.page;
+    const c = this.config;
+    const paper = C.PAPERS[c.pdf.paper] ?? C.PAPERS.A4;
+    const height = (paper.h - 2 * C.PAPER_MARGIN) * 96;
+    const theme = C.allThemes(c).includes(c.pdf.theme) ? c.pdf.theme : c.theme;
+    const pageWidth = Math.floor((paper.w - 2 * C.PAPER_MARGIN) * 96);
+    C.applyConfig({ ...c, theme, pageWidth });
+    const root = document.documentElement;
+    root.classList.add('nx-print');
+    // the theme's background over the whole sheet, margins too
+    const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+    C.applyConfig({ ...c, theme, pageWidth }, `@page { size: ${paper.w}in ${paper.h}in; margin: ${C.PAPER_MARGIN}in; background: ${bg}; }`);
+    const cull = this.cullScreens;
+    this.cullScreens = Infinity;
+    this.printing = true;
+    const settle = () => {
+      // making room for drawings changes heights, which moves drawings further down
+      for (let i = 0; i < 3; i++) flushSync(), this.relayoutAll();
+      flushSync();
+    };
+    settle();
+    // A block that would straddle a page break gets a spacer before it, up to the break.
+    // (Not a margin: margins at a break are dropped in print.)
+    const els = [...page.children].filter((e): e is HTMLElement => e.classList.contains('block'));
+    let spacers: HTMLElement[] = [];
+    for (let round = 0; round < 2; round++) {
+      spacers.forEach((x) => x.remove());
+      spacers = [];
+      const top = page.getBoundingClientRect().top;
+      for (const e of els) {
+        // (a formula's limits can reach out of its block's box and its own, and glyphs a little beyond theirs)
+        const rs = [e, ...e.querySelectorAll('.math'), ...e.querySelectorAll('.math.display .katex-html span')]
+          .map((x) => x.getBoundingClientRect())
+          .filter((r) => r.height > 0);
+        const t = Math.max(0, Math.min(e.getBoundingClientRect().top - parseFloat(getComputedStyle(e).marginTop), ...rs.map((r) => r.top - 6)) - top);
+        const b = Math.max(...rs.map((r) => r.bottom)) - top;
+        if (b - t > height || Math.floor(t / height) === Math.floor((b - 1) / height)) continue;
+        const sp = document.createElement('div');
+        sp.className = 'nx-page-push';
+        sp.style.height = `${Math.ceil(t / height) * height - t}px`;
+        e.before(sp);
+        spacers.push(sp);
+      }
+      settle();
+    }
+    this.endPrinting = () => {
+      spacers.forEach((x) => x.remove());
+      root.classList.remove('nx-print');
+      this.cullScreens = cull;
+      C.applyConfig(this.config);
+      this.printing = false;
+      tick().then(() => this.relayoutAll());
+    };
+  }
+
+  endPrint() {
+    this.endPrinting?.();
+    this.endPrinting = null;
+  }
+
+  /** Print the note (the system's dialog, where it can also be saved as a PDF). */
+  async printNote() {
+    this.beginPrint();
+    try {
+      // (a promise in the macOS app, where printing goes through the app)
+      await (window.print() as unknown);
+    } finally {
+      this.endPrint();
+    }
+  }
+
+  /** Save the note as a PDF: straight to a file on Windows, through the print dialog elsewhere. */
+  async exportPdf() {
+    if (!F.canSavePdf()) return this.printNote();
+    const path = await F.choosePdfPath(this.file.path ?? this.file.name);
+    if (!path) return;
+    this.beginPrint();
+    try {
+      await F.savePdf(path, C.PAPERS[this.config.pdf.paper] ?? C.PAPERS.A4, C.PAPER_MARGIN);
+      this.flash(`saved ${path.split(/[\\/]/).pop()}`);
+    } catch (e) {
+      this.flash(`could not save the PDF: ${e}`);
+    } finally {
+      this.endPrint();
+    }
   }
 
   /** Untitled notes with changes would be lost; ask before replacing them. */
@@ -2414,6 +2512,7 @@ export class Editor {
       'C-S-s': () => this.saveNoteAs(),
       'C-o': () => this.openNote(),
       'C-n': () => this.newNote(),
+      'C-p': () => this.printNote(),
     };
     if (fileKeys[k] && !this.note) {
       e.preventDefault();
@@ -3550,6 +3649,8 @@ export class Editor {
       { name: 'substitutions', desc: 'edit substitutions', run: () => ((this.settingsView = 'subs'), (this.showSettings = true)) },
       { name: 'config', desc: 'edit the config file', run: () => this.editConfig() },
       { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
+      { name: 'pdf', desc: 'save as PDF', run: () => this.exportPdf() },
+      { name: 'print', desc: 'print  ctrl+p', run: () => this.printNote() },
       { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
       { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },
       { name: 'new', desc: 'new note  ctrl+n', run: () => this.newNote() },

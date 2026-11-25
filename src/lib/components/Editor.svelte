@@ -57,6 +57,9 @@
       }),
       // Pick up config edits made in an external editor.
       on('focus', () => isDesktop() && ed.loadConfig()),
+      // printing from the browser's menu: laid out for paper as with ctrl+p
+      on('beforeprint', () => ed.beginPrint()),
+      on('afterprint', () => ed.endPrint()),
     ];
     ed.loadConfig();
     // Height changes come from content, which lays out after rendering anyway;
@@ -303,6 +306,10 @@
 
   {#if ed.showSettings}
     <Settings {ed} />
+  {/if}
+
+  {#if ed.printing}
+    <div class="veil"><span>saving PDF…</span></div>
   {/if}
 
   {#if ed.showHelp}
@@ -752,5 +759,80 @@
     place-items: center;
     background: var(--scrim);
     z-index: 20;
+  }
+  /* laid out for paper (Editor.beginPrint): the page alone, nothing of the editing */
+  :global(html.nx-print) .page {
+    padding: 0;
+    display: flow-root;
+  }
+  :global(html.nx-print) .block {
+    content-visibility: visible;
+  }
+  /* margins at a page break are dropped in print, which would move the text from where it
+     was measured: padding and borders instead, which stay */
+  :global(html.nx-print) .block.h1 {
+    margin-top: 0;
+    padding-top: 0.4em;
+  }
+  :global(html.nx-print) .block.h2 {
+    margin-top: 0;
+    padding-top: 0.6em;
+  }
+  :global(html.nx-print) .block.cfirst {
+    margin-top: 0;
+    border-top: 0.3em solid transparent;
+    background-clip: padding-box;
+  }
+  :global(html.nx-print) .block.clast {
+    margin-bottom: 0;
+    border-bottom: 0.3em solid transparent;
+    background-clip: padding-box;
+  }
+  :global(html.nx-print) .block::before,
+  :global(html.nx-print) :is(.caret, .selrect, .findhit, .mathframe, .pick, .hint, .palette, .grip),
+  :global(html.nx-print) .ch.mk:global(.show),
+  :global(html.nx-print .handle),
+  :global(html.nx-print .dbar),
+  :global(html.nx-print .nx-caret) {
+    display: none;
+  }
+  :global(html.nx-print .nx-active-row) {
+    background: none;
+  }
+  :global(html.nx-print) .block.hang {
+    text-indent: 0;
+  }
+  .veil {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+  @media print {
+    :global(html),
+    :global(body) {
+      height: auto;
+      overflow: visible;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .shell {
+      display: block;
+      height: auto;
+    }
+    .shell > :global(:not(.scroller)) {
+      display: none !important;
+    }
+    .scroller {
+      overflow: visible;
+    }
+    .block {
+      orphans: 1;
+      widows: 1;
+    }
   }
 </style>

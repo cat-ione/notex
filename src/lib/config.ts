@@ -38,7 +38,14 @@ export type Config = {
     /** Built-in math substitutions, by group (see SUB_GROUPS): `alpha` → α only if `greek` is on. */
     substitutions: Record<string, boolean>;
   };
+  /** PDFs and printing: the theme the page is printed in, and the paper size. */
+  pdf: { theme: string; paper: Paper };
 };
+
+export type Paper = 'A4' | 'Letter';
+/** Paper sizes and the margin around the text, in inches. */
+export const PAPERS: Record<Paper, { w: number; h: number }> = { A4: { w: 8.27, h: 11.69 }, Letter: { w: 8.5, h: 11 } };
+export const PAPER_MARGIN = 0.7;
 
 export const BUILTIN_THEMES = ['midnight', 'phosphor', 'paper'];
 
@@ -64,6 +71,7 @@ export const DEFAULT_CONFIG: Config = {
   css: '',
   tips: true,
   typing: { latexScripts: true, autoMath: true, pairBrackets: true, pairMarkdown: true, substitutions: { ...SUB_DEFAULTS } },
+  pdf: { theme: 'paper', paper: 'A4' },
 };
 
 const LOCAL_KEY = 'notex.config';
@@ -85,6 +93,7 @@ export function withDefaults(user: Partial<Config> | null | undefined): Config {
       ...(u.typing ?? {}),
       substitutions: { ...SUB_DEFAULTS, ...(u.typing?.substitutions ?? {}) },
     },
+    pdf: { ...DEFAULT_CONFIG.pdf, ...(u.pdf ?? {}) },
   };
 }
 
@@ -132,7 +141,7 @@ export async function openConfigExternally(): Promise<string | null> {
 }
 
 /** Apply the visual parts of a config to the document. */
-export function applyConfig(c: Config) {
+export function applyConfig(c: Config, extraCss = '') {
   const root = document.documentElement;
   const custom = c.themes[c.theme];
   const base = BUILTIN_THEMES.includes(c.theme) ? c.theme : (custom?.base ?? 'midnight');
@@ -150,7 +159,7 @@ export function applyConfig(c: Config) {
     document.head.appendChild(el);
   }
   // `html:root[data-theme]` outranks the built-in `[data-theme=…]` rules.
-  el.textContent = `html:root[data-theme] { ${vars.join(' ')} }\n${c.css}`;
+  el.textContent = `html:root[data-theme] { ${vars.join(' ')} }\n${c.css}\n${extraCss}`;
 }
 
 export const allThemes = (c: Config) => [...BUILTIN_THEMES, ...Object.keys(c.themes).filter((t) => !BUILTIN_THEMES.includes(t))];
