@@ -3,6 +3,11 @@
   import type { MathItem } from '$lib/model';
   import { toLatex, type MCursor, type MSelRange } from '$lib/math/latex';
 
+  // Only the commands the editor itself writes: ids on nodes and its own classes. A note file
+  // from someone else can't bring links, styles or other HTML into the page.
+  const trust = (c: { command: string; class?: string }) =>
+    c.command === '\\htmlData' || (c.command === '\\htmlClass' &&/^(nx-[\w-]+\s*)+$/.test(c.class ?? ''));
+
   let {
     item,
     cursor = null,
@@ -16,7 +21,7 @@
       return katex.renderToString(toLatex(item.root, true, cursor, sel), {
         displayMode: item.display,
         throwOnError: false,
-        trust: true,
+        trust,
         strict: 'ignore',
         output: 'html',
       });
