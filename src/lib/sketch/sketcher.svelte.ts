@@ -83,6 +83,8 @@ export class Sketcher {
 
   private g: Gesture | null = null;
   private lastDown: { t: number; x: number; y: number } | null = null;
+  /** What the last press was made with (mouse, pen, touch). */
+  private lastType = 'mouse';
   private double = false;
   private penTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPen = 0;
@@ -394,6 +396,7 @@ export class Sketcher {
     const p = this.toSurface(e);
     const tool: Tool = eraserEnd ? 'eraser' : this.tool;
     const id = e.pointerId;
+    this.lastType = type;
     // a second press soon after, near the first: a double-click (or double tap)
     const now = e.timeStamp, last = this.lastDown;
     this.double = !!last && now - last.t < 450 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 8;
@@ -405,11 +408,6 @@ export class Sketcher {
       const hl = tool === 'marker';
       this.g = { k: 'draw', id, pen: type === 'pen' && !hl, pts: [p.x, p.y, this.pressure(e)], hl };
       this.draft = { ...inkShape(this.g.pts.slice(), type === 'pen' && !hl, this.style()), ...(hl ? { hl: true as const } : {}) };
-    } else if (tool === 'select' && type === 'pen' && !this.handleAt(p, type) && !shapeAt(this.shapes(), p, this.tol(type))) {
-      // a pen with the select tool: on a shape, it selects; anywhere else it draws
-      this.sel = [];
-      this.g = { k: 'draw', id, pen: true, pts: [p.x, p.y, this.pressure(e)] };
-      this.draft = inkShape(this.g.pts.slice(), true, this.style());
     } else if (tool === 'select') this.selectDown(e, p);
     else if (tool === 'text') {
       const hit = attachTarget(this.shapes(), p, this.tol(type));
@@ -504,7 +502,7 @@ export class Sketcher {
         if (g.moved) {
           this.add(d);
           // a box drawn: its label to type next (Esc leaves it without)
-          if (isBox(d) && d.k !== 'text') this.editLabel(d.id);
+          if (isBox(d) && d.k !== 'text' && this.lastType !== 'pen') this.editLabel(d.id);
         }
         // a tap with a box tool: a box of the usual size, centred there
         else if (BOX_TOOLS.includes(g.tool)) this.addBox(g.tool as BoxKind, { ...this.snap({ x: g.raw.x - NEW_BOX.w / 2, y: g.raw.y - NEW_BOX.h / 2 }, e), ...NEW_BOX });
@@ -578,14 +576,16 @@ export class Sketcher {
     this.ed.checkpoint();
     this.write([...this.shapes(), s], new Set([s.id]));
     this.select([s.id]);
-    if (this.tool !== 'pen' && this.tool !== 'eraser') this.tool = 'select';
+    // (with a pen, the tool stays: the next shape is drawn as this one was)
+    if (this.tool !== 'pen' && this.tool !== 'marker' && this.tool !== 'eraser' && this.lastType !== 'pen') this.tool = 'select';
   }
 
   /** A new box (or text) where given, selected, its label to type. */
+  /** (its label to type then, but for a box drawn with a pen: no keyboard popping up on a tablet) */
   private addBox(k: BoxKind, b: Box) {
     const s = boxShape(k, b, { ...this.style(), ...(this.fill && k !== 'text' ? { fill: true } : {}) });
     this.add(s);
-    this.editLabel(s.id);
+    if (k === 'text' || this.lastType !== 'pen') this.editLabel(s.id);
   }
 
   private eraseTo(p: Pt, type: string) {

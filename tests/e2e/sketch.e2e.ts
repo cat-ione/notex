@@ -265,16 +265,19 @@ test('a pen draws with its pressure; its eraser end erases', async ({ page }) =>
   expect(await shapes(page)).toHaveLength(0);
 });
 
-test('a pen with the select tool: on a shape it selects, elsewhere it draws', async ({ page }) => {
+test('a pen with the select tool selects (a drag round some too); a box drawn by pen keeps the tool, no label to type', async ({ page }) => {
   const c = await diagram(page);
-  await page.mouse.click(...c.at(100, 60));
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  // the box tool, by pen: a box, no label editor, still the box tool
+  await stroke(page, 'pen', line(c.x + 40, c.y + 40, c.x + 160, c.y + 96));
+  expect(await sk(page, (s) => [s.tool, s.editing])).toEqual(['rect', null]);
+  await stroke(page, 'pen', line(c.x + 240, c.y + 40, c.x + 360, c.y + 96));
+  expect((await shapes(page)).map((s) => s.k)).toEqual(['rect', 'rect']);
   await page.keyboard.press('v');
   await stroke(page, 'pen', [[c.x + 100, c.y + 60]]);
   expect(await sk(page, (s) => s.sel.length)).toBe(1);
-  await stroke(page, 'pen', line(c.x + 300, c.y + 50, c.x + 400, c.y + 120));
-  expect((await shapes(page)).map((s) => s.k)).toEqual(['rect', 'ink']);
+  await stroke(page, 'pen', line(c.x + 20, c.y + 20, c.x + 400, c.y + 130));
+  expect(await sk(page, (s) => s.sel.length)).toBe(2);
+  expect(await shapes(page)).toHaveLength(2);
 });
 
 test('the diagram grows to hold what is drawn below it; its bottom edge drags', async ({ page }) => {
