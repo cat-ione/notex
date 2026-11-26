@@ -269,7 +269,7 @@ export const SUB_GROUPS: SubGroup[] = [
       ...names('sgn rank span', (n) => `\\operatorname{${n}}`),
     },
   },
-  { id: 'operators', label: 'big operators', desc: 'sum, int, prod and lim become ∑ ∫ ∏ lim with empty limits to fill (space or ^ goes from the lower to the upper one). When off, type \\sum.', example: 'sum  int  prod  lim', on: false, subs: names('sum prod int lim') },
+  { id: 'operators', label: 'big operators', desc: 'sum, int, prod and lim become ∑ ∫ ∏ lim with empty limits to fill (space or ^ goes from the lower to the upper one); sumop, intop… are the bare symbols. When off, type \\sum.', example: 'sum  int  prod  lim', on: false, subs: names('sum prod int lim sumop prodop intop limop', (n) => '\\' + n.replace(/op$/, '')) },
   {
     id: 'structures',
     label: 'roots & accents',

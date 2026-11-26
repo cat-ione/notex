@@ -95,6 +95,12 @@ describe('LaTeX-style scripts', () => {
     ['sumn=1 oo a_n', '\\sum _{n=1}^{\\infty }a_{n}'],
     ['limx->0 f', '\\lim _{x\\to 0}f'],
     ['prodk=1 n k', '\\prod _{k=1}^{n}k'],
+    // a longer name goes on past the boxes: intop, sumop are bare; liminf, limsup
+    ['intop_0^1 f', '\\int _{0}^{1}f'],
+    ['sumop a', '\\sum a'],
+    ['limop_n', '\\lim _{n}'],
+    ['liminf a_n', '\\liminf a_{n}'],
+    ['int x', '\\int x'],
     // spaces inside brackets don't leave them
     ['(a + b)/2', '\\frac{a+b}{2}'],
     ['(a_n^2 + b_n^2)', '\\left(a_{n}^{2}+b_{n}^{2}\\right)'],

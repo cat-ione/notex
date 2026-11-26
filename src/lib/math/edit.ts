@@ -428,7 +428,7 @@ function buildSubs() {
   for (const g of SUB_GROUPS)
     if (groupsOn[g.id])
       for (const [k, v] of Object.entries(g.subs))
-        subs[k] = g.id === 'operators' ? MATH_PALETTE[k] : g.template ? { template: v as string } : v;
+        subs[k] = g.id === 'operators' && 'nodes' in MATH_PALETTE[k] ? MATH_PALETTE[k] : g.template ? { template: v as string } : v;
 }
 buildSubs();
 export function setSubstitutions(on: Record<string, boolean>) {
@@ -585,8 +585,23 @@ export function typeChar(root: MRow, cur: MCursor, c: string) {
   }
 
   const v = c === '{' ? '\\{' : c === '}' ? '\\}' : c === '%' ? '\\%' : c === '#' ? '\\#' : c === '&' ? '\\&' : c === '~' ? '\\sim' : c === '*' ? '*' : c;
+  // `int` just became ∫ with its limits, and `o` makes it `into…`: the limits go, the word goes on
+  if (/^[a-zA-Z]$/.test(c)) unlimit(root, cur, c);
   insertNode(root, cur, sym(v));
   autoReplace(root, cur);
+}
+
+/** In the empty limits a typed name like `int` just made: take them off if `c` continues a longer name (`intop`). */
+function unlimit(root: MRow, cur: MCursor, c: string) {
+  const p = parentOf(root, cur);
+  if (!p || p.step.s !== 0 || !(p.node.name === 'subsup' || p.node.name === 'sub') || p.node.slots.some((s) => s.length)) return;
+  const base = p.row[p.step.i - 1];
+  if (base?.k !== 'sym' || !base.src || !BIG_OPS.has(base.v)) return;
+  const w = base.src + c;
+  if (![subs, userSnippets].some((t) => Object.keys(t).some((k) => k.startsWith(w)))) return;
+  p.row.splice(p.step.i, 1);
+  cur.path.pop();
+  cur.off = p.step.i;
 }
 
 /** User snippets (trigger → LaTeX template), set from the config. They win over built-ins. */
@@ -620,7 +635,12 @@ function autoReplace(root: MRow, cur: MCursor) {
     if (parsed.row.length === 1 && parsed.row[0].k === 'sym' && !parsed.cursor) insertNode(root, cur, sym(parsed.row[0].v, best.key));
     else insertParsed(root, cur, parsed);
   } else if (typeof v === 'string') insertNode(root, cur, sym(v, best.key));
-  else applyInserter(root, cur, v as Inserter);
+  else {
+    // (a symbol it starts with keeps its trigger too: ∫ is still `int` for `intop`)
+    const ins = v as Inserter;
+    if ('nodes' in ins) applyInserter(root, cur, { ...ins, nodes: () => ins.nodes().map((n, i) => (i === 0 && n.k === 'sym' ? { ...n, src: best.key } : n)) });
+    else applyInserter(root, cur, ins);
+  }
 }
 
 /** `&` / Enter inside a grid: move to the next cell, growing the grid at the edge. */
