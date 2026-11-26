@@ -3721,10 +3721,10 @@ export class Editor {
     const q = p.query;
     const draws = this.drawCommands();
     const rankDraws = (n: number) => rank(draws.map((c) => c.name), q).slice(0, n).map((n) => draws.find((c) => c.name === n)!);
-    if (p.ctx === 'draw') return rankDraws(10);
+    if (p.ctx === 'draw') return rankDraws(Infinity);
     if (p.ctx === 'style') {
       const acts = this.styling ? this.drawingActions(this.styling).filter((a) => !a.keyOnly) : [];
-      return rank(acts.map((c) => c.name), q).slice(0, 10).map((n) => {
+      return rank(acts.map((c) => c.name), q).map((n) => {
         const c = acts.find((c) => c.name === n)!;
         return { name: c.name, desc: `${c.desc}  ${keyLabel(c.keys[0])}` };
       });
@@ -3732,12 +3732,11 @@ export class Editor {
     if (p.ctx === 'math') {
       const user = this.config.snippets.math;
       const names = [...new Set([...Object.keys(user), ...Object.keys(MATH_PALETTE)])];
-      // Drawing commands join in once something is typed, after the math ones.
-      const extra = q ? rankDraws(3) : [];
+      // Drawing commands join in once something is typed, after the math ones (a math command of the same name wins).
+      const extra = q ? rankDraws(Infinity).filter((d) => !names.includes(d.name)) : [];
       // nothing typed yet: the likeliest first (what wraps a selection, with one)
       const first = this.mathSelRange ? MATH_WRAP : MATH_COMMON;
       const math = rank(q ? names : [...first.filter((n) => names.includes(n)), ...names.filter((n) => !first.includes(n))], q)
-        .slice(0, 8 - extra.length)
         .map((n) => ({ name: n, desc: user[n] !== undefined ? user[n] : describeInserter(n) }));
       return [...math, ...extra];
     }
@@ -3750,7 +3749,7 @@ export class Editor {
       : q
         ? [...found.filter((n) => n === q), ...found.filter((n) => n !== q && near.names.includes(n)), ...found.filter((n) => n !== q && !near.names.includes(n))]
         : [...near.names, ...found.filter((n) => !near.names.includes(n))];
-    return order.slice(0, 10).map((n, i) => {
+    return order.map((n, i) => {
       const c = cmds.find((c) => c.name === n)!;
       const item: PaletteItem = { name: c.name, desc: c.desc, draw: c.draw };
       // (a line under what fits)
@@ -3799,6 +3798,8 @@ export class Editor {
         return true;
       case 'Down': case 'C-n': case 'C-j': p.sel = Math.min(items.length - 1, p.sel + 1); return true;
       case 'Up': case 'C-p': case 'C-k': p.sel = Math.max(0, p.sel - 1); return true;
+      case 'PageDown': p.sel = Math.min(items.length - 1, p.sel + 10); return true;
+      case 'PageUp': p.sel = Math.max(0, p.sel - 10); return true;
       case 'Enter': case 'Tab': case ' ':
         this.acceptPalette(items[p.sel]);
         return true;

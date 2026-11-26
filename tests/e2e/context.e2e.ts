@@ -204,3 +204,76 @@ test('in a formula in a table, the table button is not the table’s', async ({ 
   await type(page, '$');
   await expect(page.locator('.toolbar .b-table')).not.toHaveClass(/here/);
 });
+
+// ── every command, scrolled through ──
+
+/** Whether the highlighted entry is within the palette's visible list. */
+const selInView = (page: Page) =>
+  page.evaluate(() => {
+    const list = document.querySelector('.palette .opts')!.getBoundingClientRect();
+    const r = document.querySelector('.palette .opt.sel')!.getBoundingClientRect();
+    return r.top >= list.top - 1 && r.bottom <= list.bottom + 1;
+  });
+const listTop = (page: Page) => page.evaluate(() => document.querySelector('.palette .opts')!.scrollTop);
+
+test('the palette lists every command, and the arrows scroll through them', async ({ page }) => {
+  await type(page, '\\');
+  const all = await ed(page, (e) => e.textCommands().length);
+  expect(await names(page)).toHaveLength(all);
+  expect(await listTop(page)).toBe(0);
+  for (let i = 0; i < 20; i++) await page.keyboard.press('ArrowDown');
+  expect(await selInView(page)).toBe(true);
+  expect(await listTop(page)).toBeGreaterThan(0);
+  // to the last, and back to the first
+  for (let i = 0; i < all; i++) await page.keyboard.press('ArrowDown');
+  expect(await page.locator('.palette .opt.sel .name').innerText()).toContain((await names(page)).at(-1)!);
+  expect(await selInView(page)).toBe(true);
+  await page.keyboard.press('PageUp');
+  await page.keyboard.press('PageUp');
+  await page.keyboard.press('PageUp');
+  await page.keyboard.press('PageUp');
+  await page.keyboard.press('PageUp');
+  expect(await ed(page, (e) => e.palette.sel)).toBe(0);
+  expect(await listTop(page)).toBe(0);
+});
+
+test('page down moves ten at a time', async ({ page }) => {
+  await type(page, '\\');
+  await page.keyboard.press('PageDown');
+  expect(await ed(page, (e) => e.palette.sel)).toBe(10);
+  expect(await selInView(page)).toBe(true);
+});
+
+test('the mouse wheel scrolls the palette (not the page), and a click picks what is under it', async ({ page }) => {
+  await type(page, '\\');
+  const list = (await page.locator('.palette .opts').boundingBox())!;
+  await page.mouse.move(list.x + list.width / 2, list.y + list.height / 2);
+  const before = await page.evaluate(() => document.scrollingElement!.scrollTop);
+  await page.mouse.wheel(0, 2000);
+  await expect.poll(() => listTop(page)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(before);
+  // the last entry is help (F1)
+  const help = page.locator('.palette .opt', { hasText: 'keyboard shortcuts' });
+  await expect(help).toBeInViewport();
+  await help.click();
+  await expect(page.locator('.palette')).toHaveCount(0);
+  expect(await ed(page, (e) => e.showHelp)).toBe(true);
+});
+
+test('typing filters the whole list, and the list starts at the top again', async ({ page }) => {
+  await type(page, '\\');
+  for (let i = 0; i < 20; i++) await page.keyboard.press('ArrowDown');
+  await type(page, 'h');
+  expect(await ed(page, (e) => e.palette.sel)).toBe(0);
+  expect(await listTop(page)).toBe(0);
+  const shown = await names(page);
+  for (const n of ['h1', 'h2', 'h3', 'help']) expect(shown).toContain(n);
+});
+
+test('in math, every math command is there to scroll to', async ({ page }) => {
+  await type(page, '$\\');
+  expect((await names(page)).length).toBeGreaterThan(100);
+  await page.keyboard.press('End');
+  for (let i = 0; i < 60; i++) await page.keyboard.press('ArrowDown');
+  expect(await selInView(page)).toBe(true);
+});

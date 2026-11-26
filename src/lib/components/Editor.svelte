@@ -25,6 +25,13 @@
   const ed = new Editor();
   let page: HTMLElement;
 
+  // The palette lists every command; the highlighted one is kept in view as the arrows move it.
+  let paletteList = $state<HTMLDivElement>();
+  $effect(() => {
+    void ed.palette?.sel, void ed.palette?.query;
+    paletteList?.querySelector('.opt.sel')?.scrollIntoView({ block: 'nearest' });
+  });
+
   // The caret stays solid while it moves (typing, arrows, clicks) and blinks once it rests.
   let caretResting = $state(true);
   let restTimer: ReturnType<typeof setTimeout> | undefined;
@@ -347,6 +354,7 @@
         >
           <!-- (typing filters it; opened by a click, it says what it is until something is typed) -->
           <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {#if ed.input === 'mouse' && !ed.palette.query}<span class="what">{ed.palette.ctx === 'draw' ? 'draw' : 'commands'}</span>{:else}{ed.palette.ctx === 'draw' ? '' : '\\'}{ed.palette.query}<span class="blink">▏</span>{/if}</div>
+          <div class="opts" bind:this={paletteList}>
           {#each ed.paletteItems as item, i (item.name)}
             {#if item.rule}<div class="rule"></div>{/if}
             <div class="opt" class:sel={i === ed.palette.sel} onmouseenter={() => ed.palette && (ed.palette.sel = i)} onclick={() => ed.pickPalette(i)}>
@@ -355,6 +363,7 @@
           {:else}
             <div class="opt empty">{ed.palette.ctx === 'math' ? `insert \\${ed.palette.query}` : 'no match'}</div>
           {/each}
+          </div>
         </div>
       {/if}
     </div>
@@ -795,6 +804,11 @@
   .blink {
     color: var(--accent);
     animation: blink 1s steps(1) infinite;
+  }
+  .opts {
+    max-height: 264px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .opt {
     display: flex;
