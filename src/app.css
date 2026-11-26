@@ -128,8 +128,8 @@ body {
   border-radius: 5px;
   border: 3px solid var(--bg);
 }
-/* browsers without ::-webkit-scrollbar (Firefox): the same, as near as they allow */
-@supports not selector(::-webkit-scrollbar) {
+/* Firefox (no ::-webkit-scrollbar, though it accepts the selector): the same, as near as it allows */
+@supports (-moz-appearance: none) {
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;

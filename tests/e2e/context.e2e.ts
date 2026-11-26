@@ -285,3 +285,25 @@ test('typing narrows the list as an autocomplete does, the letters typed marked'
   await type(page, 'c');
   expect(await page.locator('.palette .opt .hit').allInnerTexts()).toEqual(['in', 'c']);
 });
+
+test('in a short window the palette shrinks to fit, below the caret or above it', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 360 });
+  const fits = () =>
+    page.evaluate(() => {
+      const r = document.querySelector('.palette')!.getBoundingClientRect();
+      const bar = document.querySelector('.toolbar')!.getBoundingClientRect();
+      return { top: r.top >= bar.bottom, bottom: r.bottom <= window.innerHeight - 24, scrolls: document.querySelector('.palette .opts')!.scrollHeight > r.height };
+    });
+  await type(page, '\\');
+  await page.waitForTimeout(200);
+  expect(await fits()).toEqual({ top: true, bottom: true, scrolls: true });
+  await page.keyboard.press('Escape');
+  // the caret low in the window: above it, still inside
+  for (let i = 0; i < 9; i++) await page.keyboard.press('Enter');
+  await type(page, '\\');
+  await page.waitForTimeout(200);
+  expect(await fits()).toEqual({ top: true, bottom: true, scrolls: true });
+  // and the arrows still keep the highlighted one in view
+  for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowDown');
+  expect(await selInView(page)).toBe(true);
+});

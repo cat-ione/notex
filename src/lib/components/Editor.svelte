@@ -357,7 +357,12 @@
 
       {#if ed.palette && ed.paletteAnchor}
         {@const at = ed.paletteAnchor}
-        {@const up = (ed.page?.getBoundingClientRect().top ?? 0) + at.y + at.h + 300 > window.innerHeight - 30}
+        <!-- (below the caret, or above when there's more room there; its list shrinks to fit between the bars) -->
+        {@const y = (ed.page?.getBoundingClientRect().top ?? 0) + at.y}
+        {@const below = window.innerHeight - (ed.config.ui.statusBar ? 30 : 8) - (y + at.h + 6)}
+        {@const above = y - 6 - (ed.config.ui.toolbar ? 38 : 8)}
+        {@const up = below < 300 && above > below}
+        {@const room = Math.max(44, Math.min(264, (up ? above : below) - 40))}
         <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
         <div
           class="palette"
@@ -367,7 +372,7 @@
         >
           <!-- (typing filters it; opened by a click, it says what it is until something is typed) -->
           <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {#if ed.input === 'mouse' && !ed.palette.query}<span class="what">{ed.palette.ctx === 'draw' ? 'draw' : 'commands'}</span>{:else}{ed.palette.ctx === 'draw' ? '' : '\\'}{ed.palette.query}<span class="blink">▏</span>{/if}</div>
-          <div class="opts" bind:this={paletteList}>
+          <div class="opts" bind:this={paletteList} style:max-height="{room}px">
           {#each ed.paletteItems as item, i (item.name)}
             {#if item.rule}<div class="rule"></div>{/if}
             <div class="opt" class:sel={i === ed.palette.sel} onmouseenter={() => ed.palette && (ed.palette.sel = i)} onclick={() => ed.pickPalette(i)}>
@@ -839,7 +844,7 @@
   .opts:hover::-webkit-scrollbar-thumb {
     background-color: var(--muted);
   }
-  @supports not selector(::-webkit-scrollbar) {
+  @supports (-moz-appearance: none) {
     .opts {
       scrollbar-width: thin;
       scrollbar-color: var(--border) transparent;
