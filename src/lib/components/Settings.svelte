@@ -45,7 +45,7 @@
     },
     {
       label: 'PDF theme',
-      tip: 'The colours a note is printed or saved as a PDF in (\\pdf, ctrl+p). Paper suits printing; any theme works.',
+      tip: 'The colours a note is saved as a PDF in (\\pdf, ctrl+p). Paper suits a PDF to print; any theme works.',
       value: () => ed.config.pdf.theme,
       change: (d) => {
         const ts = allThemes(ed.config);

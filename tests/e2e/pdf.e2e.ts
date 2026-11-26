@@ -1,4 +1,4 @@
-// PDFs and printing: the note is laid out for paper first (its width, the PDF theme, page
+// PDFs: the note is laid out for paper first (its width, the PDF theme, page
 // breaks that don't cut through a line or a formula), and put back afterwards.
 import { test, expect, open, fresh, type, ed } from './helpers';
 import type { Page } from '@playwright/test';
@@ -106,24 +106,27 @@ test('a PDF comes out, several A4 pages long', async ({ page }) => {
   expect(s).toMatch(/\/MediaBox\s*\[\s*0 0 59[45]\.\d* 84[12]\.\d*\s*\]/);
 });
 
-test('ctrl+p prints the paper layout and puts the screen back after', async ({ page }) => {
+test('ctrl+p saves the PDF (there is no printing), and puts the screen back after', async ({ page }) => {
   await open(page);
+  await fresh(page);
+  await type(page, 'a short note');
   await page.evaluate(() => {
-    (window as any).__printed = null;
-    window.print = () => {
-      (window as any).__printed = {
-        theme: document.documentElement.dataset.theme,
-        printing: document.documentElement.classList.contains('nx-print'),
-      };
-    };
+    (window as any).__prints = 0;
+    window.print = () => void (window as any).__prints++;
+    delete (Window.prototype as any).showSaveFilePicker;
+    delete (window as any).showSaveFilePicker;
   });
+  const download = page.waitForEvent('download', { timeout: 60_000 });
   await page.keyboard.press('Control+p');
-  await expect.poll(() => page.evaluate(() => (window as any).__printed)).toEqual({ theme: 'paper', printing: true });
+  expect((await download).suggestedFilename()).toMatch(/\.pdf$/);
+  expect(await page.evaluate(() => (window as any).__prints)).toBe(0);
   await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains('nx-print'))).toBe(false);
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('midnight');
 });
 
 test('\\pdf in the browser saves a PDF file (not the print dialog): every sheet a page of it', async ({ page }) => {
+  // (a long note's PDF takes a while to draw)
+  test.setTimeout(120_000);
   await open(page);
   await fresh(page);
   await longNote(page);

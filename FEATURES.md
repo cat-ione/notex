@@ -116,9 +116,8 @@ point at, and a pen and touch screen that work as well as a keyboard.
 
 ## Sharing
 
-- `\pdf` (or the toolbar's pdf) saves the note as a PDF file, drawings and all, laid out as
-  it prints; in the browser it's made right there, without the print dialog. Ctrl+P (or the
-  toolbar's ⎙) prints it.
+- `\pdf`, Ctrl+P or the toolbar's pdf saves the note as a PDF file, drawings and all, laid
+  out for paper (A4 or Letter, a theme of its own); made right there, no print dialog.
 - `\export` copies it as LaTeX: drawings as TikZ, theorems as `amsthm`, references as
   `\eqref` / `\ref`, links as `\href`, graphs and diagrams as figures, the packages listed.
 

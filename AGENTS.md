@@ -55,7 +55,7 @@ browser tests drive the app through real keys and pointer events and read the st
 | `src/lib/files.ts`, `library.ts` | files on desktop and in the browser; notes kept in the browser |
 | `src/lib/config.ts` | settings, their defaults, themes |
 | `src/lib/welcome.ts` | the welcome note: shows every feature, so new features go in it |
-| `src-tauri/` | the desktop app (Rust): file access, printing to PDF on Windows |
+| `src-tauri/` | the desktop app (Rust): file access, saving a PDF (by the system on Windows) |
 | `tests/e2e/` | browser tests, one file per area |
 | `tools/` | performance and layout tools (see README) |
 

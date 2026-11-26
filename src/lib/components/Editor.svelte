@@ -188,9 +188,6 @@
       }),
       // Pick up config edits made in an external editor.
       on('focus', () => isDesktop() && ed.loadConfig()),
-      // printing from the browser's menu: laid out for paper as with ctrl+p
-      on('beforeprint', () => ed.beginPrint()),
-      on('afterprint', () => ed.endPrint()),
     ];
     ed.loadConfig();
     ed.initLibrary();

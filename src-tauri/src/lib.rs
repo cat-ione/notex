@@ -3,6 +3,12 @@ use std::path::PathBuf;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
+/// Write a file's bytes (a PDF made in the app) where the user chose, through a native dialog.
+#[tauri::command]
+fn write_bytes(path: String, contents: Vec<u8>) -> Result<(), String> {
+    fs::write(&path, contents).map_err(|e| format!("could not write {path}: {e}"))
+}
+
 /// Read a note file chosen by the user through a native dialog.
 #[tauri::command]
 fn read_note(path: String) -> Result<String, String> {
@@ -145,7 +151,8 @@ pub fn run() {
             load_config,
             save_config,
             open_config,
-            save_pdf
+            save_pdf,
+            write_bytes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -843,27 +843,12 @@ export class Editor {
     this.endPrinting = null;
   }
 
-  /** Print the note (the system's dialog, where it can also be saved as a PDF). */
-  async printNote() {
-    this.beginPrint();
-    try {
-      // (a promise in the macOS app, where printing goes through the app)
-      await (window.print() as unknown);
-    } finally {
-      this.endPrint();
-    }
-  }
-
   /**
-   * Save the note as a PDF file (printing is printNote): on Windows' app, printed straight to
-   * the file; in the browser, made here (each page drawn as it prints); in the app elsewhere,
-   * through the print dialog.
+   * Save the note as a PDF file, laid out for paper: on Windows' app, by the system straight to
+   * the file; elsewhere (the browser, the app on other systems) made here, each sheet drawn.
    */
   async exportPdf() {
-    if (!F.canSavePdf()) {
-      if (F.isDesktop()) return this.printNote();
-      return this.pdfInBrowser();
-    }
+    if (!F.canSavePdf()) return this.pdfInBrowser();
     const path = await F.choosePdfPath(this.file.path ?? this.file.name);
     if (!path) return;
     this.beginPrint();
@@ -877,10 +862,14 @@ export class Editor {
     }
   }
 
-  /** The PDF made in the browser: laid out as it prints, each sheet drawn into a page of it. */
+  /** The PDF made here: laid out for paper, each sheet drawn into a page of it. */
   private async pdfInBrowser() {
     const name = this.file.name.replace(/\.[^.]+$/, '') || 'note';
-    const save = await F.browserSaveTarget(name, 'pdf', 'PDF', 'application/pdf');
+    let save: ((b: Blob) => Promise<string>) | null;
+    if (F.isDesktop()) {
+      const path = await F.choosePdfPath(this.file.path ?? this.file.name);
+      save = path ? async (b) => (await F.writeBytes(path, b), path.split(/[\\/]/).pop()!) : null;
+    } else save = await F.browserSaveTarget(name, 'pdf', 'PDF', 'application/pdf');
     if (!save || !this.page) return;
     this.flash('making the PDF…');
     this.beginPrint();
@@ -3051,7 +3040,8 @@ export class Editor {
       'C-S-s': () => this.saveNoteAs(),
       'C-o': () => this.openNote(),
       'C-n': () => this.newNote(),
-      'C-p': () => this.printNote(),
+      // (no printing: ctrl+p saves the PDF, rather than the browser's print dialog)
+      'C-p': () => void this.exportPdf(),
     };
     if (this.showNotes) return; // the list of notes listens for its own keys
     if (fileKeys[k] && !this.note) {
@@ -4769,8 +4759,7 @@ export class Editor {
       { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
       { name: 'markdown', desc: 'save a copy as markdown (.md), for Obsidian and the like', run: () => void this.saveMarkdownCopy() },
       { name: 'copymarkdown', desc: 'copy document as markdown', run: () => this.copyText(docToMarkdown($state.snapshot(this.doc) as Doc).text, 'markdown') },
-      { name: 'pdf', desc: 'save as a PDF file (print: ctrl+p)', run: () => this.exportPdf() },
-      { name: 'print', desc: 'print  ctrl+p', run: () => this.printNote() },
+      { name: 'pdf', desc: 'save as a PDF file  ctrl+p', run: () => this.exportPdf() },
       { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
       { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },
       { name: 'new', desc: 'new note  ctrl+n', run: () => this.newNote() },
@@ -6731,7 +6720,7 @@ const TAGS: Record<string, string> = Object.fromEntries([
   ...['bold', 'italic', 'inlinecode', 'strikethrough', 'texthighlight'].map((n) => [n, 'style format text']),
   ...['h1', 'h2', 'h3', 'p', 'li', 'ol', 'code', 'todo'].map((n) => [n, 'kind block line format']),
   ...['fold', 'foldall', 'unfoldall', 'outline'].map((n) => [n, 'fold section outline']),
-  ...['save', 'saveas', 'open', 'new', 'notes', 'markdown', 'copymarkdown', 'export', 'pdf', 'print', 'json', 'import'].map((n) => [n, 'file export']),
+  ...['save', 'saveas', 'open', 'new', 'notes', 'markdown', 'copymarkdown', 'export', 'pdf', 'json', 'import'].map((n) => [n, 'file export']),
   ...['number', 'ref', 'math', 'display'].map((n) => [n, 'math equation formula']),
   ...['diagram', 'graph', 'sketch', 'image', 'table'].map((n) => [n, 'insert']),
 ]);

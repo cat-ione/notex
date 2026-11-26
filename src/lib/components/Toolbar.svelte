@@ -29,8 +29,7 @@
   ];
   const right: Button[] = [
     { id: 'find', glyph: '/', label: 'find', tip: 'find', keys: 'ctrl+f', run: () => ed.openFind() },
-    { id: 'pdf', glyph: '⇩', label: 'pdf', tip: 'save as a PDF file', run: () => ed.exportPdf() },
-    { id: 'print', glyph: '⎙', tip: 'print', keys: 'ctrl+p', run: () => ed.printNote() },
+    { id: 'pdf', glyph: '⎙', label: 'pdf', tip: 'save as a PDF file', keys: 'ctrl+p', run: () => ed.exportPdf() },
     { id: 'settings', glyph: '⚙', tip: 'settings', keys: 'ctrl+,', run: () => (ed.showSettings = true) },
     { id: 'help', glyph: '?', tip: 'keyboard shortcuts', keys: 'F1', run: () => (ed.showHelp = !ed.showHelp) },
     { id: 'hide', glyph: '▴', tip: 'hide the toolbar (settings or \\toolbar bring it back)', run: () => ed.toggleBar('toolbar') },

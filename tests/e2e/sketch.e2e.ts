@@ -610,7 +610,7 @@ test('the drawing bar picks tools and styles, and is done', async ({ page }) => 
   expect(await mode(page)).toBe('text');
 });
 
-test('printing: what is drawn on the note stays with its line', async ({ page }) => {
+test('laid out for the PDF: what is drawn on the note stays with its line', async ({ page }) => {
   await type(page, 'one');
   await page.keyboard.press('Enter');
   await type(page, 'two');

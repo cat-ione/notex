@@ -45,8 +45,8 @@ and draw arrows and boxes *between parts of equations*.
 - **Images.** Paste or drop them in; they're kept inside the note.
 - **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
   type, and your own CSS (Ctrl+,).
-- **PDF, LaTeX and markdown.** `\pdf` saves the note as a PDF file, drawings and all, and
-  Ctrl+P prints it; `\export` copies it as LaTeX, drawings, theorems and references included (tikz,
+- **PDF, LaTeX and markdown.** `\pdf` (or Ctrl+P) saves the note as a PDF file, drawings and
+  all; `\export` copies it as LaTeX, drawings, theorems and references included (tikz,
   amsthm); `\markdown` saves it as markdown, and `.md` files open as notes.
 
 Press **F1** in the app for every shortcut.
@@ -74,7 +74,7 @@ Press **F1** in the app for every shortcut.
 | Ctrl+F / Ctrl+H | find / find and replace |
 | Ctrl+wheel, a pinch, Ctrl+= / Ctrl+- / Ctrl+0 | zoom |
 | Ctrl+S / Ctrl+O / Ctrl+N | save / open / new |
-| `\pdf` / Ctrl+P | save a PDF file / print |
+| `\pdf` / Ctrl+P | save as a PDF file |
 
 ## Files
 
@@ -87,7 +87,7 @@ Notes are `.ntx` files: compact JSON (see `src/lib/format.ts`).
 
 ## Customizing
 
-The toolbar along the top has notes, saving, math, drawing, images, find, PDF and print, each
+The toolbar along the top has notes, saving, math, drawing, images, find and PDF, each
 showing its keys when hovered; it fades while you type. It and the status bar can be hidden
 (settings, `\toolbar`, `\statusbar`), and everything stays on its keys.
 

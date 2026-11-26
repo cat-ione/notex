@@ -103,6 +103,12 @@ export async function choosePdfPath(note: string): Promise<string | null> {
   return path.toLowerCase().endsWith('.pdf') ? path : `${path}.pdf`;
 }
 
+/** Write a file's bytes (the desktop app). */
+export async function writeBytes(path: string, b: Blob) {
+  const { invoke } = await core();
+  await invoke('write_bytes', { path, contents: Array.from(new Uint8Array(await b.arrayBuffer())) });
+}
+
 /** Write the page as it would print to a PDF file (sizes in inches). */
 export async function savePdf(path: string, paper: { w: number; h: number }, margin: number) {
   const { invoke } = await core();
