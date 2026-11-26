@@ -3,13 +3,19 @@
 
 import type { Doc } from './model';
 import { deserialize, serialize } from './format';
+import { markdownToDoc } from './mdfile';
 
 export const EXT = 'ntx';
 const FILTERS = [{ name: 'notex note', extensions: [EXT] }];
+/** Opening: a note, or a markdown file (read in as a note; saved as a note, not over it). */
+const OPEN_FILTERS = [{ name: 'notex note or markdown', extensions: [EXT, 'md', 'markdown'] }, ...FILTERS, { name: 'markdown', extensions: ['md', 'markdown'] }];
+export const isMarkdown = (name: string) => /\.(md|markdown)$/i.test(name);
+/** A file's text as a note: markdown read as markdown, else a note file. */
+export const readDoc = (name: string, text: string): Doc => (isMarkdown(name) ? markdownToDoc(text) : deserialize(text));
 
 export const isDesktop = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-export const baseName = (path: string) => path.split(/[\\/]/).pop()!.replace(new RegExp(`\\.${EXT}$`), '');
+export const baseName = (path: string) => path.split(/[\\/]/).pop()!.replace(new RegExp(`\\.(${EXT}|md|markdown)$`, 'i'), '');
 
 async function core() {
   return await import('@tauri-apps/api/core');
@@ -18,16 +24,54 @@ async function dialog() {
   return await import('@tauri-apps/plugin-dialog');
 }
 
-/** Ask for a file to open. Returns null when cancelled. */
+/**
+ * Ask for a file to open. Returns null when cancelled. A markdown file comes with no path:
+ * it's read in as a note, and saving it asks where (a note isn't written over markdown).
+ */
 export async function openNote(): Promise<{ path: string | null; name: string; doc: Doc } | null> {
   if (isDesktop()) {
-    const path = await (await dialog()).open({ multiple: false, directory: false, filters: FILTERS });
+    const path = await (await dialog()).open({ multiple: false, directory: false, filters: OPEN_FILTERS });
     if (typeof path !== 'string') return null;
+    if (isMarkdown(path)) {
+      const { invoke } = await core();
+      return { path: null, name: baseName(path), doc: markdownToDoc(await invoke<string>('read_note', { path })) };
+    }
     return { path, name: baseName(path), doc: await readNote(path) };
   }
   const file = await pickBrowserFile();
   if (!file) return null;
-  return { path: null, name: baseName(file.name), doc: deserialize(await file.text()) };
+  return { path: null, name: baseName(file.name), doc: readDoc(file.name, await file.text()) };
+}
+
+/** Save `text` as a markdown file named after the note (where the user says; the browser downloads it). */
+export async function saveMarkdown(name: string, text: string): Promise<string | null> {
+  const MD = [{ name: 'markdown', extensions: ['md'] }];
+  if (isDesktop()) {
+    let path = await (await dialog()).save({ defaultPath: `${name}.md`, filters: MD });
+    if (!path) return null;
+    if (!isMarkdown(path)) path += '.md';
+    const { invoke } = await core();
+    await invoke('write_note', { path, contents: text });
+    return path;
+  }
+  if (canUseFiles()) {
+    let h: FileSystemFileHandle;
+    try {
+      h = await pickers().showSaveFilePicker({ types: [{ description: 'markdown', accept: { 'text/markdown': ['.md'] } }], suggestedName: `${name}.md` });
+    } catch (e) {
+      if ((e as DOMException)?.name === 'AbortError') return null;
+      throw e;
+    }
+    const w = await h.createWritable();
+    await w.write(text);
+    await w.close();
+    return h.name;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: `${name}.md` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return `${name}.md`;
 }
 
 export async function readNote(path: string): Promise<Doc> {
@@ -78,6 +122,8 @@ type Permissions = {
 };
 const pickers = () => window as unknown as FilePickers;
 const PICK: Picker = { types: [{ description: 'notex note', accept: { 'application/json': [`.${EXT}`] } }] };
+/** Opening: notes and markdown files. */
+const PICK_OPEN: Picker = { types: [{ description: 'notex note or markdown', accept: { 'application/json': [`.${EXT}`], 'text/markdown': ['.md', '.markdown'] } }] };
 
 /** Whether this browser can save to files on disk (else notes download). */
 export const canUseFiles = () => !isDesktop() && typeof window !== 'undefined' && 'showSaveFilePicker' in window;
@@ -95,7 +141,7 @@ export async function pickSaveFile(name: string): Promise<FileSystemFileHandle |
 /** A note file chosen to open, or null if cancelled. */
 export async function pickOpenFile(): Promise<FileSystemFileHandle | null> {
   try {
-    return (await pickers().showOpenFilePicker(PICK))[0] ?? null;
+    return (await pickers().showOpenFilePicker(PICK_OPEN))[0] ?? null;
   } catch (e) {
     if ((e as DOMException)?.name === 'AbortError') return null;
     throw e;
@@ -109,7 +155,7 @@ export async function writeFile(h: FileSystemFileHandle, doc: Doc) {
 }
 
 export async function readFile(h: FileSystemFileHandle): Promise<Doc> {
-  return deserialize(await (await h.getFile()).text());
+  return readDoc(h.name, await (await h.getFile()).text());
 }
 
 /**
@@ -132,7 +178,7 @@ export function downloadNote(name: string, doc: Doc) {
 
 function pickBrowserFile(): Promise<File | null> {
   return new Promise((resolve) => {
-    const input = Object.assign(document.createElement('input'), { type: 'file', accept: `.${EXT},application/json` });
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept: `.${EXT},application/json,.md,.markdown,text/markdown` });
     input.onchange = () => resolve(input.files?.[0] ?? null);
     input.oncancel = () => resolve(null);
     input.click();

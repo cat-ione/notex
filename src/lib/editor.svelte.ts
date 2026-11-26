@@ -19,6 +19,7 @@ import * as U from './usage';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
+import { docToMarkdown } from './mdfile';
 import { BOLD, CODE, HIGHLIGHT, ITALIC, LINK, MARK, OBJ, STRIKE, closesFence, fenceOf, headingOf, parseInline, type Link } from './markdown';
 import { withMarkdown } from './format';
 import { welcomeDoc } from './welcome';
@@ -529,7 +530,8 @@ export class Editor {
         if (!h) return;
         const known = await L.noteForFile(h);
         if (known) return this.openKept(known);
-        this.load(await F.readFile(h), { path: null, name: F.baseName(h.name), id: uid() }, h);
+        // (a markdown file is read in, not saved back to: a note isn't written over it)
+        this.load(await F.readFile(h), { path: null, name: F.baseName(h.name), id: uid() }, F.isMarkdown(h.name) ? null : h);
       } else {
         const r = await F.openNote();
         if (!r) return;
@@ -1142,7 +1144,15 @@ export class Editor {
 
   /** Files dropped on the page: images go where they were dropped. */
   dropFiles(e: DragEvent) {
-    const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+    const all = [...(e.dataTransfer?.files ?? [])];
+    // a note or a markdown file dropped on the page: opened
+    const note = all.find((f) => F.isMarkdown(f.name) || f.name.toLowerCase().endsWith(`.${F.EXT}`));
+    if (note) {
+      e.preventDefault();
+      void this.openDropped(note);
+      return;
+    }
+    const files = all.filter((f) => f.type.startsWith('image/'));
     if (!files.length) return;
     e.preventDefault();
     this.withFrame(() => {
@@ -1152,6 +1162,30 @@ export class Editor {
       if (h) (this.b = h.pos.b), (this.o = h.pos.o), (this.anchor = null);
     });
     void this.insertImages(files);
+  }
+
+  /** A note or markdown file dropped on the page: opened as a note (kept in the browser, or unsaved on the desktop). */
+  private async openDropped(f: File) {
+    let doc: Doc;
+    try {
+      doc = F.readDoc(f.name, await f.text());
+    } catch (e) {
+      return this.flash(`couldn't open ${f.name}: ${e}`);
+    }
+    if (!(await this.okToReplace())) return;
+    this.load(doc, { path: null, name: F.baseName(f.name), ...(F.isDesktop() ? {} : { id: uid() }) });
+    if (!F.isDesktop()) await this.keepInBrowser();
+  }
+
+  /** \markdown: a copy of the note saved as a markdown file (drawings aren't in it: said so). */
+  async saveMarkdownCopy() {
+    const { text, lost } = docToMarkdown($state.snapshot(this.doc) as Doc);
+    try {
+      const where = await F.saveMarkdown(this.file.name, text);
+      if (where) this.flash(`saved ${F.baseName(where)}.md${lost ? ` (without ${lost} drawing${lost === 1 ? '' : 's'}: markdown has none)` : ''}`);
+    } catch (e) {
+      this.flash(`couldn't save: ${e}`);
+    }
   }
 
   /** \image: choose image files to put in at the caret. */
@@ -4532,6 +4566,8 @@ export class Editor {
       { name: 'substitutions', desc: 'edit substitutions', run: () => ((this.settingsView = 'subs'), (this.showSettings = true)) },
       { name: 'config', desc: 'edit the config file', run: () => this.editConfig() },
       { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
+      { name: 'markdown', desc: 'save a copy as markdown (.md), for Obsidian and the like', run: () => void this.saveMarkdownCopy() },
+      { name: 'copymarkdown', desc: 'copy document as markdown', run: () => this.copyText(docToMarkdown($state.snapshot(this.doc) as Doc).text, 'markdown') },
       { name: 'pdf', desc: 'save as PDF', run: () => this.exportPdf() },
       { name: 'print', desc: 'print  ctrl+p', run: () => this.printNote() },
       { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },

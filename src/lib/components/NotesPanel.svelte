@@ -187,7 +187,7 @@
           {:else if r.kind === 'new'}
             <span class="name">+ new note</span>{#if ed.input === 'keys'}<kbd>ctrl+n</kbd>{/if}
           {:else if r.kind === 'file'}
-            <span class="name">open a file…</span><span class="when">{canUseFiles() ? 'saves back to it' : '.ntx'}</span>
+            <span class="name">open a file…</span><span class="when">{canUseFiles() ? 'a note (saved back to it) or markdown' : '.ntx or .md'}</span>
           {:else}
             <span class="name">the welcome note</span><span class="when">everything notex does</span>
           {/if}

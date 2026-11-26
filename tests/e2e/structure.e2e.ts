@@ -319,6 +319,35 @@ test('the notes list finds notes by what they say, shows the line, and opening o
   expect(await ed(page, (e) => [e.b, e.anchor?.o, e.o])).toEqual([1, 4, 12]);
 });
 
+test.describe('markdown files', () => {
+  test('a markdown file dropped on the page opens as a note: callouts as boxes, - [ ] as boxes to tick, $$ as formulas', async ({ page }) => {
+    const md = '# Lecture 3\n\n> [!theorem] Parseval\n> The sum of squares.\n\n- [x] read\n- [ ] solve\n\n$$\nE = mc^2 \\tag{1}\n$$\n';
+    await page.evaluate((md) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([md], 'lecture 3.md', { type: 'text/markdown' }));
+      document.querySelector('.scroller')!.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }, md);
+    await expect.poll(() => ed(page, (e) => e.file.name)).toBe('lecture 3');
+    expect((await blocks(page)).map((b) => [b.kind, b.box, b.check ?? null])).toEqual([
+      ['h1', null, null],
+      ['p', 'theorem', null],
+      ['li', null, true],
+      ['li', null, false],
+      ['p', null, null],
+    ]);
+    await expect(page.locator('.boxhead')).toHaveText(['Theorem 1.']);
+    await expect(page.locator('.eqn')).toHaveText('(1)');
+  });
+  test('\\copymarkdown copies the note as markdown', async ({ page }) => {
+    await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t: string) => void ((window as any).copied = t) } }));
+    await type(page, '# Notes\n[ ] milk\n');
+    await page.keyboard.press('Enter');
+    await type(page, '> said');
+    await command(page, 'copymarkdown');
+    await expect.poll(() => page.evaluate(() => (window as any).copied)).toBe('# Notes\n\n- [ ] milk\n\n> said\n');
+  });
+});
+
 test('every kind of block survives an undo and redo', async ({ page }) => {
   await command(page, 'theorem');
   await type(page, 'a\n\n[ ] b');
