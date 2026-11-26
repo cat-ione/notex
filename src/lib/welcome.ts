@@ -139,7 +139,7 @@ export function welcomeDoc(): Doc {
       P('\\diagram makes one: boxes, ellipses and diamonds with $math$ in their labels, arrows that stay attached to the boxes they join, and the pen. Ctrl+arrow on a box adds the next one, joined to it.'),
       diagram,
       P('Ctrl+Shift+D draws in a diagram, or anywhere on the note: the drawing stays with the line under it. A pen just draws, and its eraser end erases; once a pen has been used, a finger scrolls instead.'),
-      P('On a tablet: tap the pen’s side button, or hold a finger still, for a ring of tools round it (on a selection: what to do with it); drag with the side button to lasso. Two fingers tapped undo, three redo, and a pinch zooms.'),
+      P('On a tablet: tap the pen’s side button, or hold a finger still, for a ring of tools round it (on a selection: what to do with it); drag with the side button to lasso. Two fingers tapped undo, three redo, and a pinch zooms. A tap on the text brings up the touch keyboard.'),
       graph,
 
       P('Theorems, proofs and lists to tick', 'h2'),

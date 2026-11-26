@@ -44,6 +44,49 @@
     return out;
   }
 
+  // A touch screen's keyboard: it only comes up for a text field, so a hidden one takes the
+  // focus when the text is tapped with a finger or a pen. What it's given goes to the page as
+  // keys: its text after each change, compared with what it was, is Backspaces and characters
+  // (a keyboard's suggestions and corrections rewrite words: that's Backspaces, then the new
+  // word). Keys it sends as keys (Enter, arrows, a keyboard plugged in) go to the page as
+  // ever. It starts with a filler, so a Backspace on nothing still changes it.
+  const FILL = '\u200b\u200b';
+  let sink = $state<HTMLTextAreaElement>();
+  let sinkWas = FILL, composing = false;
+  const sendKey = (key: string) => ed.key(new KeyboardEvent('keydown', { key }));
+  function sinkInput() {
+    if (!sink) return;
+    const now = sink.value, was = sinkWas;
+    let same = 0;
+    while (same < now.length && same < was.length && now[same] === was[same]) same++;
+    for (let i = same; i < was.length; i++) sendKey('Backspace');
+    for (const c of now.slice(same)) sendKey(c === '\n' ? 'Enter' : c);
+    sinkWas = now;
+    // (between words, not mid-word for the keyboard: back to the filler)
+    if (!composing && (now.length > 40 || !now.startsWith(FILL) || /\s$/.test(now))) resetSink();
+  }
+  function resetSink() {
+    if (!sink) return;
+    sink.value = sinkWas = FILL;
+    sink.setSelectionRange(FILL.length, FILL.length);
+  }
+  /** Is it time for the keyboard: a finger or pen on the text, nothing else asking for typing? */
+  const wantKeys = () =>
+    ed.pointer !== 'mouse' && (ed.mode === 'text' || ed.mode === 'math' || ed.mode === 'palette') && !ed.showNotes && !ed.showSettings && !ed.radial;
+  function keyboardAfterTap(e: PointerEvent) {
+    if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+    const a = document.activeElement;
+    // (another text field has it: the find bar, a label being typed…)
+    if (a && a !== sink && (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement)) return;
+    if (!wantKeys() || !sink) return;
+    // (just under the caret: the keyboard and the browser think that's where typing goes)
+    if (a !== sink) (resetSink(), sink.focus({ preventScroll: true }));
+  }
+  // drawing, a panel open: the keyboard goes
+  $effect(() => {
+    if (!wantKeys() && document.activeElement === sink) sink?.blur();
+  });
+
   // Fingers tapped together, as in drawing apps: two undo, three redo (quick, and not moved:
   // a pinch or a scroll isn't a tap).
   const taps = new Map<number, { x: number; y: number }>();
@@ -115,7 +158,11 @@
         ed.pointer = e.pointerType === 'pen' || e.pointerType === 'touch' ? e.pointerType : 'mouse';
         fingerTaps(e);
       }),
-      on('pointerup', fingerTaps),
+      on('pointerup', (e) => {
+        fingerTaps(e);
+        // (after the tap has put the caret: the keyboard for typing there)
+        setTimeout(() => keyboardAfterTap(e));
+      }),
       on('pointercancel', fingerTaps),
       // drawing: the pointer's way across the page, and a pen hovering near it
       on('pointermove', (e) => {
@@ -408,6 +455,23 @@
   {#if ed.radial}
     <RadialMenu {ed} />
   {/if}
+  <!-- (a touch screen's keyboard types into this, for the page: see sinkInput) -->
+  <textarea
+    class="kbd-sink"
+    bind:this={sink}
+    data-sink="1"
+    aria-hidden="true"
+    tabindex="-1"
+    autocapitalize="off"
+    autocomplete="off"
+    spellcheck="false"
+    style:left="{ed.caret ? Math.min(window.innerWidth - 4, (ed.page?.getBoundingClientRect().left ?? 0) + ed.caret.r.x) : 0}px"
+    style:top="{ed.caret ? Math.min(window.innerHeight - 4, (ed.page?.getBoundingClientRect().top ?? 0) + ed.caret.r.y) : 0}px"
+    oninput={sinkInput}
+    oncompositionstart={() => (composing = true)}
+    oncompositionend={() => ((composing = false), sinkInput())}
+    onblur={resetSink}
+  ></textarea>
   {#if ed.showOutline}
     <Outline {ed} />
   {/if}
@@ -850,6 +914,22 @@
   /* what a folded heading hides */
   .block.folded {
     display: none;
+  }
+  /* the touch keyboard's field: there, but not to be seen (big enough text for no zooming in) */
+  .kbd-sink {
+    position: fixed;
+    z-index: -1;
+    width: 2px;
+    height: 2px;
+    padding: 0;
+    border: 0;
+    margin: 0;
+    opacity: 0;
+    resize: none;
+    overflow: hidden;
+    font-size: 16px;
+    caret-color: transparent;
+    pointer-events: none;
   }
   /* beside a selection, for a pen or finger: the ring of what can be done to it */
   .selmore {

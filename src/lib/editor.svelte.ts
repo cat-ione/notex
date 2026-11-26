@@ -3004,8 +3004,9 @@ export class Editor {
     if (e.isComposing) return;
     // a click leaves the anchor on the caret: that's no selection (an edit would make it one)
     if (this.anchor && this.anchor.b === this.b && this.anchor.o === this.o) this.anchor = null;
-    // Text fields (settings, config editor) handle their own keys.
-    if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+    // Text fields (settings, config editor) handle their own keys (not the one that takes a
+    // touch keyboard's typing for the page: see Editor.svelte, the keyboard's field)
+    if ((e.target instanceof HTMLTextAreaElement && !e.target.dataset.sink) || e.target instanceof HTMLInputElement) return;
     const k = keyName(e);
     if (!k) return;
     // Let the browser fire copy/cut/paste events; those are handled separately.

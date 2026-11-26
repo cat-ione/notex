@@ -67,6 +67,7 @@
       ['pen’s side button', 'drag: a lasso round what to select (on a shape: moves it); tap: the ring menu there'],
       ['finger held still, a long press', 'the ring menu: the tools, colours, undo; on a selection, what can be done to it'],
       ['two / three fingers tapped', 'undo / redo'],
+      ['a tap on the text', '(finger or pen) the touch keyboard comes up, to type there'],
       ['⋯ beside a selection', '(with a pen or finger) what can be done to it'],
     ]],
   ];
