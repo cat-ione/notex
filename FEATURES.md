@@ -12,6 +12,7 @@ point at, and a pen and touch screen that work as well as a keyboard.
   - `- ` bullet lists and `1. ` numbered lists, nested with Tab / Shift+Tab
   - `- [ ]` / `[x]` lists to tick (Ctrl+Enter or a click ticks)
   - `> ` quotes
+  - `---` alone on a line, a horizontal line
   - ```` ``` ```` code blocks, coloured by language (Python, C++, Julia, R, MATLAB and more)
 - Ctrl+B / Ctrl+I / Ctrl+E / Ctrl+Shift+X / Ctrl+Shift+H put the markers round a selection.
 - Brackets and quotes close themselves; markdown markers pair over a selection.
@@ -48,7 +49,8 @@ point at, and a pen and touch screen that work as well as a keyboard.
 - Folding: Ctrl+. or the ▾ in the margin folds a heading's section (`\foldall`, `\unfoldall`).
 - The outline (Ctrl+Shift+O): headings and theorems down the side; click to go there.
 - Tables, as in markdown or with `\table`: Tab to the next cell, Enter for a new row, whole
-  cells selected, rows and columns added, removed and aligned from a right-click.
+  cells selected, rows and columns added, removed and aligned from a right-click. Words are
+  selected within their cell (double-click a word, triple-click the cell, Ctrl+Shift+arrows).
 - Images: paste, drop or `\image`; resize by dragging a corner; a caption under each.
 
 ## Drawing on your math
@@ -65,12 +67,15 @@ point at, and a pen and touch screen that work as well as a keyboard.
 - Boxes, ellipses, diamonds and text with `$math$` in their labels; lines and arrows that
   stay attached to the boxes they join; a pen and a highlighter; an eraser.
 - Ctrl+arrow on a box adds the next one, joined by an arrow: flowcharts from the keyboard.
-- A grid to snap to (Alt: off it), resize handles, duplicate, front/back, colours, widths,
-  dashes, fill; a right-click for what can be done there.
+- Shapes go exactly where you put them; a line ending on a box stays at that spot on it and
+  moves with it. Snapping to a grid and to box edges is a setting (Alt: the other way).
+- Resize handles (with any tool: a box just drawn by pen resizes with the pen), duplicate,
+  front/back, colours, widths, dashes, fill; a right-click for what can be done there.
 - Ctrl+Shift+D draws in a diagram, or anywhere on the note, pinned to the line under it.
 - Graphs: `\graph` (or `g`) plots what you type, `y = sin x`, one function a line,
   `x: -2pi..2pi` for the range; axes, ticks in π, a legend, breaks at asymptotes.
-- A rough line, box, circle or diamond drawn with the pen and held still straightens.
+- A rough line, box, circle or diamond drawn with the pen and held still straightens (a
+  highlighter stroke too, into a straight one).
 
 ## Pen and touch
 
@@ -111,7 +116,9 @@ point at, and a pen and touch screen that work as well as a keyboard.
 
 ## Sharing
 
-- `\pdf` saves the note as a PDF, drawings and all; Ctrl+P prints it.
+- `\pdf` (or the toolbar's pdf) saves the note as a PDF file, drawings and all, laid out as
+  it prints; in the browser it's made right there, without the print dialog. Ctrl+P (or the
+  toolbar's ⎙) prints it.
 - `\export` copies it as LaTeX: drawings as TikZ, theorems as `amsthm`, references as
   `\eqref` / `\ref`, links as `\href`, graphs and diagrams as figures, the packages listed.
 
@@ -121,5 +128,7 @@ point at, and a pen and touch screen that work as well as a keyboard.
 - Text size, page width, fonts, your own CSS.
 - Which substitutions happen as you type; your own math and text snippets.
 - The toolbar and status bar can be hidden; everything stays on its keys.
+- Small windows and phones: bars wrap or swipe, menus stay inside the window, the help is one
+  column.
 - A config file to edit, in the app or your own editor.
 - F1 lists every key; the welcome note shows everything to try.

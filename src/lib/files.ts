@@ -169,6 +169,34 @@ export async function mayWrite(h: FileSystemFileHandle, ask: boolean): Promise<b
 }
 
 /** Browser fallback (no file pickers): download the note. */
+/**
+ * Where a file made in the browser goes: a file picked now (before it's made, as picking
+ * needs the click that asked for it), or else a download. Null if the picking was cancelled.
+ */
+export async function browserSaveTarget(name: string, ext: string, description: string, mime: string): Promise<((b: Blob) => Promise<string>) | null> {
+  if (canUseFiles()) {
+    let h: FileSystemFileHandle;
+    try {
+      h = await pickers().showSaveFilePicker({ types: [{ description, accept: { [mime]: [`.${ext}`] } }], suggestedName: `${name}.${ext}` });
+    } catch (e) {
+      if ((e as DOMException)?.name === 'AbortError') return null;
+      throw e;
+    }
+    return async (b) => {
+      const w = await h.createWritable();
+      await w.write(b);
+      await w.close();
+      return h.name;
+    };
+  }
+  return async (b) => {
+    const url = URL.createObjectURL(b);
+    Object.assign(document.createElement('a'), { href: url, download: `${name}.${ext}` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return `${name}.${ext}`;
+  };
+}
+
 export function downloadNote(name: string, doc: Doc) {
   const url = URL.createObjectURL(new Blob([serialize(doc)], { type: 'application/json' }));
   const a = Object.assign(document.createElement('a'), { href: url, download: `${name}.${EXT}` });

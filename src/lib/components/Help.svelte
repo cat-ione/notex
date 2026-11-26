@@ -11,12 +11,13 @@
       ['`code`  ctrl+e', 'inline code'], ['```py  enter', 'code block (closed for you; markdown shows where the caret is)'],
       ['\\table   | a | b |', 'table: tab next cell, enter new row'],
       ['paste / drop / \\image', 'insert an image (type under it for a caption)'], ['alt+← →', 'image: resize (or drag its corner)'],
-      ['ctrl+f  F3  ctrl+h', 'find, find next, find and replace'], ['ctrl+= ctrl+- ctrl+0', 'zoom (or ctrl+wheel, a pinch)'], ['alt+↑ ↓', 'move paragraph up / down'], ['ctrl+s  o  n', 'save, open, new'], ['\\pdf  ctrl+p', 'save as PDF, print'], ['ctrl+,', 'settings'], ['\\toolbar  \\statusbar', 'show / hide the bars'], ['F1', 'keyboard shortcuts'],
+      ['ctrl+f  F3  ctrl+h', 'find, find next, find and replace'], ['ctrl+= ctrl+- ctrl+0', 'zoom (or ctrl+wheel, a pinch)'], ['alt+↑ ↓', 'move paragraph up / down'], ['ctrl+s  o  n', 'save, open, new'], ['\\pdf  ctrl+p', 'save a PDF file, print'], ['ctrl+,', 'settings'], ['\\toolbar  \\statusbar', 'show / hide the bars'], ['F1', 'keyboard shortcuts'],
     ]],
     ['structure', [
       ['[ ] ␣   [x] ␣', 'a box to tick (after - too); ctrl+enter ticks it'],
       ['\\theorem  \\definition  \\proof …', 'the line in a box, numbered (again: out of it); enter goes on in it, enter twice leaves'],
       ['> ␣', 'a quote'],
+      ['---', 'a horizontal line (alone on a line; *** and ___ too)'],
       ['\\number', 'number the display formula (1), (2)…'],
       ['\\ref', 'refer to a formula or a theorem: (3), Theorem 2 (numbers it if need be)'],
       ['[[a note]]  https://…', 'links: ctrl+click (a tap) opens them; [[a note]] makes it if there is none'],
@@ -56,7 +57,7 @@
       ['ctrl+shift+d', 'draw in the diagram at the caret, or on the note; again to stop'],
       ['v p h l a r o d t g e', 'select, pen, highlighter, line, arrow, box, ellipse, diamond, text, graph, eraser'],
       ['\\graph', 'a graph: type what to plot, y = sin x (shift+enter: another; x: -pi..pi, y: -1..1)'],
-      ['hold the pen still', 'at the end of a rough line, box, circle or diamond: it straightens'],
+      ['hold the pen still', 'at the end of a rough line, box, circle or diamond (or a highlighter stroke): it straightens'],
       ['drag  /  tap', 'draw the shape  /  a box of the usual size (where you put it; alt, or the setting: to a grid, lines to box edges)'], ['enter', 'label the selected box or arrow, or a new box'],
       ['ctrl+← → ↑ ↓', 'a box beside this one, joined by an arrow (while typing a label too)'],
       ['arrow ending on a box', 'stays where you put it on the box, and moves with it'], ['a handle of what’s selected', 'resizes it, whatever the tool (as a box just drawn by pen)'], ['$…$ in a label', 'math'],
@@ -125,4 +126,11 @@
     cursor: pointer;
   }
   .welcome:hover { border-color: var(--accent); color: var(--accent); }
+  /* a narrow window: one column, each key over what it does */
+  @media (max-width: 640px) {
+    .help { padding: 14px 14px; }
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .row { flex-direction: column; gap: 0; padding: 3px 0; }
+    kbd { min-width: 0; }
+  }
 </style>

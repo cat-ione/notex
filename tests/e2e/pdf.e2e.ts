@@ -123,16 +123,29 @@ test('ctrl+p prints the paper layout and puts the screen back after', async ({ p
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('midnight');
 });
 
-test('\\pdf in the browser goes through the print dialog', async ({ page }) => {
+test('\\pdf in the browser saves a PDF file (not the print dialog): every sheet a page of it', async ({ page }) => {
   await open(page);
   await fresh(page);
+  await longNote(page);
   await page.evaluate(() => {
     (window as any).__prints = 0;
     window.print = () => void (window as any).__prints++;
+    delete (Window.prototype as any).showSaveFilePicker;
+    delete (window as any).showSaveFilePicker;
+    const make = URL.createObjectURL;
+    URL.createObjectURL = (b: Blob | MediaSource) => (((window as any).__blob = b), make(b));
   });
+  const download = page.waitForEvent('download', { timeout: 60_000 });
   await type(page, '\\pdf');
   await page.keyboard.press('Enter');
-  await expect.poll(() => page.evaluate(() => (window as any).__prints)).toBe(1);
+  expect((await download).suggestedFilename()).toBe('untitled.pdf');
+  const pdf: string = await page.evaluate(() => (window as any).__blob.text());
+  expect(pdf.startsWith('%PDF-')).toBe(true);
+  // (the 30 paragraphs: more than one sheet, each its own page)
+  const pages = (pdf.match(/\/Type \/Page\b/g) ?? []).length;
+  expect(pages).toBeGreaterThan(1);
+  expect(await page.evaluate(() => (window as any).__prints)).toBe(0);
+  await expect(page.locator('.nx-page-push')).toHaveCount(0);
 });
 
 test('the editing marks (caret, selection, markers) are not printed', async ({ page }) => {

@@ -75,7 +75,7 @@ export function welcomeDoc(): Doc {
   const eq = square.root.findIndex((x) => x.k === 'sym' && x.v === '=');
   marks.push(mark('strike', square.root.slice(eq).map((x) => x.id), { color: 'red', label: '+2ab' }));
 
-  const how = P('Hold Alt and drag from one thing to another to draw an arrow; Alt+Shift+drag draws a box. Click a drawing to change it: C colour, D dashes, L a note. Drawings stay on what they point at while you edit.');
+  const how = P('Hold Alt and drag from one thing to another to draw an arrow; Alt+Shift+drag draws a shape (a box at first, then the kind you drew last). Click a drawing to change it: C colour, D dashes, L a note. Drawings stay on what they point at while you edit.');
   marks.push(mark('highlight', word(how, 'stay on what they point at'), { color: 'blue' }));
 
   // ── a diagram ──
@@ -175,6 +175,8 @@ export function welcomeDoc(): Doc {
       T(['| ratio | ', M('\\lim_{n\\to\\infty} \\left|\\frac{a_{n+1}}{a_n}\\right| < 1'), ' |']),
       T(['| root | ', M('\\limsup_{n\\to\\infty} \\sqrt[n]{\\left|a_n\\right|} < 1'), ' |']),
       T(['| integral | ', M('\\int_1^\\infty f(x)\\,dx < \\infty'), ' |']),
+      P('--- alone on a line is a horizontal line, like this one:'),
+      P('---'),
 
       P('Find your way around', 'h2'),
       P('\\ or Ctrl+K opens the command palette: every command, searchable.', 'li'),
@@ -193,7 +195,7 @@ export function welcomeDoc(): Doc {
             P('Ctrl+S also saves the note to a .ntx file, and keeps saving to it.', 'li'),
             P('Once opened, notex works offline, and the browser can install it as an app.', 'li'),
           ]),
-      P('\\pdf saves it as a PDF, drawings and all, and Ctrl+P prints it.', 'li'),
+      P('\\pdf saves it as a PDF file, drawings and all, and Ctrl+P prints it.', 'li'),
       P('\\export copies it as LaTeX, drawings included; \\markdown saves it as markdown, and .md files open as notes.', 'li'),
       P('Press F1 for every shortcut, and type \\welcome to bring this note back.'),
     ],

@@ -4,6 +4,8 @@
   import { cubicOut, backOut } from 'svelte/easing';
   import { Editor } from '$lib/editor.svelte';
   import { marked } from '$lib/match';
+  import { mouseMoved } from '$lib/geom';
+  import { ruleBlock } from '$lib/markdown';
   import MathView from './MathView.svelte';
   import ArrowLayer from './ArrowLayer.svelte';
   import MarkLayer from './MarkLayer.svelte';
@@ -518,6 +520,7 @@
           class:clast={codeBottom(b)}
           class:veiled={veiled(b)}
           class:empty={!blk.items.length}
+          class:rule={ruleBlock(blk)}
           class:task={blk.kind === 'li' && blk.check !== undefined}
           class:done={blk.kind === 'li' && blk.check === true}
           class:boxed={!!blk.box}
@@ -614,7 +617,7 @@
           <div class="opts" bind:this={paletteList} style:max-height="{room}px">
           {#each ed.paletteItems as item, i (item.name)}
             {#if item.rule}<div class="rule"></div>{/if}
-            <div class="opt" class:sel={i === ed.palette.sel} onmouseenter={() => ed.palette && (ed.palette.sel = i)} onclick={() => ed.pickPalette(i)}>
+            <div class="opt" class:sel={i === ed.palette.sel} onmousemove={(e) => mouseMoved(e) && ed.palette && ed.palette.sel !== i && (ed.palette.sel = i)} onclick={() => ed.pickPalette(i)}>
               <span class="name">{#if item.draw && ed.palette.ctx !== 'draw'}<span class="pen">✎</span>{/if}{#each matched(item.name, ed.palette.query) as [part, hit], k (k)}<span class:hit>{part}</span>{/each}</span><span class="desc" title={item.desc}>{item.desc}</span>
             </div>
           {:else}
@@ -666,6 +669,8 @@
     cursor: text;
     overflow-y: auto;
     overflow-x: hidden;
+    /* (its width, to the page's insides: how far a heading's #s can hang out) */
+    container-type: inline-size;
   }
   /* the outline open on a wide window: the page beside it, not under it */
   @media (min-width: 980px) {
@@ -823,6 +828,11 @@
     padding-right: 10px;
     background: color-mix(in srgb, var(--box-c) 6%, transparent);
     box-shadow: inset 2px 0 0 var(--box-c);
+  }
+  /* (a list in a box: its own room for its markers, past the box's line) */
+  .block.boxed.li,
+  .block.boxed.ol {
+    padding-left: calc(var(--bx) + 1.4em + var(--indent, 0) * 1.4em);
   }
   .block.boxed[data-box='definition'] {
     --box-c: var(--ink-green);
@@ -1164,6 +1174,20 @@
     color: var(--muted);
     opacity: 0.8;
   }
+  /* a horizontal line (--- alone on a line): its dashes hidden but where the caret is */
+  .block.rule::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    border-top: 1px solid var(--border);
+    pointer-events: none;
+  }
+  .block.rule.current::after {
+    left: 3.5em;
+    opacity: 0.6;
+  }
   .ch.mk:not(:global(.show)) {
     display: none;
   }
@@ -1173,8 +1197,9 @@
     padding: 0;
   }
   /* a heading's #s hang in the margin, the heading where it always is */
+  /* (out in the margin as far as there's room: no further than the window's edge) */
   .block.hang {
-    text-indent: calc(var(--hang) * -1ch);
+    text-indent: max(calc(var(--hang) * -1ch), calc((100% - 100cqw) / 2 + 4px));
   }
   .block.hang::before {
     opacity: 0;

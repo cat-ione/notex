@@ -147,6 +147,13 @@ export function headingOf(text: string): { level: number; prefix: number } | nul
   return m ? { level: m[1].length, prefix: m[0].length } : null;
 }
 
+/** A horizontal line: `---`, `***` or `___` (three or more) alone on a line. */
+export const isRule = (text: string) => /^ {0,3}(?:-{3,}|\*{3,}|_{3,}) *$/.test(text);
+
+/** A paragraph that is a horizontal line (its text one, and no formula in it). */
+export const ruleBlock = (blk: { kind: string; items: { t: string; ch?: string }[] }) =>
+  blk.kind === 'p' && blk.items.length >= 3 && blk.items.length < 40 && blk.items.every((i) => i.t === 'c') && isRule(blk.items.map((i) => i.ch).join(''));
+
 /** An opening code fence (```, ```python): its language ('' for none); null if it isn't one. */
 export function fenceOf(text: string): string | null {
   const m = /^```[ \t]*([\w+#.-]*)[ \t]*$/.exec(text);

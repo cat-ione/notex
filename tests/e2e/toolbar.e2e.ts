@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 test('the toolbar is there, with the note and every button, each with its keys', async ({ page }) => {
   await expect(page.locator('.toolbar')).toBeVisible();
   await expect(page.locator('.toolbar .note')).toContainText('untitled');
-  for (const id of ['new', 'save', 'math', 'draw', 'image', 'find', 'pdf', 'settings', 'help', 'hide']) await expect(button(page, id)).toBeVisible();
+  for (const id of ['new', 'save', 'math', 'draw', 'image', 'find', 'pdf', 'print', 'settings', 'help', 'hide']) await expect(button(page, id)).toBeVisible();
   await expect(button(page, 'find')).toHaveAttribute('data-tip-key', 'ctrl+f');
   await expect(button(page, 'draw')).toHaveAttribute('data-tip-key', 'ctrl+d');
   // hovering shows what it does and its keys
@@ -77,13 +77,28 @@ test('the note button lists the notes; new starts one', async ({ page }) => {
   await expect.poll(() => text(page)).toBe('');
 });
 
-test('pdf goes through the print dialog in the browser', async ({ page }) => {
+test('print prints (the system dialog); pdf, in the browser, saves a PDF file without it', async ({ page }) => {
   await page.evaluate(() => {
     (window as any).__prints = 0;
     window.print = () => void (window as any).__prints++;
+    delete (Window.prototype as any).showSaveFilePicker;
+    delete (window as any).showSaveFilePicker;
+    // (what's downloaded, kept to look at)
+    const make = URL.createObjectURL;
+    URL.createObjectURL = (b: Blob | MediaSource) => (((window as any).__blob = b), make(b));
   });
-  await button(page, 'pdf').click();
+  await type(page, 'a short note with $x^2$ in it');
+  await button(page, 'print').click();
   await expect.poll(() => page.evaluate(() => (window as any).__prints)).toBe(1);
+  const download = page.waitForEvent('download', { timeout: 60_000 });
+  await button(page, 'pdf').click();
+  const d = await download;
+  expect(d.suggestedFilename()).toBe('untitled.pdf');
+  expect(await page.evaluate(() => (window as any).__blob.slice(0, 5).text())).toBe('%PDF-');
+  // (the printing layout undone, no dialog opened)
+  expect(await page.evaluate(() => (window as any).__prints)).toBe(1);
+  await expect(page.locator('.nx-page-push')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.classList.contains('nx-print'))).toBe(false);
 });
 
 test('save downloads the note where the browser has no file pickers', async ({ page }) => {

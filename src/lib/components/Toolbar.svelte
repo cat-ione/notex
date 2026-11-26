@@ -29,7 +29,8 @@
   ];
   const right: Button[] = [
     { id: 'find', glyph: '/', label: 'find', tip: 'find', keys: 'ctrl+f', run: () => ed.openFind() },
-    { id: 'pdf', glyph: '⎙', label: 'pdf', tip: 'save as PDF', keys: 'ctrl+p prints', run: () => ed.exportPdf() },
+    { id: 'pdf', glyph: '⇩', label: 'pdf', tip: 'save as a PDF file', run: () => ed.exportPdf() },
+    { id: 'print', glyph: '⎙', tip: 'print', keys: 'ctrl+p', run: () => ed.printNote() },
     { id: 'settings', glyph: '⚙', tip: 'settings', keys: 'ctrl+,', run: () => (ed.showSettings = true) },
     { id: 'help', glyph: '?', tip: 'keyboard shortcuts', keys: 'F1', run: () => (ed.showHelp = !ed.showHelp) },
     { id: 'hide', glyph: '▴', tip: 'hide the toolbar (settings or \\toolbar bring it back)', run: () => ed.toggleBar('toolbar') },
@@ -143,5 +144,15 @@
   @media (max-width: 720px) {
     .l { display: none; }
     .note { max-width: 16ch; }
+  }
+  /* a phone: what doesn't fit is a swipe along it away */
+  @media (max-width: 520px) {
+    .toolbar {
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .toolbar > :global(*) {
+      flex-shrink: 0;
+    }
   }
 </style>

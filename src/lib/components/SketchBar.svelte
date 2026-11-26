@@ -92,13 +92,18 @@
 </div>
 
 <style>
+  /* (centred; on a narrow window, on as many rows as it takes: none of it out of sight) */
   .sbar {
     position: absolute;
     top: 38px;
-    left: 50%;
+    left: 8px;
+    right: 8px;
+    margin: 0 auto;
+    width: fit-content;
     z-index: 30;
-    transform: translateX(-50%);
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
     gap: 2px;
     padding: 3px;
@@ -111,8 +116,6 @@
     white-space: nowrap;
     user-select: none;
     touch-action: none;
-    max-width: calc(100vw - 16px);
-    overflow-x: auto;
   }
   .sbar.low {
     top: 8px;

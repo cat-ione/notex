@@ -1,0 +1,3 @@
+# (core-js, under jspdf, only prints a banner when installed: its script not run)
+allowBuilds:
+  core-js: false

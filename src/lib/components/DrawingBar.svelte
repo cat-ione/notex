@@ -99,6 +99,10 @@
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
     white-space: nowrap;
     user-select: none;
+    /* (a narrow window: on two rows rather than past its edge) */
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: calc(100vw - 16px);
   }
   .dbar.below {
     transform: translate(-50%, 0);

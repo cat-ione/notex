@@ -83,3 +83,14 @@ export function lineGroups(rs: Rect[]): Rect[][] {
 
 /** Merge rects into one rect per visual line. */
 export const byLine = (rs: Rect[]): Rect[] => lineGroups(rs).map((l) => union(l)!);
+
+/**
+ * Did the mouse itself move (not the list under it: the browser also sends a move, or an
+ * enter, when a menu opens or scrolls under a still mouse)? For hovering a menu's items.
+ */
+let lastMouse = { x: NaN, y: NaN };
+export function mouseMoved(e: MouseEvent): boolean {
+  if (e.screenX === lastMouse.x && e.screenY === lastMouse.y) return false;
+  lastMouse = { x: e.screenX, y: e.screenY };
+  return true;
+}

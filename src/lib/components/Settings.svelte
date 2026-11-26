@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import { mouseMoved } from '$lib/geom';
   import type { Editor } from '$lib/editor.svelte';
   import { allThemes, configToText, DEFAULT_CONFIG, openConfigExternally } from '$lib/config';
   import { SUB_GROUPS } from '$lib/math/defs';
@@ -330,7 +331,7 @@
     {:else}
       <div class="title">settings</div>
       {#each rows as r, i}
-        <div class="row" class:sel={i === sel} data-tip={r.tip} onmouseenter={() => (sel = i)} onclick={() => (r.act ? r.act() : r.change?.(1))}>
+        <div class="row" class:sel={i === sel} data-tip={r.tip} onmousemove={(e) => mouseMoved(e) && (sel = i)} onclick={() => (r.act ? r.act() : r.change?.(1))}>
           <span class="label">{r.label}</span>
           {#if r.value}
             <span class="value">

@@ -20,11 +20,12 @@ import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText
 import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
 import { docToMarkdown } from './mdfile';
-import { BOLD, CODE, HIGHLIGHT, ITALIC, LINK, MARK, OBJ, STRIKE, closesFence, fenceOf, headingOf, parseInline, type Link } from './markdown';
+import { BOLD, CODE, HIGHLIGHT, ITALIC, LINK, MARK, OBJ, STRIKE, closesFence, fenceOf, headingOf, parseInline, ruleBlock, type Link } from './markdown';
 import { withMarkdown } from './format';
 import { welcomeDoc } from './welcome';
 import { imageSrc, pickImageFiles } from './images';
 import * as F from './files';
+import { hexColour, pdfOf } from './pdf';
 import * as L from './library';
 import { cellSpans, emptyRow, findTables, isSeparator, isWall, markdownCells, rowItems, rowLike, rowMarkdown, separatorLine, structureTables, tableRowAt, wall } from './tables';
 import * as C from './config';
@@ -853,9 +854,16 @@ export class Editor {
     }
   }
 
-  /** Save the note as a PDF: straight to a file on Windows, through the print dialog elsewhere. */
+  /**
+   * Save the note as a PDF file (printing is printNote): on Windows' app, printed straight to
+   * the file; in the browser, made here (each page drawn as it prints); in the app elsewhere,
+   * through the print dialog.
+   */
   async exportPdf() {
-    if (!F.canSavePdf()) return this.printNote();
+    if (!F.canSavePdf()) {
+      if (F.isDesktop()) return this.printNote();
+      return this.pdfInBrowser();
+    }
     const path = await F.choosePdfPath(this.file.path ?? this.file.name);
     if (!path) return;
     this.beginPrint();
@@ -864,6 +872,25 @@ export class Editor {
       this.flash(`saved ${path.split(/[\\/]/).pop()}`);
     } catch (e) {
       this.flash(`could not save the PDF: ${e}`);
+    } finally {
+      this.endPrint();
+    }
+  }
+
+  /** The PDF made in the browser: laid out as it prints, each sheet drawn into a page of it. */
+  private async pdfInBrowser() {
+    const name = this.file.name.replace(/\.[^.]+$/, '') || 'note';
+    const save = await F.browserSaveTarget(name, 'pdf', 'PDF', 'application/pdf');
+    if (!save || !this.page) return;
+    this.flash('making the PDF…');
+    this.beginPrint();
+    try {
+      const paper = C.PAPERS[this.config.pdf.paper] ?? C.PAPERS.A4;
+      const bg = hexColour(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#ffffff');
+      const blob = await pdfOf(this.page, { w: paper.w, h: paper.h, margin: C.PAPER_MARGIN, textHeight: (paper.h - 2 * C.PAPER_MARGIN) * 96, bg });
+      this.flash(`saved ${await save(blob)}`);
+    } catch (e) {
+      this.flash(`could not make the PDF: ${e}`);
     } finally {
       this.endPrint();
     }
@@ -2025,7 +2052,10 @@ export class Editor {
       else if (clear(down)) best = { y: down, below: true, d };
     }
     best ??= fits(r.y - 8 - H) ? { y: r.y - 8, below: false, d: 0 } : { y: r.y + r.h + 8, below: true, d: 0 };
-    return { x: cx, y: best.y, below: best.below };
+    // (in the window: a drawing near its edge has its bar moved in)
+    const half = Math.min(W, window.innerWidth - 16) / 2;
+    const x = Math.max(8 + half - o.left, Math.min(window.innerWidth - 8 - half - o.left, cx));
+    return { x, y: best.y, below: best.below };
   }
 
   /**
@@ -3571,6 +3601,8 @@ export class Editor {
       const kind: BlockKind = h ? (['h1', 'h2', 'h3'] as const)[Math.min(h.level, 3) - 1] : 'p';
       if (kind !== blk.kind) (blk.kind = kind), (changed = true);
       prefix = h?.prefix ?? 0;
+      // (a horizontal line: all of it markers, a line drawn in their place)
+      if (ruleBlock(blk)) prefix = items.length;
     }
     const code = blk.kind === 'code' || blk.kind === 'fence';
     const flags = code ? null : parseInline(text).flags;
@@ -3670,6 +3702,7 @@ export class Editor {
         hang = headingOf(plainText(blk.items))?.prefix ?? 0;
         for (let k = 0; k < hang; k++) shown.add(k);
       }
+      if (ruleBlock(blk)) for (let k = 0; k < blk.items.length; k++) shown.add(k);
     }
     if (!shown.size && !code) return null;
     return { b: this.b, shown, hang, code };
@@ -4736,7 +4769,7 @@ export class Editor {
       { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
       { name: 'markdown', desc: 'save a copy as markdown (.md), for Obsidian and the like', run: () => void this.saveMarkdownCopy() },
       { name: 'copymarkdown', desc: 'copy document as markdown', run: () => this.copyText(docToMarkdown($state.snapshot(this.doc) as Doc).text, 'markdown') },
-      { name: 'pdf', desc: 'save as PDF', run: () => this.exportPdf() },
+      { name: 'pdf', desc: 'save as a PDF file (print: ctrl+p)', run: () => this.exportPdf() },
       { name: 'print', desc: 'print  ctrl+p', run: () => this.printNote() },
       { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
       { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },

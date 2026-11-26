@@ -6,7 +6,7 @@
 // \tikzmarknode{...}{...} and is drawn in a tikz overlay after the paragraph.
 
 import { BOX_NAME, NUMBERED_BOX, isRefItem, type Arrow, type Block, type BoxKind, type Doc, type Id, type Item, type Mark, type MRow, type MSym } from './model';
-import { OBJ, parseInline, type Link } from './markdown';
+import { OBJ, parseInline, ruleBlock, type Link } from './markdown';
 import { cellSpans, findTables } from './tables';
 import { toLatex, toLatexWrapped, type Wraps } from './math/latex';
 import { CMDS } from './math/defs';
@@ -340,7 +340,8 @@ export function docToLatex(doc: Doc): string {
       if (named) body = body.slice(named[0].length);
       out.push(`\\begin{${box.k}}${named ? `[${named[1]}]` : ''}${NUMBERED_BOX.has(box.k) ? `\\label{${labelOf(box.id)}}` : ''}`);
     }
-    if (blk.kind === 'h1') out.push(`\\section*{${body}}`);
+    if (ruleBlock(blk)) out.push('\\noindent\\rule{\\linewidth}{0.4pt}\n');
+    else if (blk.kind === 'h1') out.push(`\\section*{${body}}`);
     else if (blk.kind === 'h2') out.push(`\\subsection*{${body}}`);
     else if (blk.kind === 'h3') out.push(`\\subsubsection*{${body}}`);
     else if (list && blk.kind === 'li' && blk.check !== undefined) (need.add('amssymb'), out.push(`${pad(depth)}\\item[$${blk.check ? '\\boxtimes' : '\\square'}$] ${body}`));

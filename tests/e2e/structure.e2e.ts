@@ -355,3 +355,38 @@ test('every kind of block survives an undo and redo', async ({ page }) => {
   await page.keyboard.press('Control+y');
   expect(await kinds(page)).toEqual(['p', 'li']);
 });
+
+test('--- alone on a line is a horizontal line: its dashes shown only where the caret is; LaTeX a rule', async ({ page }) => {
+  await type(page, 'above');
+  await page.keyboard.press('Enter');
+  await type(page, '---');
+  await page.keyboard.press('Enter');
+  await type(page, 'below');
+  const rule = page.locator('.page > .block').nth(1);
+  await expect(rule).toHaveClass(/\brule\b/);
+  await expect(rule.locator('.ch').first()).toBeHidden();
+  // a line drawn across
+  const line = await rule.evaluate((el) => getComputedStyle(el, '::after').borderTopWidth);
+  expect(line).toBe('1px');
+  // the caret on it: its dashes, to edit
+  await page.keyboard.press('ArrowUp');
+  await expect(rule.locator('.ch').first()).toBeVisible();
+  // *** and ___ too; not with words
+  for (const [t, is] of [['***', true], ['___', true], ['-- -', false], ['--- a', false]] as const) {
+    await page.keyboard.press('End');
+    await page.keyboard.press('Shift+Home');
+    // (gone first: a * typed over a selection wraps it)
+    await page.keyboard.press('Backspace');
+    await type(page, t);
+    await page.keyboard.press('ArrowDown');
+    if (is) await expect(rule).toHaveClass(/\brule\b/);
+    else await expect(rule).not.toHaveClass(/\brule\b/);
+    await page.keyboard.press('ArrowUp');
+  }
+  await page.keyboard.press('End');
+  await page.keyboard.press('Shift+Home');
+  await type(page, '---');
+  const tex: string = await page.evaluate(() => (window as any).__nx.tex());
+  expect(tex).toContain(String.raw`\noindent\rule{\linewidth}{0.4pt}`);
+  expect(tex).not.toContain('---');
+});

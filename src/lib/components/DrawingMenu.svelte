@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
+  import { mouseMoved } from '$lib/geom';
   import { cubicOut } from 'svelte/easing';
   import { keyLabel, type Editor } from '$lib/editor.svelte';
 
@@ -37,7 +38,7 @@
         class:off={a.off}
         class:danger={a.name === 'delete'}
         data-tip={a.more}
-        onmouseenter={() => ed.menu && !a.off && (ed.menu.sel = i)}
+        onmousemove={(e) => mouseMoved(e) && ed.menu && !a.off && ed.menu.sel !== i && (ed.menu.sel = i)}
         onclick={() => ed.runMenu(i)}
       >
         <span class="name">{a.desc}</span><kbd>{keyLabel(a.keys[0])}</kbd>
@@ -49,7 +50,7 @@
 <style>
   .dmenu {
     position: fixed;
-    z-index: 30;
+    z-index: 40;
     min-width: 220px;
     padding: 4px 0;
     font-family: var(--mono);
@@ -60,6 +61,10 @@
     border-radius: 6px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
     user-select: none;
+    /* (a short window: it scrolls, rather than running off the bottom) */
+    max-height: calc(100vh - 8px);
+    overflow-y: auto;
+    box-sizing: border-box;
   }
   .opt {
     display: flex;

@@ -55,7 +55,8 @@
 
 {#if ed.find}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="findbar" transition:fly={{ y: -6, duration: 130, easing: cubicOut }} onmousedown={(e) => e.stopPropagation()}>
+  <!-- (under the menu bar, and under the drawing bar while drawing) -->
+  <div class="findbar" style:top="{(ed.config.ui.toolbar ? 40 : 10) + (ed.sketch.active ? 44 : 0)}px" transition:fly={{ y: -6, duration: 130, easing: cubicOut }} onmousedown={(e) => e.stopPropagation()}>
     <span class="sigil">/</span>
     <input
       bind:this={input}

@@ -13,7 +13,7 @@ and draw arrows and boxes *between parts of equations*.
   scripts, `e^(-x^2/2)` groups, and `\name` gives any LaTeX symbol. Typing `x^2` or `a_n` in a
   sentence turns it into math by itself.
 - **Draw on your notes.** Alt+drag from one word or symbol to another draws an arrow;
-  Alt+Shift+drag draws a box, circle, underline or brace. Press `L` to write a note on it.
+  Alt+Shift+drag draws a shape: a box, circle, underline or brace (the kind drawn last). Press `L` to write a note on it.
   Drawings stay attached to what they point at as you keep editing.
 - **Markdown, like Obsidian.** `# ` headings, `- ` and `1. ` lists, `- [ ]` lists to tick,
   `**bold**`, `*italic*`, `~~struck~~`, `==highlighted==`, `> ` quotes, `[[links]]` to other
@@ -45,8 +45,8 @@ and draw arrows and boxes *between parts of equations*.
 - **Images.** Paste or drop them in; they're kept inside the note.
 - **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
   type, and your own CSS (Ctrl+,).
-- **PDF, LaTeX and markdown.** `\pdf` saves the note as a PDF, drawings and all (Ctrl+P prints
-  it); `\export` copies it as LaTeX, drawings, theorems and references included (tikz,
+- **PDF, LaTeX and markdown.** `\pdf` saves the note as a PDF file, drawings and all, and
+  Ctrl+P prints it; `\export` copies it as LaTeX, drawings, theorems and references included (tikz,
   amsthm); `\markdown` saves it as markdown, and `.md` files open as notes.
 
 Press **F1** in the app for every shortcut.
@@ -74,7 +74,7 @@ Press **F1** in the app for every shortcut.
 | Ctrl+F / Ctrl+H | find / find and replace |
 | Ctrl+wheel, a pinch, Ctrl+= / Ctrl+- / Ctrl+0 | zoom |
 | Ctrl+S / Ctrl+O / Ctrl+N | save / open / new |
-| `\pdf` / Ctrl+P | save as PDF / print |
+| `\pdf` / Ctrl+P | save a PDF file / print |
 
 ## Files
 
@@ -87,7 +87,7 @@ Notes are `.ntx` files: compact JSON (see `src/lib/format.ts`).
 
 ## Customizing
 
-The toolbar along the top has notes, saving, math, drawing, images, find and PDF, each
+The toolbar along the top has notes, saving, math, drawing, images, find, PDF and print, each
 showing its keys when hovered; it fades while you type. It and the status bar can be hidden
 (settings, `\toolbar`, `\statusbar`), and everything stays on its keys.
 
