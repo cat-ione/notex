@@ -23,6 +23,20 @@ test('once visited, it opens with no connection', async ({ page, context }) => {
   await expect(page.locator('.nx-err')).toHaveCount(0);
 });
 
+test('a new version shows on a plain reload (the page is asked of the network first)', async ({ page }) => {
+  await installed(page);
+  // the kept copy is an older version's
+  await page.evaluate(async () => {
+    const cache = await caches.open((await caches.keys()).find((k) => k.startsWith('notex-'))!);
+    const old = (await (await cache.match('/'))!.text()).replace('<head>', '<head><meta name="nx-old" content="1">');
+    await cache.put('/', new Response(old, { headers: { 'content-type': 'text/html' } }));
+  });
+  await page.reload();
+  await page.waitForFunction(() => (window as any).__nx);
+  expect(await page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+  await expect(page.locator('meta[name="nx-old"]')).toHaveCount(0);
+});
+
 test('offline, math renders in its own fonts', async ({ page, context }) => {
   await installed(page);
   await context.setOffline(true);
