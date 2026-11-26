@@ -391,7 +391,8 @@ export class Editor {
       if (j === undefined) this.blockJSON.set(b, (j = JSON.stringify(b)));
       return j;
     });
-    return `{"blocks":[${parts.join(',')}],"arrows":${JSON.stringify(d.arrows)},"marks":${JSON.stringify(d.marks)}}`;
+    const ink = d.ink?.length ? `,"ink":${JSON.stringify(d.ink)}` : '';
+    return `{"blocks":[${parts.join(',')}],"arrows":${JSON.stringify(d.arrows)},"marks":${JSON.stringify(d.marks)}${ink}}`;
   }
 
   // ── tips ──

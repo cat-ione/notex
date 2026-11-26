@@ -1,7 +1,7 @@
 <script lang="ts">
   // Typing a shape's label (or a text): a text field over it. Enter or Esc is done (shift+enter
   // a new line); ctrl+arrow is done and adds a box beside it, joined by an arrow, to type in next.
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import type { Editor } from '$lib/editor.svelte';
   import { renderLabel } from '$lib/labels';
   import { isBox, type BoxShape } from '$lib/sketch/shapes';
@@ -9,12 +9,12 @@
   let { ed }: { ed: Editor } = $props();
 
   // (the shape being labelled when this opened: a new one is a new editor)
-  const id = ed.sketch.editing!;
+  const id = untrack(() => ed.sketch.editing!);
   const shape = $derived(ed.sketch.shapes().find((s) => s.id === id) as BoxShape | undefined);
   const isText = $derived(shape?.k === 'text');
   const at = $derived(shape ? ed.sketch.pageBox(shape) : null);
 
-  let value = $state((ed.sketch.shapes().find((s) => s.id === id) as BoxShape | undefined)?.label ?? '');
+  let value = $state(untrack(() => (ed.sketch.shapes().find((s) => s.id === id) as BoxShape | undefined)?.label ?? ''));
   let area: HTMLTextAreaElement | undefined = $state();
   let mirror: HTMLDivElement | undefined = $state();
 

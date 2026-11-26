@@ -76,6 +76,8 @@ export class Sketcher {
   penSeen = $state(false);
 
   private g: Gesture | null = null;
+  private lastDown: { t: number; x: number; y: number } | null = null;
+  private double = false;
   private penTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPen = 0;
   private clip: Shape[] | null = null;
@@ -275,6 +277,7 @@ export class Sketcher {
     this.commitLabel();
     this.on = null;
     this.auto = false;
+    this.lastDown = null;
     this.sel = [];
     this.draft = null;
     this.marquee = null;
@@ -376,6 +379,10 @@ export class Sketcher {
     const p = this.toSurface(e);
     const tool: Tool = eraserEnd ? 'eraser' : this.tool;
     const id = e.pointerId;
+    // a second press soon after, near the first: a double-click (or double tap)
+    const now = e.timeStamp, last = this.lastDown;
+    this.double = !!last && now - last.t < 450 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 8;
+    this.lastDown = this.double ? null : { t: now, x: e.clientX, y: e.clientY };
     if (tool === 'eraser') {
       this.g = { k: 'erase', id, last: p, hit: false };
       this.eraseTo(p, type);
@@ -483,7 +490,8 @@ export class Sketcher {
         if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < 8) {
           if (!this.on) this.ed.tap(e.clientX, e.clientY);
         } else this.coast(g.v);
-        break;
+        // (a scroll changes nothing: the page mustn't go back to the caret)
+        return;
     }
     this.ed.touch();
   }
@@ -594,8 +602,8 @@ export class Sketcher {
       return;
     }
     const hit = shapeAt(this.shapes(), p, tol);
-    if (hit && e.detail >= 2 && isBox(hit)) return void this.editLabel(hit.id);
-    if (!hit && e.detail >= 2) return void this.addBox('text', { x: p.x, y: p.y - 12, w: 40, h: 24 });
+    if (hit && this.double && isBox(hit)) return void this.editLabel(hit.id);
+    if (!hit && this.double) return void this.addBox('text', { x: p.x, y: p.y - 12, w: 40, h: 24 });
     if (hit) {
       if (e.shiftKey) this.sel = this.sel.includes(hit.id) ? this.sel.filter((x) => x !== hit.id) : [...this.sel, hit.id];
       else if (!this.sel.includes(hit.id)) this.sel = [hit.id];
@@ -663,7 +671,8 @@ export class Sketcher {
     const sc = this.scroller();
     const dy = e.clientY - g.y, dt = Math.max(1, e.timeStamp - g.t);
     if (sc) sc.scrollTop -= dy;
-    g.v = 0.8 * (dy / dt) + 0.2 * g.v;
+    // (px per ms, no faster than a quick flick)
+    g.v = Math.max(-4, Math.min(4, 0.8 * (dy / dt) + 0.2 * g.v));
     g.y = e.clientY;
     g.t = e.timeStamp;
   }
@@ -721,6 +730,8 @@ export class Sketcher {
 
   /** A key while sketching. Whether it was used. */
   key(k: string): boolean {
+    // (a key between two presses: they're not a double-click)
+    this.lastDown = null;
     const sel = this.selected;
     const t = TOOLS.find((x) => x.key === k || x.num === k);
     if (t) {
@@ -819,7 +830,7 @@ export class Sketcher {
     const sel = this.selected;
     if (!sel.length) return;
     this.ed.checkpoint();
-    const copies = cloneShapes(sel).map((s) => moved(s, 16, 16));
+    const copies = cloneShapes($state.snapshot(sel) as Shape[]).map((s) => moved(s, 16, 16));
     this.write([...this.shapes(), ...copies], new Set(copies.map((s) => s.id)));
     this.sel = copies.map((s) => s.id);
   }
