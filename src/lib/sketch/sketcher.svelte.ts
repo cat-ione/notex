@@ -16,7 +16,7 @@ import {
   type Box, type BoxKind, type BoxShape, type End, type LineShape, type Placed, type Pt, type Shape, type Width,
 } from './shapes';
 
-export type Tool = 'select' | 'pen' | 'marker' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'diamond' | 'text' | 'eraser';
+export type Tool = 'select' | 'pen' | 'marker' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'diamond' | 'text' | 'plot' | 'eraser';
 /** What's drawn on: the note itself, or a diagram block. */
 export type Target = { kind: 'free' } | { kind: 'block'; id: Id };
 
@@ -31,11 +31,13 @@ export const TOOLS: { tool: Tool; key: string; num: string; desc: string }[] = [
   { tool: 'ellipse', key: 'o', num: '4', desc: 'ellipse' },
   { tool: 'diamond', key: 'd', num: '3', desc: 'diamond' },
   { tool: 'text', key: 't', num: '8', desc: 'text ($math$ too)' },
+  { tool: 'plot', key: 'g', num: '', desc: 'graph: a box, then what to plot (y = sin x; a line each; x: -pi..pi)' },
   { tool: 'eraser', key: 'e', num: '0', desc: 'eraser' },
 ];
-const BOX_TOOLS: Tool[] = ['rect', 'ellipse', 'diamond', 'text'];
-/** A new box placed with a tap, or from the keyboard. */
+const BOX_TOOLS: Tool[] = ['rect', 'ellipse', 'diamond', 'text', 'plot'];
+/** A new box placed with a tap, or from the keyboard (a graph: bigger). */
 const NEW_BOX = { w: 120, h: 56 };
+const NEW_PLOT = { w: 280, h: 180 };
 /** How far a pointer may be from something to pick it up (more for a finger). */
 const TOL = { mouse: 5, pen: 6, touch: 12 } as Record<string, number>;
 /** A diagram's canvas: its height when made, and its least. */
@@ -324,7 +326,8 @@ export class Sketcher {
     const ed = this.ed;
     // as wide as the text (the page less its margins)
     const page = ed.page, cs = page && getComputedStyle(page);
-    const inner = page && cs ? page.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) : 720;
+    // (at no zoom: a diagram's own units)
+    const inner = page && cs ? (page.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / ed.zoom : 720;
     const w = Math.round(Math.min(Math.max(200, inner), 1200));
     const d = Object.assign(block([], 'diagram'), { w, h: DIAGRAM_H, shapes: [] as Shape[] });
     ed.insertBlock(d);
@@ -542,7 +545,10 @@ export class Sketcher {
           if (isBox(d) && d.k !== 'text' && this.lastType !== 'pen') this.editLabel(d.id);
         }
         // a tap with a box tool: a box of the usual size, centred there
-        else if (BOX_TOOLS.includes(g.tool)) this.addBox(g.tool as BoxKind, { ...this.snap({ x: g.raw.x - NEW_BOX.w / 2, y: g.raw.y - NEW_BOX.h / 2 }, e), ...NEW_BOX });
+        else if (BOX_TOOLS.includes(g.tool)) {
+          const size = g.tool === 'plot' ? NEW_PLOT : NEW_BOX;
+          this.addBox(g.tool as BoxKind, { ...this.snap({ x: g.raw.x - size.w / 2, y: g.raw.y - size.h / 2 }, e), ...size });
+        }
         break;
       }
       case 'marquee':
@@ -627,9 +633,21 @@ export class Sketcher {
   /** A new box (or text) where given, selected, its label to type. */
   /** (its label to type then, but for a box drawn with a pen: no keyboard popping up on a tablet) */
   private addBox(k: BoxKind, b: Box) {
-    const s = boxShape(k, b, { ...this.style(), ...(this.fill && k !== 'text' ? { fill: true } : {}) });
+    const s = boxShape(k, b, { ...this.style(), ...(this.fill && k !== 'text' && k !== 'plot' ? { fill: true } : {}) });
     this.add(s);
-    if (k === 'text' || this.lastType !== 'pen') this.editLabel(s.id);
+    // (a graph is nothing till it's told what to plot: the keyboard even for a pen)
+    if (k === 'text' || k === 'plot' || this.lastType !== 'pen') this.editLabel(s.id);
+  }
+
+  /** \graph: a diagram with a graph filling it, what to plot to type. */
+  insertGraph() {
+    this.insertDiagram();
+    const t = this.on;
+    const blk = t?.kind === 'block' ? this.blockOf(t.id) : undefined;
+    if (!blk) return;
+    const w = blk.w ?? 720;
+    this.tool = 'select';
+    this.addBox('plot', { x: Math.round(w * 0.12), y: 16, w: Math.round(w * 0.76), h: DIAGRAM_H - 32 });
   }
 
   private eraseTo(p: Pt, type: string) {

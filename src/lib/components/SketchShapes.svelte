@@ -1,8 +1,9 @@
 <script lang="ts">
   // Shapes, drawn into an svg (a diagram's canvas, or the layer on top of the note): strokes,
   // lines with their heads, boxes, ellipses, diamonds and their labels; the selection and its
-  // handles; the shape being drawn and the selection rectangle.
+  // handles; the shape being drawn and the selection rectangle; graphs of functions.
   import type { Id } from '$lib/model';
+  import { parsePlot, plotGeometry, type PlotGeom } from '$lib/sketch/plot';
   import { renderLabel } from '$lib/labels';
   import {
     diamondPath, HL_PX, inkPoints, isBox, lineEnds, lineLabelBox, lookupIn, penOutline, smoothPath, strokePx,
@@ -41,6 +42,21 @@
     const p2 = { x: b.x - L * Math.cos(ang + W), y: b.y - L * Math.sin(ang + W) };
     return `M${p1.x.toFixed(1)},${p1.y.toFixed(1)}L${b.x.toFixed(1)},${b.y.toFixed(1)}L${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
   }
+  /** A graph laid out (kept while its label and box are the same: a curve is hundreds of points). */
+  const plots = new Map<string, PlotGeom>();
+  function plotOf(s: Shape & { x: number; y: number; w: number; h: number; label?: string }): PlotGeom {
+    const key = `${s.label ?? ''}|${s.x},${s.y},${s.w},${s.h}`;
+    let g = plots.get(key);
+    if (!g) {
+      if (plots.size > 64) plots.clear();
+      g = plotGeometry(parsePlot(s.label ?? ''), s);
+      plots.set(key, g);
+    }
+    return g;
+  }
+  /** Each function's colour: the graph's own first (else the accent), then the inks. */
+  const curveColor = (i: number, c: string | undefined) => [c ? ink(c) : 'var(--accent)', 'var(--ink-red)', 'var(--ink-green)', 'var(--ink-purple)', 'var(--ink-blue)'][i % 5];
+
   /** The line stops short of a head's point (so it doesn't poke through it). */
   function short(a: Pt, b: Pt, by: number): Pt {
     const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
@@ -77,6 +93,31 @@
           <div class="label on-line" class:above={short}><span>{@html renderLabel(s.label)}</span></div>
         </foreignObject>
       {/if}
+    {:else if s.k === 'plot'}
+      {@const g = plotOf(s)}
+      {@const fns = (s.label ?? '').split(/\n|;/).map((l) => l.trim()).filter((l) => l && !/^[xy]\s*(:|∈)/.test(l))}
+      <g class="plot">
+        <rect class="pframe" x={s.x} y={s.y} width={Math.max(1, s.w)} height={Math.max(1, s.h)} rx="3" />
+        {#each g.grid as l, i (i)}<line class="pgrid" x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />{/each}
+        {#each g.axes as l, i (i)}<line class="paxis" x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />{/each}
+        <clipPath id="plot-{s.id}"><rect x={g.area.x} y={g.area.y} width={g.area.w} height={g.area.h} /></clipPath>
+        <g clip-path="url(#plot-{s.id})">
+          {#each g.curves as c (c.i)}<path class="pcurve" class:dash={s.dash} d={c.d} stroke={curveColor(c.i, s.color)} stroke-width={w} />{/each}
+        </g>
+        {#each g.xticks as t, i (i)}<text class="ptick" x={t.x} y={t.y} text-anchor="middle">{t.label}</text>{/each}
+        {#each g.yticks as t, i (i)}<text class="ptick" x={t.x} y={t.y} text-anchor="end">{t.label}</text>{/each}
+        {#if fns.length > 1}
+          <!-- (behind the legend: the page, so curves under it don't cross the words) -->
+          {@const lw = Math.max(...fns.map((f) => f.length)) * 6.7 + 26}
+          <rect class="pback" x={s.x + s.w - lw - 4} y={s.y + 5} width={lw} height={fns.length * 14 + 4} rx="3" />
+          {#each fns as f, i (i)}
+            <line class="pcurve" x1={s.x + s.w - 14} y1={s.y + 14 + i * 14} x2={s.x + s.w - 4} y2={s.y + 14 + i * 14} stroke={curveColor(i, s.color)} stroke-width="2" />
+            <text class="plegend" x={s.x + s.w - 18} y={s.y + 18 + i * 14} text-anchor="end">{f}</text>
+          {/each}
+        {/if}
+        {#each g.errors as err, i (i)}<text class="perr" x={s.x + 8} y={s.y + s.h - 10 - i * 13}>{err}</text>{/each}
+        {#if !s.label?.trim() && editing !== s.id}<text class="phint" x={s.x + s.w / 2} y={s.y + s.h / 2} text-anchor="middle">a graph: what to plot? (enter)</text>{/if}
+      </g>
     {:else}
       {#if s.k === 'rect'}
         <rect class="stroke" class:dash={s.dash} class:filled={s.fill} x={s.x} y={s.y} width={s.w} height={s.h} rx="4" stroke-width={w} />
@@ -122,6 +163,53 @@
   }
   .stroke.dash {
     stroke-dasharray: 6 5;
+  }
+  /* a graph: a faint frame and grid, the axes, the curves over them */
+  .pframe {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 1;
+  }
+  .sel .pframe,
+  .draft .pframe {
+    stroke: color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+  .pback {
+    fill: color-mix(in srgb, var(--bg) 82%, transparent);
+  }
+  .pgrid {
+    stroke: color-mix(in srgb, var(--fg) 7%, transparent);
+    stroke-width: 1;
+  }
+  .paxis {
+    stroke: color-mix(in srgb, var(--fg) 45%, transparent);
+    stroke-width: 1.2;
+  }
+  .pcurve {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .pcurve.dash {
+    stroke-dasharray: 6 5;
+  }
+  .ptick,
+  .plegend,
+  .perr,
+  .phint {
+    font-family: var(--mono);
+    font-size: 10px;
+    fill: var(--muted);
+  }
+  .plegend {
+    fill: var(--fg);
+    font-size: 11px;
+  }
+  .perr {
+    fill: var(--danger);
+  }
+  .phint {
+    font-size: 12px;
   }
   .head {
     fill: none;

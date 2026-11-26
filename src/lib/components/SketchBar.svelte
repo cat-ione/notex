@@ -28,7 +28,7 @@
     f();
     ed.touch();
   };
-  const NAMES: Record<Tool, string> = { select: 'select', pen: 'pen', marker: 'highlighter', line: 'line', arrow: 'arrow', rect: 'box', ellipse: 'ellipse', diamond: 'diamond', text: 'text', eraser: 'eraser' };
+  const NAMES: Record<Tool, string> = { select: 'select', pen: 'pen', marker: 'highlighter', line: 'line', arrow: 'arrow', rect: 'box', ellipse: 'ellipse', diamond: 'diamond', text: 'text', plot: 'graph', eraser: 'eraser' };
   const where = $derived(sk.on?.kind === 'block' ? 'diagram' : 'on the note');
   const fingers = $derived(ed.config.sketch.touch);
 </script>
@@ -44,6 +44,7 @@
     {:else if t === 'ellipse'}<ellipse cx="8" cy="8" rx="6" ry="4.5" />
     {:else if t === 'diamond'}<path d="M8,2 L14,8 L8,14 L2,8 Z" />
     {:else if t === 'text'}<path d="M3,4 V3 H13 V4 M8,3 V13 M6,13 H10" />
+    {:else if t === 'plot'}<path d="M2,8 H14 M8,2 V14" class="thin" /><path d="M2.5,12.5 C5,12 6,3.5 8,3.5 S11,12 13.5,12.5" />
     {:else}<path d="M6,13.5 H14 M3,10.5 L8.5,5 L12,8.5 L8,12.5 L5,12.5 Z" />{/if}
   </svg>
 {/snippet}
@@ -53,7 +54,7 @@
   <span class="where">{where}</span>
   <div class="group">
     {#each TOOLS as t (t.tool)}
-      <button class:on={sk.tool === t.tool} data-tip={t.desc} data-tip-key="{t.key} / {t.num}" aria-label={NAMES[t.tool]} onpointerdown={act(() => ((sk.tool = t.tool), t.tool !== 'select' && (sk.sel = [])))}>{@render icon(t.tool)}</button>
+      <button class:on={sk.tool === t.tool} data-tip={t.desc} data-tip-key={t.num ? `${t.key} / ${t.num}` : t.key} aria-label={NAMES[t.tool]} onpointerdown={act(() => ((sk.tool = t.tool), t.tool !== 'select' && (sk.sel = [])))}>{@render icon(t.tool)}</button>
     {/each}
   </div>
   <div class="group">
@@ -174,6 +175,10 @@
   svg .fill {
     fill: currentColor;
     fill-opacity: 0.35;
+  }
+  svg .thin {
+    stroke-width: 0.8;
+    opacity: 0.6;
   }
   .ink span {
     width: 11px;

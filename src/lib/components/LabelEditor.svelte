@@ -12,6 +12,8 @@
   const id = untrack(() => ed.sketch.editing!);
   const shape = $derived(ed.sketch.shapes().find((s) => s.id === id) as BoxShape | LineShape | undefined);
   const isText = $derived(shape?.k === 'text');
+  // a graph: what to plot, at its top left (the graph showing as it's typed)
+  const isPlot = $derived(shape?.k === 'plot');
   // (a line's label: a box round its middle)
   const at = $derived(!shape ? null : ed.sketch.pageBox(shape.k === 'line' ? lineLabelBox(shape, lookupIn(ed.sketch.shapes())) : shape));
 
@@ -31,7 +33,7 @@
   async function save() {
     if (!shape) return;
     // (a box grows to hold what it says; a line's label sits on it as it is)
-    ed.sketch.setLabel(id, value, shape.k === 'line' ? undefined : await size());
+    ed.sketch.setLabel(id, value, shape.k === 'line' || shape.k === 'plot' ? undefined : await size());
     ed.touch();
   }
 
@@ -68,13 +70,13 @@
 </script>
 
 {#if shape && at && labelled(shape)}
-  <div class="lbl-edit" class:text={isText} style="left: {at.x}px; top: {at.y}px; width: {isText ? 'auto' : `${at.w}px`}; height: {isText ? 'auto' : `${at.h}px`}; --c: {shape.color ? `var(--ink-${shape.color})` : 'var(--fg)'}">
+  <div class="lbl-edit" class:text={isText || isPlot} class:plot={isPlot} style="left: {at.x + (isPlot ? 6 : 0)}px; top: {at.y + (isPlot ? 6 : 0)}px; width: {isText || isPlot ? 'auto' : `${at.w}px`}; height: {isText || isPlot ? 'auto' : `${at.h}px`}; --c: {shape.color ? `var(--ink-${shape.color})` : 'var(--fg)'}">
     <textarea
       bind:this={area}
       bind:value
       rows={Math.max(1, value.split('\n').length)}
       spellcheck="false"
-      placeholder={isText ? 'text, $math$' : 'label, $math$'}
+      placeholder={isPlot ? 'y = sin x   (shift+enter: another; x: -pi..pi)' : isText ? 'text, $math$' : 'label, $math$'}
       oninput={save}
       onkeydown={keydown}
       onblur={() => done()}
@@ -119,6 +121,12 @@
     min-width: 12ch;
     field-sizing: content;
     max-height: none;
+  }
+  .plot textarea {
+    min-width: 30ch;
+    font-family: var(--mono);
+    font-size: 13px;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
   }
   .mirror {
     position: absolute;

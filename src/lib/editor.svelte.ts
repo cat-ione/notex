@@ -4608,6 +4608,7 @@ export class Editor {
       { name: 'code', desc: 'code block  ```', run: setKind('code'), keep: true },
       { name: 'table', desc: 'insert a table (tab: next cell, enter: new row)', run: () => this.insertTable() },
       { name: 'diagram', desc: 'insert a diagram: boxes, arrows, pen  ctrl+shift+d in one', run: () => this.sketch.insertDiagram() },
+      { name: 'graph', desc: 'insert a graph of functions: y = sin x, a line each (g in a diagram)', run: () => this.sketch.insertGraph() },
       { name: 'sketch', desc: `${this.sketch.on?.kind === 'free' ? 'stop drawing' : 'draw'} on the note (a pen draws on it anyway)  ctrl+shift+d`, run: () => this.sketch.toggleFree() },
       ...(this.tableRow() ? TABLE_ACTIONS.map(([what, name, desc]) => ({ name, desc, run: () => this.tableCommand(what) })) : []),
       { name: 'image', desc: 'insert an image (or paste / drop one)', run: () => void this.chooseImages() },

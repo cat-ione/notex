@@ -35,7 +35,8 @@ export type Head = 'none' | 'end' | 'both';
 /** A line, with an optional label at its middle. */
 export type LineShape = Base & { k: 'line'; a: End; b: End; head: Head; label?: string };
 /** A box, ellipse or diamond (with a label inside), or a text (a label with no outline). */
-export type BoxKind = 'rect' | 'ellipse' | 'diamond' | 'text';
+/** `plot`: a graph of the functions its label says (see plot.ts). */
+export type BoxKind = 'rect' | 'ellipse' | 'diamond' | 'text' | 'plot';
 export type BoxShape = Base & Box & { k: BoxKind; label?: string; fill?: boolean };
 export type Shape = InkShape | LineShape | BoxShape;
 export type ShapeKind = Shape['k'];
@@ -43,7 +44,7 @@ export type ShapeKind = Shape['k'];
 /** A shape on top of a note: pinned to a block (`at`), in coordinates from that block's top left. */
 export type Placed = Shape & { at: Id };
 
-export const isBox = (s: Shape): s is BoxShape => s.k === 'rect' || s.k === 'ellipse' || s.k === 'diamond' || s.k === 'text';
+export const isBox = (s: Shape): s is BoxShape => s.k === 'rect' || s.k === 'ellipse' || s.k === 'diamond' || s.k === 'text' || s.k === 'plot';
 
 // ── making them ──
 
