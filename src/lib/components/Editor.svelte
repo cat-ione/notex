@@ -823,28 +823,6 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  /* a thin thumb, no track; brighter under the mouse */
-  .opts::-webkit-scrollbar {
-    width: 7px;
-  }
-  .opts::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .opts::-webkit-scrollbar-thumb {
-    background: var(--border);
-    background-clip: padding-box;
-    border: 2px solid transparent;
-    border-radius: 4px;
-  }
-  .opts:hover::-webkit-scrollbar-thumb {
-    background-color: var(--muted);
-  }
-  @supports not selector(::-webkit-scrollbar) {
-    .opts {
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-  }
   .opt {
     display: flex;
     justify-content: space-between;
