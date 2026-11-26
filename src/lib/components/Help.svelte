@@ -39,6 +39,17 @@
       ['scroll over it', 'next shape / bend (shift: colour)'], ['middle-click', 'delete'],
       ['drag a note', 'move it (alt+0 resets)'], ["drag a shape's ends", 'resize'],
     ]],
+    ['diagrams and the pen  (\\diagram  \\sketch)', [
+      ['ctrl+shift+d', 'draw in the diagram at the caret, or on the note; again to stop'],
+      ['v p l a r o d t e', 'select, pen, line, arrow, box, ellipse, diamond, text, eraser (or 1–8, 0)'],
+      ['drag  /  tap', 'draw the shape  /  a box of the usual size'], ['enter', 'label the selected box, or a new box'],
+      ['ctrl+← → ↑ ↓', 'a box beside this one, joined by an arrow (while typing a label too)'],
+      ['arrow from box to box', 'stays attached when they move'], ['$…$ in a label', 'math'],
+      ['c  w  -  f', 'colour, width, dashes, fill'], ['← → ↑ ↓', 'move (shift: by 10)'], ['tab', 'next shape'],
+      ['ctrl+d  del', 'copy, delete'], ['ctrl+a', 'select all'], ['esc', 'deselect, then back to the text'],
+      ['pen', 'draws on the note any time (pressure: width; its eraser end erases); typing goes back'],
+      ['finger', 'draws, until a pen has been used: then it scrolls, and a palm does nothing'],
+    ]],
   ];
 </script>
 

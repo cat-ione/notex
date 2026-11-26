@@ -3,6 +3,7 @@
 import { withMarkdown } from './format';
 import { isDesktop } from './files';
 import { parseLatex } from './math/parse';
+import { boxShape, inkShape, lineShape, type Shape } from './sketch/shapes';
 import { block, chars, math, uid, type Arrow, type Block, type BlockKind, type Doc, type Id, type Item, type Mark, type MarkKind, type MathItem, type MNode, type MRow } from './model';
 
 /** A formula from LaTeX. */
@@ -77,6 +78,27 @@ export function welcomeDoc(): Doc {
   const how = P('Hold Alt and drag from one thing to another to draw an arrow; Alt+Shift+drag draws a box. Click a drawing to change it: C colour, D dashes, L a note. Drawings stay on what they point at while you edit.');
   marks.push(mark('highlight', word(how, 'stay on what they point at'), { color: 'blue' }));
 
+  // ── a diagram ──
+  const A = boxShape('rect', { x: 16, y: 34, w: 200, h: 56 }, { label: 'f continuous on $[a,b]$' });
+  const B = boxShape('diamond', { x: 268, y: 14, w: 176, h: 96 }, { label: '$f(a)f(b)<0$ ?' });
+  const R = boxShape('rect', { x: 496, y: 34, w: 168, h: 56 }, { label: 'a root in $(a,b)$', color: 'green' });
+  // a hand-drawn graph crossing the axis, as a pen would draw it
+  const curve: number[] = [];
+  for (let i = 0; i <= 48; i++) {
+    const t = i / 48;
+    curve.push(Math.round(60 + t * 560), Math.round(222 - 52 * Math.sin(t * 3.4 - 0.9) - 10 * t), Math.round((0.35 + 0.6 * Math.sin(t * Math.PI)) * 100) / 100);
+  }
+  const shapes: Shape[] = [
+    A, B, R,
+    lineShape({ x: 0, y: 0, to: A.id }, { x: 0, y: 0, to: B.id }, 'end'),
+    lineShape({ x: 0, y: 0, to: B.id }, { x: 0, y: 0, to: R.id }, 'end', { color: 'green' }),
+    boxShape('text', { x: 452, y: 36, w: 30, h: 20 }, { label: 'yes', color: 'green' }),
+    lineShape({ x: 40, y: 230 }, { x: 650, y: 230 }, 'end', { width: 1 }),
+    inkShape(curve, true, { color: 'blue' }),
+    boxShape('text', { x: 604, y: 150, w: 24, h: 22 }, { label: '$f$', color: 'blue' }),
+  ];
+  const diagram = Object.assign(block(chars('A diagram: drawn with the mouse, the keys or a pen'), 'diagram'), { w: 680, h: 300, shapes });
+
   // ── math ──
   const intro = P('Math notes at lecture speed. This note is yours to play with: click anywhere, type, draw. F1 lists every key.');
 
@@ -94,6 +116,11 @@ export function welcomeDoc(): Doc {
       T([quadratic]),
       slip,
       how,
+
+      P('Diagrams, and the pen', 'h2'),
+      P('\\diagram makes one: boxes, ellipses and diamonds with $math$ in their labels, arrows that stay attached to the boxes they join, and the pen. Ctrl+arrow on a box adds the next one, joined to it.'),
+      diagram,
+      P('Ctrl+Shift+D draws in a diagram, or anywhere on the note: the drawing stays with the line under it. A pen just draws, and its eraser end erases; once a pen has been used, a finger scrolls instead.'),
 
       P('Type math the way you say it', 'h2'),
       P('$ starts a formula and $$ a centred one; $, → or Esc goes back to text. While typing:'),

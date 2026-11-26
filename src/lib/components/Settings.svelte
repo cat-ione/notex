@@ -83,6 +83,22 @@
       change: () => ed.updateConfig({ highlightCode: !ed.config.highlightCode }),
     },
     {
+      label: 'pen on the note',
+      tip: 'Draws: a pen put on the note draws on it at once (typing goes back to the text). Off: a pen draws only while drawing (ctrl+shift+d, the toolbar pen), and is a pointer like any other otherwise.',
+      value: () => (ed.config.sketch.penDraws ? 'draws' : 'off'),
+      change: () => ed.updateConfig({ sketch: { ...ed.config.sketch, penDraws: !ed.config.sketch.penDraws } }),
+    },
+    {
+      label: 'fingers while drawing',
+      tip: 'Auto: a finger draws until a pen has been used here, then it scrolls (a palm resting on the screen does nothing). Draw or scroll: always that.',
+      value: () => ed.config.sketch.touch,
+      change: (d) => {
+        const opts = ['auto', 'draw', 'scroll'] as const;
+        const i = opts.indexOf(ed.config.sketch.touch);
+        ed.updateConfig({ sketch: { ...ed.config.sketch, touch: opts[(i + d + 3) % 3] } });
+      },
+    },
+    {
       label: 'remember commands',
       tip: 'The \\ palette puts the commands you pick most, and lately, first. \\forget clears what it remembers.',
       value: () => (ed.config.rememberCommands ? 'on' : 'off'),

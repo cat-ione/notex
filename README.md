@@ -22,6 +22,13 @@ and draw arrows and boxes *between parts of equations*.
   Cells work as in a word processor: Tab moves between them, Enter adds a row, selecting
   across cells selects whole cells, and a right-click in one adds or removes rows and columns
   and aligns them. Formulas and drawings work inside them; files keep them as markdown.
+- **Diagrams, and the pen.** `\diagram` makes one: boxes, ellipses, diamonds and text with
+  `$math$` in their labels, lines and arrows that stay attached to the boxes they join, and
+  pen strokes. Ctrl+arrow on a box adds the next one, joined to it, so a flowchart needs no
+  mouse. Ctrl+Shift+D draws in it, or anywhere on top of the note, where a drawing stays with
+  the line under it. A pen just draws (its width follows the pressure, its eraser end erases);
+  a finger draws too, until a pen has been used, then it scrolls and a resting palm does
+  nothing. Diagrams export to LaTeX as TikZ.
 - **Images.** Paste or drop them in; they're kept inside the note.
 - **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
   type, and your own CSS (Ctrl+,).
@@ -41,6 +48,8 @@ Press **F1** in the app for every shortcut.
 | `$`, → or Esc | back to text |
 | Alt+drag, Alt+Shift+drag | arrow, shape |
 | Ctrl+D | draw menu |
+| Ctrl+Shift+D | draw in a diagram, or on the note (`\diagram` makes one) |
+| `v p l a r o d t e` | while drawing: select, pen, line, arrow, box, ellipse, diamond, text, eraser |
 | Ctrl+B / Ctrl+I | bold / italic |
 | Tab / Shift+Tab | indent / outdent a list item |
 | Ctrl+F | find |
