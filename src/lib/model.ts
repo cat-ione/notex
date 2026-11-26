@@ -5,6 +5,8 @@
 // stable id, which is what arrows anchor to — so arrows survive edits around
 // their endpoints.
 
+import type { Placed, Shape } from './sketch/shapes';
+
 export type Id = string;
 
 export type MSym = { k: 'sym'; id: Id; v: string; src?: string };
@@ -20,14 +22,16 @@ export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true; c?: true; m
 export type MathItem = { t: 'm'; id: Id; root: MRow; display: boolean };
 export type Item = Char | MathItem;
 
-export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code' | 'fence' | 'img' | 'tr';
+export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code' | 'fence' | 'img' | 'tr' | 'diagram';
 /**
  * `indent`: how deep a list item is nested (0, absent, at the top). Headings (`# ` in their
  * text) and code blocks (lines between ``` fences: `fence` and `code` lines) are read from
  * the text; an opening fence's `lang` names its language. An image (`img`) is its `src`
  * (a data URL), shown `w` pixels wide, with its items as the caption. A table row (`tr`) has
  * its cells between cell walls (characters marked `cell`); its table's first row is the
- * header (`head`), with the columns' alignment (see tables.ts).
+ * header (`head`), with the columns' alignment (see tables.ts). A diagram (`diagram`) is its
+ * `shapes` on a canvas `w` by `h` (its own coordinates; shown scaled down to fit a narrower
+ * page), with its items as the caption.
  */
 export type Block = {
   id: Id;
@@ -39,7 +43,11 @@ export type Block = {
   w?: number;
   head?: true;
   aligns?: ('left' | 'center' | 'right' | null)[];
+  shapes?: Shape[];
+  h?: number;
 };
+/** Blocks shown as a figure with a caption under it: an image, a diagram. */
+export const isFigure = (k: BlockKind) => k === 'img' || k === 'diagram';
 export const isListKind = (k: BlockKind) => k === 'li' || k === 'ol';
 /** Deepest a list item can be nested. */
 export const MAX_INDENT = 4;
@@ -73,7 +81,8 @@ export type Mark = { id: Id; kind: MarkKind; at: Id[]; dash: boolean; label: str
 /** A note placed by hand: its centre's offset from the middle of its drawing (an arrow's midpoint). */
 export type NoteAt = { dx: number; dy: number };
 
-export type Doc = { blocks: Block[]; arrows: Arrow[]; marks: Mark[] };
+/** `ink`: what's drawn on top of the note, each shape pinned to a block (see sketch/shapes.ts). */
+export type Doc = { blocks: Block[]; arrows: Arrow[]; marks: Mark[]; ink?: Placed[] };
 
 const prefix = Math.random().toString(36).slice(2, 6);
 let counter = 0;

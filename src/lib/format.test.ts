@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decode, deserialize, encode, serialize } from './format';
 import { block, chars, cmd, math, sym, type Doc } from './model';
+import { boxShape, inkShape } from './sketch/shapes';
 
 function sample(): Doc {
   const frac = cmd('frac', [[sym('a')], [sym('b')]]);
@@ -116,5 +117,49 @@ describe('images', () => {
     const back = decode(encode({ blocks: [img], arrows: [], marks: [] }));
     expect(back.blocks[0]).toMatchObject({ kind: 'img', src: 'data:image/png;base64,AAAA', w: 320 });
     expect(back.blocks[0].items.length).toBe(6);
+  });
+});
+
+describe('diagrams and drawing on the note', () => {
+  const diagramDoc = (): Doc => {
+    const p = block(chars('above'));
+    const d = Object.assign(block(chars('fig 1'), 'diagram'), {
+      w: 600,
+      h: 300,
+      shapes: [
+        boxShape('rect', { x: 10, y: 10, w: 100, h: 50 }, { label: '$x^2$' }),
+        inkShape([0, 0, 0.4, 10, 12, 0.8], true, { color: 'red' }),
+      ],
+    });
+    const after = block(chars('below'));
+    return { blocks: [p, d, after], arrows: [], marks: [], ink: [{ ...inkShape([1, 2, 0.5, 3, 4, 0.5], false), at: after.id }] };
+  };
+
+  it('a diagram keeps its shapes, size and caption', () => {
+    const back = deserialize(serialize(diagramDoc()));
+    const d = back.blocks[1];
+    expect(d.kind).toBe('diagram');
+    expect(d).toMatchObject({ w: 600, h: 300 });
+    expect(d.shapes).toHaveLength(2);
+    expect(d.shapes![0]).toMatchObject({ k: 'rect', label: '$x^2$' });
+    expect(d.shapes![1]).toMatchObject({ k: 'ink', pen: true, color: 'red' });
+    expect(text(back)[1]).toBe('fig 1');
+  });
+
+  it('what is drawn on the note stays pinned to its block', () => {
+    const doc = diagramDoc();
+    const f = encode(doc);
+    expect(f.ink![0].at).toBe('b2');
+    const back = decode(f);
+    expect(back.ink).toHaveLength(1);
+    expect(back.ink![0].at).toBe(back.blocks[2].id);
+    expect(back.ink![0]).toMatchObject({ k: 'ink', pts: [1, 2, 0.5, 3, 4, 0.5] });
+  });
+
+  it('a drawing whose block is gone is not saved; a note without drawings has no ink', () => {
+    const doc = diagramDoc();
+    doc.ink![0].at = 'nowhere';
+    expect(encode(doc).ink).toBeUndefined();
+    expect(decode(encode(sample())).ink).toBeUndefined();
   });
 });

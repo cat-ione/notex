@@ -13,6 +13,7 @@
 // anything else a math item / math node id.
 
 import { block, ch, chars, type Arrow, type Mark, type Block, type BlockKind, type Doc, type Id, type Item, type MRow } from './model';
+import type { Placed, Shape } from './sketch/shapes';
 import { headingOf } from './markdown';
 import { structureTables } from './tables';
 
@@ -22,11 +23,13 @@ type Content = string | { s: string; b?: 1; i?: 1; c?: 1 } | { m: MRow; id: Id; 
  * A table row (`tr`) is its text with | for each cell wall; `lit` lists the | that are typed
  * text, not walls. Its table's header has `head` and the columns' alignment.
  */
-type FileBlock = { kind: BlockKind; content: Content[]; indent?: number; lang?: string; src?: string; w?: number; head?: 1; aligns?: Block['aligns']; lit?: number[] };
+type FileBlock = { kind: BlockKind; content: Content[]; indent?: number; lang?: string; src?: string; w?: number; h?: number; shapes?: Shape[]; head?: 1; aligns?: Block['aligns']; lit?: number[] };
 type FileArrow = Omit<Arrow, 'id'>;
 type FileMark = Omit<Mark, 'id'>;
+/** What's drawn on the note: each shape's block (`at`) as `b<index>`. */
+type FileInk = Placed;
 /** Version 2: the markdown is in the text (** ` # ```); version 1 had styles and kinds for it. */
-export type NoteFile = { format: 'notex'; version: 1 | 2; blocks: FileBlock[]; arrows: FileArrow[]; marks?: FileMark[] };
+export type NoteFile = { format: 'notex'; version: 1 | 2; blocks: FileBlock[]; arrows: FileArrow[]; marks?: FileMark[]; ink?: FileInk[] };
 
 export function encode(doc: Doc): NoteFile {
   const where = new Map<Id, string>();
@@ -50,7 +53,7 @@ export function encode(doc: Doc): NoteFile {
     flush();
     return {
       // (headings and code are in the text)
-      kind: b.kind === 'li' || b.kind === 'ol' || b.kind === 'img' || b.kind === 'tr' ? b.kind : 'p',
+      kind: b.kind === 'li' || b.kind === 'ol' || b.kind === 'img' || b.kind === 'tr' || b.kind === 'diagram' ? b.kind : 'p',
       content,
       ...(b.kind === 'tr' && b.head ? { head: 1 as const, aligns: b.aligns ?? [] } : {}),
       ...(b.kind === 'tr' && b.items.some((it) => it.t === 'c' && it.ch === '|' && !it.cell)
@@ -59,6 +62,7 @@ export function encode(doc: Doc): NoteFile {
       ...(b.indent ? { indent: b.indent } : {}),
       ...(b.src ? { src: b.src } : {}),
       ...(b.w ? { w: b.w } : {}),
+      ...(b.kind === 'diagram' ? { h: b.h ?? 0, shapes: b.shapes ?? [] } : {}),
     };
   });
   const mapIds = (ids: Id[]) => ids.map((id) => where.get(id) ?? id);
@@ -66,6 +70,9 @@ export function encode(doc: Doc): NoteFile {
   const marks = doc.marks.map(({ id: _id, ...m }) => ({ ...m, at: mapIds(m.at) }));
   const file: NoteFile = { format: 'notex', version: 2, blocks, arrows };
   if (marks.length) file.marks = marks;
+  // (a shape on a block that's gone goes too)
+  const ink = (doc.ink ?? []).filter((s) => where.has(s.at)).map((s) => ({ ...s, at: where.get(s.at)! }) as FileInk);
+  if (ink.length) file.ink = ink;
   return file;
 }
 
@@ -95,6 +102,7 @@ export function decode(file: NoteFile): Doc {
     if (fb.lang) blk.lang = fb.lang;
     if (fb.src) blk.src = fb.src;
     if (fb.w) blk.w = fb.w;
+    if (fb.kind === 'diagram') (blk.shapes = fb.shapes ?? []), (blk.h = fb.h ?? 240);
     return blk;
   });
   const resolve = (ref: string): Id => {
@@ -107,7 +115,8 @@ export function decode(file: NoteFile): Doc {
   let n = 0;
   const arrows: Arrow[] = file.arrows.map((a) => ({ ...a, id: `a${Date.now().toString(36)}${n++}`, from: a.from.map(resolve), to: a.to.map(resolve) }));
   const marks: Mark[] = (file.marks ?? []).map((m) => ({ ...m, id: `k${Date.now().toString(36)}${n++}`, at: m.at.map(resolve) }));
-  return withMarkdown({ blocks, arrows, marks });
+  const ink: Placed[] = (file.ink ?? []).map((s) => ({ ...s, at: resolve(s.at) }) as Placed).filter((s) => blocks.some((b) => b.id === s.at));
+  return withMarkdown({ blocks, arrows, marks, ...(ink.length ? { ink } : {}) });
 }
 
 /**
@@ -182,5 +191,5 @@ export function deserialize(text: string): Doc {
   // Raw in-memory documents (older saves, clipboard JSON).
   const doc = data?.doc ?? data;
   if (!doc || !Array.isArray(doc.blocks)) throw new Error('not a notex note');
-  return withMarkdown({ blocks: doc.blocks, arrows: doc.arrows ?? [], marks: doc.marks ?? [] });
+  return withMarkdown({ blocks: doc.blocks, arrows: doc.arrows ?? [], marks: doc.marks ?? [], ...(doc.ink ? { ink: doc.ink } : {}) });
 }
