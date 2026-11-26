@@ -82,6 +82,26 @@ describe('lists in the file', () => {
     const back = deserialize(serialize({ blocks: [a, b], arrows: [], marks: [] }));
     expect(back.blocks.map((x) => [x.kind, x.indent ?? 0])).toEqual([['ol', 0], ['li', 2]]);
   });
+  it('keep their boxes to tick, ticked or not', () => {
+    const a = Object.assign(block(chars('milk'), 'li'), { check: false }), b = Object.assign(block(chars('eggs'), 'li'), { check: true });
+    const back = deserialize(serialize({ blocks: [a, b, block(chars('plain'), 'li')], arrows: [], marks: [] }));
+    expect(back.blocks.map((x) => x.check)).toEqual([false, true, undefined]);
+  });
+});
+
+describe('boxes, numbered formulas and references', () => {
+  it('keep their kind, their box and its id, a folded heading, a formula number and a reference', () => {
+    const eq = Object.assign(math([sym('E')], true), { num: true as const });
+    const ref = math([{ k: 'sym', id: 'r1', v: '(1)', ref: eq.id }]);
+    const t1 = Object.assign(block(chars('Let x.')), { box: { k: 'theorem' as const, id: 'bx1' } });
+    const t2 = Object.assign(block(chars('Then y.')), { box: { k: 'theorem' as const, id: 'bx1' } });
+    const h = Object.assign(block(chars('# A')), { fold: true as const });
+    const back = deserialize(serialize({ blocks: [h, t1, t2, block([eq]), block([...chars('by '), ref])], arrows: [], marks: [] }));
+    expect(back.blocks[0].fold).toBe(true);
+    expect(back.blocks.slice(1, 3).map((b) => b.box)).toEqual([{ k: 'theorem', id: 'bx1' }, { k: 'theorem', id: 'bx1' }]);
+    expect(back.blocks[3].items[0]).toMatchObject({ t: 'm', display: true, num: true, id: eq.id });
+    expect(back.blocks[4].items[3]).toMatchObject({ t: 'm', root: [{ ref: eq.id, v: '(1)' }] });
+  });
 });
 
 describe('notes from before the markdown was text', () => {

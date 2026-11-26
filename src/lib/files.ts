@@ -147,3 +147,18 @@ export async function setWindowTitle(title: string) {
     await getCurrentWindow().setTitle(title);
   } catch {}
 }
+
+/** Open a web address: in the system's browser (desktop), else in a new tab. */
+export async function openUrl(url: string) {
+  if (!/^https?:\/\//i.test(url) && !/^mailto:/i.test(url)) url = 'https://' + url;
+  if (isDesktop()) {
+    try {
+      const { openUrl } = await import('@tauri-apps/plugin-opener');
+      return await openUrl(url);
+    } catch {}
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+/** A note file next to another (desktop): its path. */
+export const siblingPath = (path: string, name: string) => path.replace(/[^\\/]*$/, '') + name + '.' + EXT;

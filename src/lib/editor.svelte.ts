@@ -19,7 +19,7 @@ import * as U from './usage';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
-import { BOLD, CODE, ITALIC, MARK, OBJ, closesFence, fenceOf, headingOf, parseInline } from './markdown';
+import { BOLD, CODE, HIGHLIGHT, ITALIC, LINK, MARK, OBJ, STRIKE, closesFence, fenceOf, headingOf, parseInline, type Link } from './markdown';
 import { withMarkdown } from './format';
 import { welcomeDoc } from './welcome';
 import { imageSrc, pickImageFiles } from './images';
@@ -34,7 +34,7 @@ import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { Sketcher } from './sketch/sketcher.svelte';
 import type { Placed } from './sketch/shapes';
-import { allIds, block, ch, chars, cloneRow, cmd, isFigure, isListKind, MAX_INDENT, math, sym, uid, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
+import { allIds, block, BOX_KINDS, BOX_NAME, ch, chars, cloneRow, cmd, isFigure, isListKind, isRefItem, MAX_INDENT, math, NUMBERED_BOX, sym, uid, type BoxKind, type MSym, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'sketch';
 
@@ -54,7 +54,7 @@ const CLOSERS = ')]}"';
 /** Typed around a selection (config typing.pairMarkdown). */
 const MD_PAIRS = '*_`~';
 /** Each style's markdown marker. */
-const MARKER = { b: '**', i: '*', c: '`' } as const;
+const MARKER = { b: '**', i: '*', c: '`', s: '~~', h: '==' } as const;
 
 export type Loc =
   | { k: 'word'; b: number; s: number; e: number }
@@ -66,6 +66,8 @@ export type Loc =
 export type Pos = { b: number; o: number };
 
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean; keep?: true };
+/** Which palette: text's commands, math's, drawing's, a drawing's actions, or what to refer to. */
+export type PaletteCtx = 'math' | 'text' | 'draw' | 'style' | 'ref';
 /** A step of a note's undo history. */
 type NoteSnap = { items: Item[]; o: number; mode: 'text' | 'math'; mc: MCursor; anchor: Pos | null };
 /** The block index that stands for the note being typed (see Editor.blockAt). */
@@ -128,7 +130,7 @@ export class Editor {
   mc = $state<MCursor>({ path: [], off: 0 });
 
   /** `draw` is the drawing menu (Ctrl+D), available from text and math. */
-  palette = $state<{ ctx: 'math' | 'text' | 'draw' | 'style'; query: string; sel: number } | null>(null);
+  palette = $state<{ ctx: PaletteCtx; query: string; sel: number } | null>(null);
   /** Choosing a target: for an arrow (two phases) or a mark (one). */
   pick = $state<{ phase: 'from' | 'to'; loc: Loc; from?: Loc; purpose: 'arrow' | MarkKind; edit?: { id: Id; end: 'from' | 'to' | 'at' } } | null>(null);
   styling = $state<Id | null>(null);
@@ -165,7 +167,8 @@ export class Editor {
   /** The text selection as rectangles, one per line (page-relative). */
   selRects = $state.raw<Rect[]>([]);
   /** Find (Ctrl+F): what's searched for and which match is current (see findMatches). */
-  find = $state<{ q: string; i: number } | null>(null);
+  /** Find (Ctrl+F): what's searched for, the current match; `replace`: with a replace field (Ctrl+H). */
+  find = $state<{ q: string; i: number; replace?: boolean; with?: string } | null>(null);
   /** The matches drawn on the page (page coordinates), the current one marked. */
   findRects = $state.raw<{ r: Rect; cur: boolean }[]>([]);
   /** The frame around the formula being edited (page coordinates). */
@@ -207,6 +210,7 @@ export class Editor {
       if (saved) this.doc = withMarkdown({ marks: [], ...JSON.parse(saved) });
       else (this.doc = welcomeDoc()), (this.file.name = 'welcome');
       this.derive(0, Infinity);
+      this.showOutline = localStorage.getItem('notex.outline') === '1';
       const f = localStorage.getItem('notex.file');
       if (f) {
         const j = JSON.parse(f);
@@ -243,7 +247,12 @@ export class Editor {
       this.touchedEdits = this.edits;
       this.markDirty();
       this.derive();
+      // (numbers may have moved: references say what they point at now)
+      this.relabelRefs();
     } else if (this.frame) this.frame = { rects: new Map(), ink: new Map() };
+    // the caret out of folded sections
+    if (this.b !== NOTE_B && this.doc.blocks[this.b]) this.keepOutOfFolds(this.lastB);
+    this.lastB = this.b;
     // what shows of the markdown: set once an action is done (not followed live through
     // every write to the text, which would wake every character on the page each time)
     const rv = this.computeReveal(), old = this.reveal;
@@ -252,6 +261,8 @@ export class Editor {
     this.version++;
   }
   private touchedEdits = 0;
+  /** The caret's block after the last action (to tell which way it went into a fold). */
+  private lastB = 0;
   /** Where each block was at the last action (for drawings on a block that's gone since). */
   private blockIndex = new Map<Id, number>();
 
@@ -743,6 +754,7 @@ export class Editor {
     this.redoStack = [];
     this.b = 0;
     this.o = 0;
+    this.lastB = 0;
     this.anchor = null;
     this.pick = null;
     this.styling = null;
@@ -1396,7 +1408,13 @@ export class Editor {
 
   /** A tap (a finger, when fingers don't reach the page by themselves): a click there. */
   tap(x: number, y: number) {
-    const ev = { clientX: x, clientY: y, button: 0, detail: 1, shiftKey: false, altKey: false, preventDefault() {} } as unknown as MouseEvent;
+    // (a box to tick, a fold mark: as a click on them; a link or a reference: followed)
+    const el = document.elementFromPoint(x, y);
+    const tick = el?.closest('[data-tick]') as HTMLElement | null, fold = el?.closest('[data-fold]') as HTMLElement | null;
+    if (tick) return this.toggleCheck(+tick.dataset.tick!), this.touch();
+    if (fold) return this.toggleFold(+fold.dataset.fold!), this.touch();
+    const follow = !!el?.closest('.ch.ln, .math.ref');
+    const ev = { clientX: x, clientY: y, button: 0, detail: 1, shiftKey: false, altKey: false, ctrlKey: follow, preventDefault() {} } as unknown as MouseEvent;
     this.mouseDown(ev);
     this.mouseUp();
   }
@@ -1426,6 +1444,18 @@ export class Editor {
     if (!h) return;
     if (!h.math) h.pos = this.snapClick(h.pos, e.clientX, e.clientY);
     if (this.mode === 'palette') this.closePalette();
+    // a reference: ctrl+click follows it; a click puts the caret beside it (it's one thing)
+    if (h.math && isRefItem(h.math.item) && !e.shiftKey) {
+      if (e.ctrlKey || e.metaKey) {
+        this.followRef((h.math.item.root[0] as MSym).ref!);
+        this.touch();
+        return;
+      }
+      h.pos = { b: h.pos.b, o: h.pos.o + (h.math.after ? 1 : 0) };
+      delete h.math;
+    }
+    // a link: ctrl+click opens it
+    if (!h.math && (e.ctrlKey || e.metaKey) && !e.shiftKey && this.openLinkAt(h.pos)) return;
     // clicking away from a note being typed keeps it, as leaving a text field would
     if (this.note) this.commitNote();
     this.styling = null;
@@ -2847,10 +2877,16 @@ export class Editor {
       e.preventDefault();
       return;
     }
-    if (k === 'C-f' || k === 'F3' || k === 'S-F3') {
+    if (k === 'C-f' || k === 'C-h' || k === 'F3' || k === 'S-F3') {
       e.preventDefault();
-      if (k === 'C-f' || !this.find) this.openFind();
+      if (k === 'C-f' || k === 'C-h' || !this.find) this.openFind(k === 'C-h');
       else this.findGo(k === 'F3' ? 1 : -1);
+      return;
+    }
+    if (k === 'C-S-o') {
+      e.preventDefault();
+      this.toggleOutline();
+      this.touch();
       return;
     }
     const was = this.b;
@@ -2942,7 +2978,7 @@ export class Editor {
       case 'Left': {
         const sel = this.selection;
         if (sel && !shift) return this.moveTo(sel.s, false), true;
-        if (!shift && this.o > 0 && blk.items[this.o - 1].t === 'm') {
+        if (!shift && this.o > 0 && blk.items[this.o - 1].t === 'm' && !isRefItem(blk.items[this.o - 1])) {
           this.o--;
           this.enterMath(true);
           return true;
@@ -2954,7 +2990,7 @@ export class Editor {
       case 'Right': {
         const sel = this.selection;
         if (sel && !shift) return this.moveTo(sel.e, false), true;
-        if (!shift && blk.items[this.o]?.t === 'm') {
+        if (!shift && blk.items[this.o]?.t === 'm' && !isRefItem(blk.items[this.o])) {
           this.enterMath(false);
           return true;
         }
@@ -3003,6 +3039,10 @@ export class Editor {
       case 'C-b': this.toggleStyle('b'); return true;
       case 'C-i': this.toggleStyle('i'); return true;
       case 'C-e': if (!this.note) this.toggleStyle('c'); return true;
+      case 'C-S-x': this.toggleStyle('s'); return true;
+      case 'C-Enter': this.tickLines(); return true;
+      case 'C-.': this.toggleFold(); return true;
+      case 'C-S-h': this.toggleStyle('h'); return true;
       case 'Enter': case 'S-Enter': {
         this.checkpoint();
         this.deleteSelection();
@@ -3013,14 +3053,30 @@ export class Editor {
         // Enter on an empty item: out a level, then out of the list
         if (list && b.items.length === 0) {
           if (b.indent) b.indent--;
-          else b.kind = 'p';
+          else (b.kind = 'p'), delete b.check;
           return true;
         }
+        // an empty line in a box: out of the box (what's after it in the box, a box of its own)
+        if (b.box && !b.items.length) {
+          delete b.box;
+          this.splitBoxAfter(this.b);
+          return true;
+        }
+        // at the end of a folded heading: it unfolds, the new line the first of its section
+        if (b.fold && this.o === b.items.length) delete b.fold;
+        const at = this.b + 1;
         const rest = b.items.splice(this.o);
         const nb = block(rest, list ? b.kind : 'p');
         if (list && b.indent) nb.indent = b.indent;
-        this.doc.blocks.splice(this.b + 1, 0, nb);
-        this.b++;
+        // (a box to tick goes on, unticked; ticked, it goes with its text)
+        if (list && b.check !== undefined) {
+          const moved = !b.items.length && rest.length > 0;
+          nb.check = moved ? b.check : false;
+          if (moved) b.check = false;
+        }
+        if (b.box) nb.box = { ...b.box };
+        this.doc.blocks.splice(at, 0, nb);
+        this.b = at;
         this.o = 0;
         return true;
       }
@@ -3041,7 +3097,7 @@ export class Editor {
         if (this.o > 0) {
           const prev = blk.items[this.o - 1];
           if (this.lastSnippet && this.undoSnippet()) return true;
-          if (prev.t === 'm') {
+          if (prev.t === 'm' && !isRefItem(prev)) {
             this.o--;
             this.enterMath(true);
             return true;
@@ -3051,6 +3107,10 @@ export class Editor {
           const both = k === 'Backspace' && this.pairAround();
           blk.items.splice(this.o - 1, both ? 2 : 1);
           this.o--;
+        } else if (blk.kind === 'li' && blk.check !== undefined) {
+          // at the start of an item with a box to tick: the box goes first
+          this.checkpoint();
+          delete blk.check;
         } else if (isListKind(blk.kind) && blk.indent) {
           // at the start of a nested item: out a level first
           this.checkpoint();
@@ -3059,8 +3119,13 @@ export class Editor {
           // (headings and code are their text: their line joins the one before, as any)
           this.checkpoint();
           blk.kind = 'p';
+        } else if (blk.box && this.boxStarts(this.b)) {
+          // a box's first line: out of the box
+          this.checkpoint();
+          delete blk.box;
         } else if (this.b > 0) {
           this.checkpoint();
+          this.unfoldTo(this.b - 1);
           const prev = this.doc.blocks[this.b - 1];
           this.o = prev.items.length;
           prev.items.push(...blk.items);
@@ -3083,6 +3148,7 @@ export class Editor {
           // (an image's line isn't joined to the next)
         } else if (this.b < this.doc.blocks.length - 1) {
           this.checkpoint();
+          if (blk.fold) delete blk.fold;
           blk.items.push(...this.doc.blocks.splice(this.b + 1, 1)[0].items);
         }
         return true;
@@ -3316,9 +3382,9 @@ export class Editor {
       const it = items[o];
       if (it.t !== 'c') continue;
       const f = !flags ? 0 : o < prefix ? MARK : flags[o];
-      const want = [!!(f & BOLD), !!(f & ITALIC), !!(f & CODE), !!(f & MARK)];
-      const keys = ['b', 'i', 'c', 'm'] as const;
-      for (let k = 0; k < 4; k++)
+      const want = [!!(f & BOLD), !!(f & ITALIC), !!(f & CODE), !!(f & MARK), !!(f & STRIKE), !!(f & HIGHLIGHT), !!(f & LINK)];
+      const keys = ['b', 'i', 'c', 'm', 's', 'h', 'l'] as const;
+      for (let k = 0; k < keys.length; k++)
         if (!!it[keys[k]] !== want[k]) {
           changed = true;
           if (want[k]) it[keys[k]] = true;
@@ -3417,7 +3483,7 @@ export class Editor {
    * Ctrl+B / Ctrl+I / Ctrl+E: the markdown markers around the selection (taken off again
    * if they're already there), or a pair at the caret to type between.
    */
-  private toggleStyle(s: 'b' | 'i' | 'c') {
+  private toggleStyle(s: keyof typeof MARKER) {
     const m = MARKER[s], L = m.length;
     const sel = this.selection;
     this.checkpoint();
@@ -3425,11 +3491,12 @@ export class Editor {
       this.blk.items.splice(this.o, 0, ...chars(m + m));
       this.o += L;
       if (s === 'c') this.tipLater('md-code', 'you can also type `code`');
+      else if (s === 's' || s === 'h') this.tipLater('md-strike', 'you can also type ~~struck~~ or ==highlighted==');
       else this.tipLater('md-bold', 'you can also type **bold** or *italic*');
       return;
     }
     if (sel.s.b !== sel.e.b) return this.flash('select within one paragraph');
-    this.learned(s === 'c' ? 'md-code' : 'md-bold');
+    this.learned(s === 'c' ? 'md-code' : s === 's' || s === 'h' ? 'md-strike' : 'md-bold');
     const items = this.blockAt(sel.s.b).items, a = sel.s.o, z = sel.e.o;
     const at = (i: number) => (i >= 0 && i + L <= items.length ? items.slice(i, i + L).map((x) => (x.t === 'c' ? x.ch : OBJ)).join('') : '');
     const back = this.anchor && cmpPos(this.anchor, { b: this.b, o: this.o }) > 0;
@@ -3567,8 +3634,384 @@ export class Editor {
     if (map[text] && (blk.kind === 'p' || isListKind(blk.kind))) {
       blk.items.splice(0, this.o);
       blk.kind = map[text];
+      delete blk.check;
+      this.o = 0;
+      return;
+    }
+    // `[ ] ` / `[x] ` (after `- `, or on a line of its own): a box to tick
+    const task = /^(?:[-*] )?\[( |x|X)?\] $/.exec(text);
+    if (task && (blk.kind === 'p' || blk.kind === 'li')) {
+      blk.items.splice(0, this.o);
+      blk.kind = 'li';
+      blk.check = !!task[1]?.trim();
+      this.o = 0;
+      return;
+    }
+    // `> `: a quote (joining one just above)
+    if (text === '> ' && (blk.kind === 'p' || isListKind(blk.kind)) && !blk.box) {
+      blk.items.splice(0, this.o);
+      const above = this.doc.blocks[this.b - 1]?.box;
+      blk.box = above?.k === 'quote' ? { ...above } : { k: 'quote', id: uid() };
       this.o = 0;
     }
+  }
+
+  // ── boxes to tick ──
+
+  /** Tick or untick a list item's box; on any other line, make it an item with a box to tick. */
+  toggleCheck(b = this.b) {
+    const blk = this.doc.blocks[b];
+    if (!blk || isFigure(blk.kind) || blk.kind === 'tr' || blk.kind === 'code' || blk.kind === 'fence') return;
+    this.checkpoint();
+    if (blk.kind === 'li' && blk.check !== undefined) blk.check = !blk.check;
+    else if (blk.kind === 'p' || isListKind(blk.kind)) (blk.kind = 'li'), (blk.check = false);
+    this.forgetBlock(blk);
+  }
+
+  /** Lines `a`..`z` (or the caret's): each a list item with a box to tick, or not any more. */
+  private toggleTasks() {
+    const sel = this.selection;
+    const [a, z] = sel ? [sel.s.b, sel.e.b] : [this.b, this.b];
+    const blocks = this.doc.blocks.slice(a, z + 1).filter((x) => x.kind === 'p' || isListKind(x.kind));
+    if (!blocks.length) return this.flash('no lines here to tick');
+    this.checkpoint();
+    const off = blocks.every((x) => x.kind === 'li' && x.check !== undefined);
+    for (const x of blocks) {
+      if (off) delete x.check;
+      else if (x.kind !== 'li' || x.check === undefined) (x.kind = 'li'), (x.check = false);
+      this.forgetBlock(x);
+    }
+  }
+
+  /**
+   * Ctrl+Enter: the lines at the caret (or selected) ticked, or unticked if they all are;
+   * a line with no box to tick gets one first.
+   */
+  private tickLines() {
+    const sel = this.selection;
+    const [a, z] = sel ? [sel.s.b, sel.e.b] : [this.b, this.b];
+    const blocks = this.doc.blocks.slice(a, z + 1).filter((x) => x.kind === 'p' || isListKind(x.kind));
+    if (!blocks.length) return;
+    this.checkpoint();
+    const tasks = blocks.every((x) => x.kind === 'li' && x.check !== undefined);
+    const all = tasks && blocks.every((x) => x.check);
+    for (const x of blocks) {
+      if (tasks) x.check = !all;
+      else if (x.kind !== 'li' || x.check === undefined) (x.kind = 'li'), (x.check = false);
+      this.forgetBlock(x);
+    }
+  }
+
+  // ── boxes: theorems, definitions, proofs, quotes ──
+
+  /**
+   * The lines at the caret (or selected) in a box of kind `k`: a new box, or the box they're
+   * in becoming that kind; already one, they come out of it (what's after them in it stays
+   * a box of its own).
+   */
+  setBox(k: BoxKind) {
+    const sel = this.selection;
+    const [a, z] = sel ? [sel.s.b, sel.e.b] : [this.b, this.b];
+    const blocks = this.doc.blocks;
+    if (blocks.slice(a, z + 1).some((x) => x.kind === 'tr')) return this.flash('a table can’t go in a box');
+    this.checkpoint();
+    if (blocks.slice(a, z + 1).every((x) => x.box?.k === k)) {
+      for (let i = a; i <= z; i++) delete blocks[i].box, this.forgetBlock(blocks[i]);
+      this.splitBoxAfter(z);
+      return;
+    }
+    // (a line already in a box: that whole box changes kind, and takes in the rest)
+    const id = blocks.slice(a, z + 1).find((x) => x.box)?.box?.id ?? uid();
+    for (let i = 0; i < blocks.length; i++)
+      if ((i >= a && i <= z) || blocks[i].box?.id === id) (blocks[i].box = { k, id }), this.forgetBlock(blocks[i]);
+    this.learned('boxes');
+  }
+
+  /** The blocks after `b` still in its box (now that `b` left it) become a box of their own. */
+  private splitBoxAfter(b: number) {
+    const blocks = this.doc.blocks;
+    const old = blocks[b + 1]?.box;
+    if (!old || blocks[b]?.box?.id === old.id) return;
+    // (only if the box also goes on before `b`: else it's whole already)
+    if (!blocks.slice(0, b).some((x) => x.box?.id === old.id)) return;
+    const id = uid();
+    for (let i = b + 1; blocks[i]?.box?.id === old.id; i++) (blocks[i].box = { k: old.k, id }), this.forgetBlock(blocks[i]);
+  }
+
+  /** Does block `b` start / end its box? */
+  boxStarts = (b: number) => !!this.doc.blocks[b]?.box && this.doc.blocks[b - 1]?.box?.id !== this.doc.blocks[b].box!.id;
+  boxEnds = (b: number) => !!this.doc.blocks[b]?.box && this.doc.blocks[b + 1]?.box?.id !== this.doc.blocks[b].box!.id;
+
+  // ── numbered formulas, numbered boxes and references to them ──
+
+  /**
+   * What each numbered thing is called, by id: a numbered display formula's `(3)`, a
+   * numbered box's `Theorem 2` (theorems, lemmas… definitions and examples count together).
+   */
+  labels = $derived.by(() => {
+    const out = new Map<Id, string>();
+    let eq = 0, bx = 0;
+    const blocks = this.doc.blocks;
+    for (let b = 0; b < blocks.length; b++) {
+      const blk = blocks[b], box = blk.box;
+      if (box && NUMBERED_BOX.has(box.k) && blocks[b - 1]?.box?.id !== box.id) out.set(box.id, `${BOX_NAME[box.k]} ${++bx}`);
+      // (a display formula is a line of its own)
+      const m = blk.items[0];
+      if (m?.t === 'm' && m.display && m.num) out.set(m.id, `(${++eq})`);
+    }
+    return out;
+  });
+
+  /** References show what they point at now (a renumbering, or a target gone: ?). */
+  private relabelRefs() {
+    const labels = this.labels;
+    for (const blk of this.doc.blocks)
+      for (const it of blk.items)
+        if (isRefItem(it)) {
+          const s = it.root[0] as MSym;
+          const want = labels.get(s.ref!) ?? (/^\(/.test(s.v) ? '(?)' : '??');
+          if (s.v !== want) (s.v = want), this.forget(blk);
+        }
+  }
+
+  /** Number the display formula at the caret (or take its number off). */
+  toggleEqNumber() {
+    const m = this.mathItem ?? (this.blk.items[0]?.t === 'm' ? (this.blk.items[0] as MathItem) : null);
+    if (!m || !m.display) return this.flash('number a display formula ($$): put the caret on one');
+    this.checkpoint();
+    if (m.num) delete m.num;
+    else m.num = true;
+    this.forgetBlock(this.blk);
+  }
+
+  /** Everything a reference can point at, in the note's order: numbered boxes and display formulas. */
+  refTargets(): { id: Id; name: string; desc: string; b: number }[] {
+    const out: { id: Id; name: string; desc: string; b: number }[] = [];
+    const labels = this.labels, seen = new Set<string>();
+    const unique = (n: string) => {
+      let k = n, i = 2;
+      while (seen.has(k)) k = `${n} ${i++}`;
+      seen.add(k);
+      return k;
+    };
+    this.doc.blocks.forEach((blk, b) => {
+      const box = blk.box;
+      if (box && NUMBERED_BOX.has(box.k) && this.boxStarts(b))
+        out.push({ id: box.id, name: unique(labels.get(box.id)!.toLowerCase()), desc: plainText(blk.items).replace(OBJ, '…').slice(0, 60), b });
+      const m = blk.items[0];
+      if (m?.t === 'm' && m.display && m.root.length) {
+        const tex = toLatex(m.root).replace(/\s+/g, ' ').trim();
+        out.push({ id: m.id, name: unique(labels.get(m.id) ?? 'formula'), desc: tex.slice(0, 60) + (m.num ? '' : '  (numbers it)'), b });
+      }
+    });
+    return out;
+  }
+
+  /** A reference to `id` at the caret (an unnumbered formula gets its number). */
+  insertRef(id: Id) {
+    this.checkpoint();
+    for (const blk of this.doc.blocks) {
+      const m = blk.items[0];
+      if (m?.t === 'm' && m.id === id && !m.num) (m.num = true), this.forgetBlock(blk);
+    }
+    const label = this.labels.get(id) ?? '?';
+    this.deleteSelection();
+    this.blk.items.splice(this.o, 0, math([{ k: 'sym', id: uid(), v: label, ref: id }]));
+    this.o++;
+  }
+
+  /** Go to what a reference points at. */
+  followRef(id: Id) {
+    const b = this.doc.blocks.findIndex((x) => x.box?.id === id || x.items[0]?.id === id);
+    if (b < 0) return this.flash('what this pointed at is gone');
+    this.unfoldTo(b);
+    this.anchor = null;
+    this.setMode('text');
+    this.b = b;
+    this.o = 0;
+  }
+
+  /** Type `s` at the caret, the caret `back` characters before its end ([[|]]). */
+  private typeText(s: string, back = 0) {
+    if (this.mode !== 'text' || this.literal) return;
+    this.checkpoint();
+    this.deleteSelection();
+    this.blk.items.splice(this.o, 0, ...chars(s));
+    this.o += s.length - back;
+  }
+
+  // ── the outline: headings and boxes, at the page's side ──
+
+  showOutline = $state(false);
+
+  toggleOutline() {
+    this.showOutline = !this.showOutline;
+    try {
+      localStorage.setItem('notex.outline', this.showOutline ? '1' : '');
+    } catch {}
+  }
+
+  /** What the outline lists: headings (by level) and numbered boxes (theorems…), with where they are. */
+  outline = $derived.by(() => {
+    const out: { b: number; level: number; text: string; box?: BoxKind; folded: boolean }[] = [];
+    const labels = this.labels;
+    this.doc.blocks.forEach((blk, b) => {
+      const L = this.level(blk);
+      if (L) out.push({ b, level: L, text: plainText(blk.items).replace(/^#{1,6}\s+/, '').replace(new RegExp(OBJ, 'g'), '…').trim() || '(empty heading)', folded: !!blk.fold });
+      else if (blk.box && NUMBERED_BOX.has(blk.box.k) && this.boxStarts(b)) {
+        const words = plainText(blk.items).replace(new RegExp(OBJ, 'g'), '…').trim();
+        out.push({ b, level: 4, text: `${labels.get(blk.box.id) ?? BOX_NAME[blk.box.k]}${words ? ' · ' + words.slice(0, 40) : ''}`, box: blk.box.k, folded: false });
+      }
+    });
+    return out;
+  });
+
+  /** Go to block `b` (from the outline): unfolded, the caret at its start, in view. */
+  goToBlock(b: number) {
+    if (!this.doc.blocks[b]) return;
+    this.unfoldTo(b);
+    if (this.mode !== 'text') {
+      this.palette = null;
+      this.menu = null;
+      if (this.mode === 'sketch') this.sketch.exit();
+      this.setMode('text');
+    }
+    this.anchor = null;
+    this.b = b;
+    this.o = 0;
+    this.touch();
+  }
+
+  // ── links ──
+
+  /** The link at a caret position, if any. */
+  linkAt(pos: Pos): Link | null {
+    const blk = this.doc.blocks[pos.b];
+    if (!blk || blk.kind === 'code' || blk.kind === 'fence') return null;
+    return parseInline(plainText(blk.items)).links.find((l) => l.start <= pos.o && pos.o <= l.end) ?? null;
+  }
+
+  /** Open the link at `pos`: a web address in the browser, [[a note]] by its name. False: none there. */
+  openLinkAt(pos: Pos): boolean {
+    const l = this.linkAt(pos);
+    if (!l) return false;
+    if (l.note) void this.openNoteNamed(l.to);
+    else void F.openUrl(l.to);
+    return true;
+  }
+
+  /**
+   * [[a note]]: the note of that name (in the browser, one kept here, made if there's none
+   * yet; on the desktop, its file next to this note's).
+   */
+  async openNoteNamed(name: string) {
+    const want = name.trim().toLowerCase();
+    if (F.isDesktop()) {
+      if (!this.file.path) return this.flash('save this note first: [[links]] go to notes next to it');
+      const path = F.siblingPath(this.file.path, name.trim());
+      let doc: Doc;
+      try {
+        doc = await F.readNote(path);
+      } catch {
+        return this.flash(`no note called “${name}” next to this one`);
+      }
+      if (!(await this.okToReplace())) return;
+      this.load(doc, { path, name: F.baseName(path) });
+      return;
+    }
+    const notes = await L.listNotes();
+    const hit = notes.find((n) => n.name.toLowerCase() === want) ?? notes.find((n) => L.shownName(n).toLowerCase() === want || n.title.toLowerCase() === want);
+    if (hit) return this.openKept(hit.id);
+    await this.persist();
+    this.load({ blocks: [block(chars('# ' + name.trim())), block()], arrows: [], marks: [] }, { path: null, name: name.trim(), id: uid() });
+    this.b = 1;
+    this.o = 0;
+    this.touch();
+    await this.keepInBrowser();
+    this.flash(`a new note: ${name.trim()}`);
+  }
+
+  // ── folding: a heading's section out of sight ──
+
+  /** Heading level of a block (0: not a heading). */
+  private level = (blk: Block | undefined) => (blk?.kind === 'h1' ? 1 : blk?.kind === 'h2' ? 2 : blk?.kind === 'h3' ? 3 : 0);
+
+  /** The end (exclusive) of heading `h`'s section: the next heading as high or higher. */
+  sectionEnd(h: number): number {
+    const blocks = this.doc.blocks, L = this.level(blocks[h]);
+    let e = h + 1;
+    while (e < blocks.length && !(this.level(blocks[e]) && this.level(blocks[e]) <= L)) e++;
+    return e;
+  }
+
+  /** Which blocks are folded out of sight (in a folded heading's section). */
+  folded = $derived.by(() => {
+    const blocks = this.doc.blocks;
+    const out = new Array<boolean>(blocks.length).fill(false);
+    for (let h = 0; h < blocks.length; h++) {
+      if (!blocks[h].fold || !this.level(blocks[h])) continue;
+      const e = this.sectionEnd(h);
+      for (let i = h + 1; i < e; i++) out[i] = true;
+      h = e - 1;
+    }
+    return out;
+  });
+
+  /** How many lines heading `h` has folded away. */
+  foldedCount = (h: number) => (this.doc.blocks[h]?.fold && this.level(this.doc.blocks[h]) ? this.sectionEnd(h) - h - 1 : 0);
+
+  /** Fold or unfold heading `h` (the caret's section's heading by default). */
+  toggleFold(h = this.headingOf(this.b)) {
+    const blk = this.doc.blocks[h];
+    if (h < 0 || !blk || !this.level(blk)) return this.flash('fold: put the caret under a heading');
+    if (!blk.fold && this.sectionEnd(h) === h + 1) return this.flash('nothing under this heading to fold');
+    this.checkpoint();
+    if (blk.fold) delete blk.fold;
+    else blk.fold = true;
+    this.forgetBlock(blk);
+    // (the caret, if it was in what's folded, goes to the heading)
+    if (blk.fold && this.b > h && this.b < this.sectionEnd(h)) (this.b = h), (this.o = blk.items.length), (this.anchor = null);
+  }
+
+  /** Every heading folded (or, when all are, unfolded). */
+  foldAll(on: boolean) {
+    this.checkpoint();
+    this.doc.blocks.forEach((blk, h) => {
+      if (!this.level(blk) || !!blk.fold === on || (on && this.sectionEnd(h) === h + 1)) return;
+      if (on) blk.fold = true;
+      else delete blk.fold;
+      this.forgetBlock(blk);
+    });
+    if (on && this.folded[this.b]) {
+      const h = this.headingOf(this.b);
+      (this.b = h), (this.o = this.doc.blocks[h].items.length), (this.anchor = null);
+    }
+  }
+
+  /** The heading whose section block `b` is in (-1: none above it). */
+  headingOf(b: number): number {
+    for (let h = b; h >= 0; h--) if (this.level(this.doc.blocks[h])) return h;
+    return -1;
+  }
+
+  /** Unfold whatever hides block `b`. */
+  unfoldTo(b: number) {
+    for (let h = b - 1; h >= 0 && this.folded[b]; h--) {
+      const blk = this.doc.blocks[h];
+      if (blk.fold && this.level(blk) && this.sectionEnd(h) > b) delete blk.fold, this.forgetBlock(blk);
+    }
+  }
+
+  /** After an action: the caret never rests in what's folded (it went past it, or into it: open it). */
+  private keepOutOfFolds(from: number) {
+    if (!this.folded[this.b]) return;
+    let h = this.b;
+    while (h > 0 && (this.folded[h] || !this.doc.blocks[h].fold)) h--;
+    const e = this.sectionEnd(h);
+    // moving down from the heading: past its section; moving up into it: to the heading
+    if (from <= h && e < this.doc.blocks.length) (this.b = e), (this.o = 0);
+    else if (from >= e) (this.b = h), (this.o = this.doc.blocks[h].items.length);
+    else this.unfoldTo(this.b);
   }
 
   insertMath(display: boolean) {
@@ -3825,6 +4268,11 @@ export class Editor {
     const draws = this.drawCommands();
     const rankDraws = () => find(draws.map((c) => c.name), (n) => draws.find((c) => c.name === n)!.desc).map((n) => draws.find((c) => c.name === n)!);
     if (p.ctx === 'draw') return rankDraws();
+    if (p.ctx === 'ref') {
+      const ts = this.refTargets();
+      // (in the note's order, nothing typed: not by use, which says little about what to refer to)
+      return (q ? rank(ts.map((t) => t.name), q, () => 0, (n) => ts.find((t) => t.name === n)!.desc) : ts.map((t) => t.name)).map((n) => ({ name: n, desc: ts.find((t) => t.name === n)!.desc }));
+    }
     if (p.ctx === 'style') {
       const acts = this.styling ? this.drawingActions(this.styling).filter((a) => !a.keyOnly) : [];
       return find(acts.map((c) => c.name), (n) => acts.find((c) => c.name === n)!.desc).map((n) => {
@@ -3867,14 +4315,14 @@ export class Editor {
    */
   nearCommands(): { names: string[] } | null {
     if (this.tableRow()) return { names: TABLE_ACTIONS.map((a) => a[1]) };
-    if (this.cmdSel ?? this.selection) return { names: ['bold', 'italic', 'inlinecode', 'arrow', 'box', 'circle', 'highlight'] };
+    if (this.cmdSel ?? this.selection) return { names: ['bold', 'italic', 'inlinecode', 'strikethrough', 'texthighlight', 'arrow', 'box', 'circle', 'highlight'] };
     const kind = this.blk.kind;
     if (kind === 'li' || kind === 'ol') return { names: kind === 'li' ? ['ol', 'p'] : ['li', 'p'] };
     if (kind === 'h1' || kind === 'h2' || kind === 'h3') return { names: ['h1', 'h2', 'h3', 'p'].filter((k) => k !== kind) };
     return null;
   }
 
-  private openPalette(ctx: 'math' | 'text' | 'draw' | 'style') {
+  private openPalette(ctx: PaletteCtx) {
     this.palette = { ctx, query: '', sel: 0 };
     this.paletteAt = null;
     this.setMode('palette');
@@ -3904,6 +4352,8 @@ export class Editor {
       case 'PageDown': p.sel = Math.min(items.length - 1, p.sel + 10); return true;
       case 'PageUp': p.sel = Math.max(0, p.sel - 10); return true;
       case 'Enter': case 'Tab': case ' ':
+        // (what to refer to has spaces in its name: theorem 2)
+        if (k === ' ' && p.ctx === 'ref') break;
         this.acceptPalette(items[p.sel]);
         return true;
     }
@@ -3945,6 +4395,13 @@ export class Editor {
     this.closePalette();
     // (remembered, to come first next time)
     const picks = (n: string) => this.config.rememberCommands && U.used(p.ctx, n);
+    if (p.ctx === 'ref') {
+      const ts = this.refTargets();
+      const t = ts.find((t) => t.name === q) ?? ts.find((t) => t.name === name);
+      if (t) this.insertRef(t.id);
+      else this.flash(ts.length ? `nothing called ${q} to refer to` : 'nothing to refer to yet: number a display formula, or make a theorem');
+      return;
+    }
     if (p.ctx === 'style') {
       const acts = this.styling ? this.drawingActions(this.styling) : [];
       const c = acts.find((c) => c.name === q) ?? acts.find((c) => c.name === name);
@@ -4032,6 +4489,7 @@ export class Editor {
         if (b === this.b) this.o = Math.max(0, this.o - had + want.length);
         if (this.anchor?.b === b) this.anchor = { b, o: Math.max(0, this.anchor.o - had + want.length) };
         blk.kind = kind === 'li' || kind === 'ol' ? kind : 'p';
+        if (blk.kind !== 'li') delete blk.check;
         this.forget(blk);
       }
       this.derive(first, last);
@@ -4055,6 +4513,18 @@ export class Editor {
       ...(this.tableRow() ? TABLE_ACTIONS.map(([what, name, desc]) => ({ name, desc, run: () => this.tableCommand(what) })) : []),
       { name: 'image', desc: 'insert an image (or paste / drop one)', run: () => void this.chooseImages() },
       { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c'), keep: true },
+      { name: 'strikethrough', desc: 'strike text out ~~…~~  ctrl+shift+x', run: () => this.toggleStyle('s'), keep: true },
+      { name: 'texthighlight', desc: 'highlight text ==…==  ctrl+shift+h', run: () => this.toggleStyle('h'), keep: true },
+      { name: 'todo', desc: 'a box to tick: [ ] at a line’s start  ctrl+enter ticks it', run: () => this.toggleTasks(), keep: true },
+      ...BOX_KINDS.map((k): PaletteEntry => ({ name: k, desc: BOX_DESC[k], run: () => this.setBox(k), keep: true })),
+      { name: 'number', desc: 'number the display formula here: (1), (2)…', run: () => this.toggleEqNumber() },
+      { name: 'ref', desc: 'refer to a numbered formula or theorem: (3), Theorem 2', run: () => this.openPalette('ref') },
+      { name: 'link', desc: 'link to a note: [[its name]]; a web address links by itself', run: () => this.typeText('[[]]', 2) },
+      { name: 'fold', desc: 'fold or unfold the section under this heading  ctrl+.', run: () => this.toggleFold() },
+      { name: 'foldall', desc: 'fold every section', run: () => this.foldAll(true) },
+      { name: 'unfoldall', desc: 'unfold every section', run: () => this.foldAll(false) },
+      { name: 'outline', desc: `${this.showOutline ? 'hide' : 'show'} the outline: headings and theorems  ctrl+shift+o`, run: () => this.toggleOutline() },
+      { name: 'replace', desc: 'find and replace  ctrl+h', run: () => this.openFind(true) },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
       { name: 'toolbar', desc: `${this.config.ui.toolbar ? 'hide' : 'show'} the toolbar`, run: () => this.toggleBar('toolbar') },
@@ -5288,16 +5758,61 @@ export class Editor {
     this.updateConfig({ ui: { ...this.config.ui, [bar]: !this.config.ui[bar] } });
   }
 
-  openFind() {
+  openFind(replace = false) {
     const s = this.selection;
     let q = this.find?.q ?? this.lastFind;
     if (s && s.s.b === s.e.b && s.e.o - s.s.o <= 60) {
       const t = this.doc.blocks[s.s.b].items.slice(s.s.o, s.e.o);
       if (t.every((i) => i.t === 'c')) q = t.map((i) => (i as Char).ch).join('');
     }
-    this.find = { q, i: 0 };
+    this.find = { q, i: 0, replace: replace || !!this.find?.replace, with: this.find?.with ?? this.lastReplace };
     this.findFrom();
     this.findFocus++;
+  }
+
+  /** The last replacement typed (Ctrl+H starts from it). */
+  private lastReplace = '';
+
+  setReplaceText(t: string) {
+    if (this.find) this.find.with = t;
+    this.lastReplace = t;
+  }
+
+  /** Replace the current match (text; not a formula or a drawing's note) and go on to the next. */
+  replaceOne() {
+    const f = this.find, m = this.findMatches[f?.i ?? -1];
+    if (!f || !m) return;
+    if (m.math || m.note) return this.findGo(1);
+    this.checkpoint();
+    const blk = this.doc.blocks[m.b];
+    blk.items.splice(m.s, m.e - m.s, ...chars(f.with ?? ''));
+    this.forgetBlock(blk);
+    this.derive(m.b, m.b);
+    // on from just after what was put in
+    this.b = m.b;
+    this.o = m.s + (f.with ?? '').length;
+    this.anchor = null;
+    this.findFrom();
+    this.touch();
+  }
+
+  /** Replace every match in the text (formulas and notes are left as they are). */
+  replaceAll() {
+    const f = this.find;
+    if (!f) return;
+    const ms = this.findMatches.filter((m) => !m.math && !m.note);
+    if (!ms.length) return this.flash('nothing to replace');
+    this.checkpoint();
+    for (const m of [...ms].reverse()) {
+      const blk = this.doc.blocks[m.b];
+      blk.items.splice(m.s, m.e - m.s, ...chars(f.with ?? ''));
+      this.forgetBlock(blk);
+    }
+    this.derive(0, Infinity);
+    this.anchor = null;
+    this.o = Math.min(this.o, this.blk.items.length);
+    this.flash(`replaced ${ms.length}`);
+    this.touch();
   }
 
   /** The last thing searched for (F3 / Ctrl+F start from it). */
@@ -5355,6 +5870,8 @@ export class Editor {
         this.menu = null;
         this.setMode('text');
       }
+      // (a match in a folded section: unfolded)
+      this.unfoldTo(m.b);
       this.b = m.b;
       this.anchor = { b: m.b, o: m.s };
       this.o = m.e;
@@ -5415,7 +5932,7 @@ export class Editor {
       ...(this.mode === 'math' ? this.mathActions() : []),
       ...(this.mode === 'text' && this.tableRow() ? this.tableActions() : []),
       ...(this.mode === 'text' && !this.tableRow() && this.selection
-        ? ([['bold', 'bold', 'C-b'], ['italic', 'italic', 'C-i'], ['inlinecode', 'code', 'C-e']] as const).map(([name, desc, key], i): DrawingAction => ({ name, desc, keys: [key], run: () => this.runKey(key), ...(i === 0 ? { sep: true as const } : {}) }))
+        ? ([['bold', 'bold', 'C-b'], ['italic', 'italic', 'C-i'], ['inlinecode', 'code', 'C-e'], ['strikethrough', 'strike out', 'C-S-x'], ['texthighlight', 'highlight', 'C-S-h']] as const).map(([name, desc, key], i): DrawingAction => ({ name, desc, keys: [key], run: () => this.runKey(key), ...(i === 0 ? { sep: true as const } : {}) }))
         : []),
       ...(this.mode === 'text' ? [{ name: 'formula', desc: 'insert math', keys: ['$'], run: () => this.runKey('$'), more: '$$ for display math', sep: true } as DrawingAction] : []),
       { name: 'arrow', desc: sel ? 'arrow from the selection' : 'draw an arrow', keys: ['\\arrow'], run: () => this.startArrow(), more: 'or alt+drag', sep: true },
@@ -5921,6 +6438,18 @@ export function hintLabels(n: number): string[] {
   }
   return out.slice(off, off + n).sort();
 }
+
+const BOX_DESC: Record<BoxKind, string> = {
+  theorem: 'a theorem: a numbered box (again: out of it)',
+  lemma: 'a lemma: a numbered box',
+  proposition: 'a proposition: a numbered box',
+  corollary: 'a corollary: a numbered box',
+  definition: 'a definition: a numbered box',
+  example: 'an example: a numbered box',
+  remark: 'a remark',
+  proof: 'a proof, ending with ∎',
+  quote: 'a quote: > at a line’s start',
+};
 
 const MARK_DESC: Record<MarkKind, string> = {
   box: 'draw a box around something',

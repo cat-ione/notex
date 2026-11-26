@@ -85,6 +85,15 @@ describe('bold and italic', () => {
     items.slice(17).forEach((c) => c.t === 'c' && (c.i = true));
     expect(docToLatex({ blocks: [block(items)], arrows: [], marks: [] })).toBe('a \\textbf{bold}, \\textbf{\\emph{both}} and \\emph{it}\n');
   });
+  it('struck and highlighted text as \\sout / \\hl, with their packages', () => {
+    const items = chars('no, yes and key');
+    items.slice(0, 2).forEach((c) => c.t === 'c' && (c.s = true));
+    items.slice(12).forEach((c) => c.t === 'c' && ((c.h = true), (c.b = true)));
+    const tex = docToLatex({ blocks: [block(items)], arrows: [], marks: [] });
+    expect(tex).toContain('\\sout{no}, yes and \\hl{\\textbf{key}}');
+    expect(tex).toContain('\\usepackage[normalem]{ulem}');
+    expect(tex).toContain('\\usepackage{soul}');
+  });
 });
 
 describe('code', () => {
@@ -167,5 +176,49 @@ describe('diagrams', () => {
     const p = block(chars('text'));
     const tex = docToLatex({ blocks: [p], arrows: [], marks: [], ink: [{ ...inkShape([0, 0, 0.5, 5, 5, 0.5], false), at: p.id }] });
     expect(tex).toContain('% 1 drawing(s) on the note itself are not exported');
+  });
+});
+
+describe('boxes, boxes to tick, numbered formulas, references and links', () => {
+  const doc = (blocks: Doc['blocks']): Doc => ({ blocks, arrows: [], marks: [] });
+  it('a theorem and its proof as environments, a named theorem with its name, the theorem labelled', () => {
+    const t1 = Object.assign(block(chars('(Fermat) No solutions.')), { box: { k: 'theorem' as const, id: 't' } });
+    const t2 = Object.assign(block(chars('For n > 2.')), { box: { k: 'theorem' as const, id: 't' } });
+    const p = Object.assign(block(chars('Long.')), { box: { k: 'proof' as const, id: 'p' } });
+    const tex = docToLatex(doc([t1, t2, p]));
+    expect(tex).toContain('\\begin{theorem}[Fermat]\\label{nx:t}\nNo solutions.\n\nFor n > 2.\n\n\\end{theorem}');
+    expect(tex).toContain('\\begin{proof}\nLong.\n\n\\end{proof}');
+    expect(tex).toContain('\\usepackage{amsthm}');
+    expect(tex).toContain('\\newtheorem{theorem}{Theorem}');
+  });
+  it('a list in a box closes before the box does; a quote is a quote', () => {
+    const a = Object.assign(block(chars('one'), 'li'), { box: { k: 'example' as const, id: 'e' } });
+    const q = Object.assign(block(chars('said')), { box: { k: 'quote' as const, id: 'q' } });
+    const tex = docToLatex(doc([a, q]));
+    expect(tex).toMatch(/\\begin\{example\}\\label\{nx:e\}\n\\begin\{itemize\}\n {2}\\item one\n\\end\{itemize\}\n\\end\{example\}/);
+    expect(tex).toContain('\\theoremstyle{definition}');
+    expect(tex).toContain('\\begin{quote}\nsaid');
+    expect(tex).not.toContain('newtheorem{quote}');
+  });
+  it('boxes to tick as square and crossed items', () => {
+    const a = Object.assign(block(chars('milk'), 'li'), { check: false }), b = Object.assign(block(chars('eggs'), 'li'), { check: true });
+    const tex = docToLatex(doc([a, b]));
+    expect(tex).toContain('\\item[$\\square$] milk');
+    expect(tex).toContain('\\item[$\\boxtimes$] eggs');
+    expect(tex).toContain('\\usepackage{amssymb}');
+  });
+  it('a numbered formula is an equation with a label, and a reference to it \\eqref', () => {
+    const eq = Object.assign(math([sym('E')], true), { num: true as const });
+    const ref = math([{ k: 'sym', id: 'r', v: '(1)', ref: eq.id }]);
+    const tref = math([{ k: 'sym', id: 'r2', v: 'Theorem 2', ref: 'tt' }]);
+    const tex = docToLatex(doc([block([eq]), block([...chars('by '), ref, ...chars(' and '), tref])]));
+    expect(tex).toContain(`\\begin{equation} E \\label{nx:${eq.id}} \\end{equation}`);
+    expect(tex).toContain(`by \\eqref{nx:${eq.id}} and Theorem~\\ref{nx:tt}`);
+    expect(tex).toContain('\\usepackage{amsmath}');
+  });
+  it('links: a web address as \\url (no escapes), [text](address) as \\href, [[a note]] as its text', () => {
+    const tex = docToLatex(doc([block(chars('see https://a.b/c_d and [docs](https://x.y/%7E) and [[Fourier]].'))]));
+    expect(tex).toContain('see \\url{https://a.b/c_d} and \\href{https://x.y/\\%7E}{docs} and Fourier.');
+    expect(tex).toContain('\\usepackage{hyperref}');
   });
 });

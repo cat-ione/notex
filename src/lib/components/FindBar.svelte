@@ -5,9 +5,12 @@
 
   // Find (Ctrl+F): a small bar over the page. Enter / Shift+Enter (or F3) go through the
   // matches, which are highlighted on the page; Esc closes it with the match selected.
+  // Ctrl+H adds a replace field: Enter there replaces the match and goes on, Ctrl+Alt+Enter
+  // replaces them all.
   let { ed }: { ed: Editor } = $props();
 
   let input = $state<HTMLInputElement>();
+  let withInput = $state<HTMLInputElement>();
   $effect(() => {
     ed.findFocus;
     if (ed.find && input) {
@@ -32,7 +35,21 @@
     } else if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       input?.select();
+    } else if (e.key === 'h' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (ed.find) ed.find.replace = true;
+      requestAnimationFrame(() => withInput?.select());
     }
+  }
+
+  function replaceKey(e: KeyboardEvent) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.altKey) {
+      e.preventDefault();
+      ed.replaceAll();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      ed.replaceOne();
+    } else key(e);
   }
 </script>
 
@@ -51,7 +68,24 @@
     <span class="count" class:none={ed.find.q && !n}>{ed.find.q ? (n ? `${ed.find.i + 1}/${n}` : 'none') : ''}</span>
     <button data-tip="previous" data-tip-key="shift+enter" onclick={() => ed.findGo(-1)} disabled={!n}>↑</button>
     <button data-tip="next" data-tip-key="enter / F3" onclick={() => ed.findGo(1)} disabled={!n}>↓</button>
+    <button data-tip="replace" data-tip-key="ctrl+h" class:on={ed.find.replace} onclick={() => ed.find && ((ed.find.replace = !ed.find.replace), ed.find.replace && requestAnimationFrame(() => withInput?.focus()))}>⇄</button>
     <button data-tip="close" data-tip-key="esc" onclick={() => ed.closeFind()}>✕</button>
+    {#if ed.find.replace}
+      <div class="with">
+        <span class="sigil">→</span>
+        <input
+          bind:this={withInput}
+          value={ed.find.with ?? ''}
+          oninput={(e) => ed.setReplaceText(e.currentTarget.value)}
+          onkeydown={replaceKey}
+          placeholder="replace with"
+          spellcheck="false"
+          aria-label="replace with"
+        />
+        <button class="word" data-tip="replace this one, then the next" data-tip-key="enter" onclick={() => ed.replaceOne()} disabled={!n}>replace</button>
+        <button class="word" data-tip="replace them all" data-tip-key="ctrl+alt+enter" onclick={() => ed.replaceAll()} disabled={!n}>all</button>
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -62,6 +96,8 @@
     right: 18px;
     z-index: 25;
     display: flex;
+    flex-wrap: wrap;
+    max-width: calc(100% - 36px);
     align-items: center;
     gap: 4px;
     padding: 4px 6px 4px 10px;
@@ -110,6 +146,22 @@
   button:hover:not(:disabled) {
     background: var(--sel-bg);
     color: var(--fg);
+  }
+  button.on {
+    color: var(--accent);
+  }
+  .with {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-top: 3px;
+    margin-top: 3px;
+    border-top: 1px solid var(--border);
+  }
+  button.word {
+    width: auto;
+    padding: 0 6px;
   }
   button:disabled {
     opacity: 0.35;

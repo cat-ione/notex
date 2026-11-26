@@ -12,18 +12,18 @@
 // Anchor forms: `c<block>.<offset>` a character, `b<block>` a whole block,
 // anything else a math item / math node id.
 
-import { block, ch, chars, type Arrow, type Mark, type Block, type BlockKind, type Doc, type Id, type Item, type MRow } from './model';
+import { block, ch, chars, type Arrow, type Box, type Mark, type Block, type BlockKind, type Doc, type Id, type Item, type MRow } from './model';
 import type { Placed, Shape } from './sketch/shapes';
 import { headingOf } from './markdown';
 import { structureTables } from './tables';
 
 /** Plain text, styled text (bold / italic / inline code), or a formula. */
-type Content = string | { s: string; b?: 1; i?: 1; c?: 1 } | { m: MRow; id: Id; d?: 1 };
+type Content = string | { s: string; b?: 1; i?: 1; c?: 1 } | { m: MRow; id: Id; d?: 1; n?: 1 };
 /**
  * A table row (`tr`) is its text with | for each cell wall; `lit` lists the | that are typed
  * text, not walls. Its table's header has `head` and the columns' alignment.
  */
-type FileBlock = { kind: BlockKind; content: Content[]; indent?: number; lang?: string; src?: string; w?: number; h?: number; shapes?: Shape[]; head?: 1; aligns?: Block['aligns']; lit?: number[] };
+type FileBlock = { kind: BlockKind; content: Content[]; indent?: number; lang?: string; src?: string; w?: number; h?: number; shapes?: Shape[]; head?: 1; aligns?: Block['aligns']; lit?: number[]; check?: boolean; box?: Box; fold?: 1 };
 type FileArrow = Omit<Arrow, 'id'>;
 type FileMark = Omit<Mark, 'id'>;
 /** What's drawn on the note: each shape's block (`at`) as `b<index>`. */
@@ -47,7 +47,7 @@ export function encode(doc: Doc): NoteFile {
         run += it.ch;
       } else {
         flush();
-        content.push(it.display ? { m: it.root, id: it.id, d: 1 } : { m: it.root, id: it.id });
+        content.push({ m: it.root, id: it.id, ...(it.display ? { d: 1 as const } : {}), ...(it.num ? { n: 1 as const } : {}) });
       }
     });
     flush();
@@ -63,6 +63,9 @@ export function encode(doc: Doc): NoteFile {
       ...(b.src ? { src: b.src } : {}),
       ...(b.w ? { w: b.w } : {}),
       ...(b.kind === 'diagram' ? { h: b.h ?? 0, shapes: b.shapes ?? [] } : {}),
+      ...(b.check !== undefined && b.kind === 'li' ? { check: b.check } : {}),
+      ...(b.box ? { box: { k: b.box.k, id: b.box.id } } : {}),
+      ...(b.fold ? { fold: 1 as const } : {}),
     };
   });
   const mapIds = (ids: Id[]) => ids.map((id) => where.get(id) ?? id);
@@ -89,7 +92,7 @@ export function decode(file: NoteFile): Doc {
           if (c.c) x.c = true;
           items.push(x);
         }
-      else items.push({ t: 'm', id: c.id, root: c.m, display: !!c.d });
+      else items.push({ t: 'm', id: c.id, root: c.m, display: !!c.d, ...(c.n ? { num: true as const } : {}) });
     }
     const blk = block(items, fb.kind);
     if (fb.kind === 'tr') {
@@ -103,6 +106,9 @@ export function decode(file: NoteFile): Doc {
     if (fb.src) blk.src = fb.src;
     if (fb.w) blk.w = fb.w;
     if (fb.kind === 'diagram') (blk.shapes = fb.shapes ?? []), (blk.h = fb.h ?? 240);
+    if (fb.kind === 'li' && typeof fb.check === 'boolean') blk.check = fb.check;
+    if (fb.box) blk.box = { k: fb.box.k, id: fb.box.id };
+    if (fb.fold) blk.fold = true;
     return blk;
   });
   const resolve = (ref: string): Id => {

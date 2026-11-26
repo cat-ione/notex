@@ -2,11 +2,16 @@
 // characters like any other, and what they mean (bold, a heading, a code block) is read
 // from the text after every edit (Editor.derive). Shown or hidden is the renderer's call.
 
-/** A character's meaning: bold, italic, code, and whether it's one of the markers. */
-export const BOLD = 1, ITALIC = 2, CODE = 4, MARK = 8;
+/** A character's meaning: bold, italic, code, struck, highlighted, a link's, and whether it's one of the markers. */
+export const BOLD = 1, ITALIC = 2, CODE = 4, MARK = 8, STRIKE = 16, HIGHLIGHT = 32, LINK = 64;
 
 /** One styled span: items start..end (exclusive), the first `open` and last `close` of them markers. */
 export type Span = { start: number; end: number; open: number; close: number };
+/**
+ * A link: items start..end (its markers included: the first `open` and last `close`), to a
+ * note by name (`note`) or a web address.
+ */
+export type Link = { start: number; end: number; open: number; close: number; to: string; note: boolean };
 
 /** What isn't a character (a formula) in the text handed to these. */
 export const OBJ = '￼';
@@ -16,13 +21,15 @@ const wordChar = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}]/u.t
 
 /**
  * Inline markdown of a paragraph's text: `code` (a run of backticks to the next run as
- * long), then ***both***, **bold**, *italic*, __bold__, _italic_ (exact runs, no space just
- * inside; underscores not inside words). Code holds no markers or formulas; emphasis may
- * hold code, formulas and emphasis of the other kind. Flags per character, and the spans.
+ * long), then ***both***, **bold**, *italic*, __bold__, _italic_, ~~struck~~, ==highlighted==
+ * (exact runs, no space just inside; underscores not inside words). Code holds no markers or
+ * formulas; emphasis may hold code, formulas and emphasis of the other kind. Links:
+ * [[a note]], [[a note|what shows]], [text](address) and bare https:// addresses (not in
+ * code). Flags per character, the spans and the links.
  */
-export function parseInline(text: string): { flags: Uint8Array; spans: Span[] } {
+export function parseInline(text: string): { flags: Uint16Array; spans: Span[]; links: Link[] } {
   const n = text.length;
-  const flags = new Uint8Array(n);
+  const flags = new Uint16Array(n);
   const spans: Span[] = [];
   /** Characters a marker can't be: in code, or already a marker. */
   const used = new Uint8Array(n);
@@ -62,12 +69,45 @@ export function parseInline(text: string): { flags: Uint8Array; spans: Span[] } 
     i = close + L;
   }
 
+  // links: their markers hidden but while the caret is at them, what shows is the link's
+  const links: Link[] = [];
+  const free = (a: number, b: number) => {
+    for (let k = a; k < b; k++) if (used[k] || text[k] === OBJ) return false;
+    return true;
+  };
+  const link = (start: number, end: number, open: number, close: number, to: string, note: boolean) => {
+    for (let k = start; k < end; k++) used[k] = 1;
+    for (let k = start + open; k < end - close; k++) flags[k] |= LINK;
+    for (let k = 0; k < open; k++) flags[start + k] |= MARK;
+    for (let k = 1; k <= close; k++) flags[end - k] |= MARK;
+    if (open || close) spans.push({ start, end, open, close });
+    links.push({ start, end, open, close, to, note });
+  };
+  for (const m of text.matchAll(/\[\[([^[\]|\n]+?)(?:\|([^[\]\n]+?))?\]\]/g)) {
+    const a = m.index!, z = a + m[0].length;
+    if (free(a, z)) link(a, z, m[2] ? 3 + m[1].length : 2, 2, m[1].trim(), true);
+  }
+  for (const m of text.matchAll(/\[([^[\]\n]+)\]\((\S+?)\)/g)) {
+    const a = m.index!, z = a + m[0].length;
+    if (free(a, z)) link(a, z, 1, m[2].length + 3, m[2], false);
+  }
+  for (const m of text.matchAll(/\bhttps?:\/\/[^\s<>"\uFFFC]+/g)) {
+    const a = m.index!;
+    // (not the punctuation after it, or a closing bracket it didn't open)
+    let z = a + m[0].length;
+    while (z > a && /[.,;:!?'"]/.test(text[z - 1])) z--;
+    if (text[z - 1] === ')' && !text.slice(a, z).includes('(')) z--;
+    if (free(a, z)) link(a, z, 0, 0, text.slice(a, z), false);
+  }
+
   const kinds: [string, number, number][] = [
     ['*', 3, BOLD | ITALIC],
     ['*', 2, BOLD],
     ['_', 2, BOLD],
     ['*', 1, ITALIC],
     ['_', 1, ITALIC],
+    ['~', 2, STRIKE],
+    ['=', 2, HIGHLIGHT],
   ];
   for (const [c, L, style] of kinds)
     for (let i = 0; i < n; i++) {
@@ -98,7 +138,7 @@ export function parseInline(text: string): { flags: Uint8Array; spans: Span[] } 
       spans.push({ start: i, end: close + L, open: L, close: L });
       i = close + L - 1;
     }
-  return { flags, spans };
+  return { flags, spans, links };
 }
 
 /** A heading line: `# ` to `###### ` at its start (the #s and the space are its prefix). */

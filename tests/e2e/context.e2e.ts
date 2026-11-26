@@ -228,11 +228,7 @@ test('the palette lists every command, and the arrows scroll through them', asyn
   for (let i = 0; i < all; i++) await page.keyboard.press('ArrowDown');
   expect(await page.locator('.palette .opt.sel .name').innerText()).toContain((await names(page)).at(-1)!);
   expect(await selInView(page)).toBe(true);
-  await page.keyboard.press('PageUp');
-  await page.keyboard.press('PageUp');
-  await page.keyboard.press('PageUp');
-  await page.keyboard.press('PageUp');
-  await page.keyboard.press('PageUp');
+  for (let i = 0; i <= all / 10; i++) await page.keyboard.press('PageUp');
   expect(await ed(page, (e) => e.palette.sel)).toBe(0);
   expect(await listTop(page)).toBe(0);
 });

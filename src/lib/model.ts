@@ -9,17 +9,20 @@ import type { Placed, Shape } from './sketch/shapes';
 
 export type Id = string;
 
-export type MSym = { k: 'sym'; id: Id; v: string; src?: string };
+/** A symbol; `ref`: a reference to a numbered equation or box (its `v` the label shown, kept up to date). */
+export type MSym = { k: 'sym'; id: Id; v: string; src?: string; ref?: Id };
 export type MCmd = { k: 'cmd'; id: Id; name: string; slots: MRow[]; cols?: number };
 export type MNode = MSym | MCmd;
 export type MRow = MNode[];
 
 /**
  * A character of text. Its meaning in the markdown, read from the text (Editor.derive):
- * `b` / `i` / `c` bold, italic, inline code; `m` one of the markers (** ` # …).
+ * `b` / `i` / `c` bold, italic, inline code; `s` / `h` struck, highlighted; `l` a link's
+ * text; `m` one of the markers (** ` # ~~ == [[ …).
  */
-export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true; c?: true; m?: true; cell?: true };
-export type MathItem = { t: 'm'; id: Id; root: MRow; display: boolean };
+export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true; c?: true; m?: true; s?: true; h?: true; l?: true; cell?: true };
+/** A formula; `num`: a display formula with a number, (1), (2)… */
+export type MathItem = { t: 'm'; id: Id; root: MRow; display: boolean; num?: true };
 export type Item = Char | MathItem;
 
 export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code' | 'fence' | 'img' | 'tr' | 'diagram';
@@ -32,6 +35,10 @@ export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code' | 'fence
  * header (`head`), with the columns' alignment (see tables.ts). A diagram (`diagram`) is its
  * `shapes` on a canvas `w` by `h` (its own coordinates; shown scaled down to fit a narrower
  * page), with its items as the caption.
+ *
+ * `check`: a list item with a box to tick (true: ticked). `box`: the block is in a box — a
+ * theorem, a definition, a proof, a quote… — with the blocks next to it that share its `id`.
+ * `fold`: a heading whose section is folded away.
  */
 export type Block = {
   id: Id;
@@ -45,7 +52,22 @@ export type Block = {
   aligns?: ('left' | 'center' | 'right' | null)[];
   shapes?: Shape[];
   h?: number;
+  check?: boolean;
+  box?: Box;
+  fold?: true;
 };
+/** The kinds of box: numbered ones (theorem… example) count together, as in many books. */
+export type BoxKind = 'theorem' | 'lemma' | 'proposition' | 'corollary' | 'definition' | 'example' | 'remark' | 'proof' | 'quote';
+export type Box = { k: BoxKind; id: Id };
+export const BOX_KINDS: BoxKind[] = ['theorem', 'lemma', 'proposition', 'corollary', 'definition', 'example', 'remark', 'proof', 'quote'];
+export const NUMBERED_BOX = new Set<BoxKind>(['theorem', 'lemma', 'proposition', 'corollary', 'definition', 'example']);
+/** What a box is called, at its start ('' for a quote). */
+export const BOX_NAME: Record<BoxKind, string> = {
+  theorem: 'Theorem', lemma: 'Lemma', proposition: 'Proposition', corollary: 'Corollary', definition: 'Definition',
+  example: 'Example', remark: 'Remark', proof: 'Proof', quote: '',
+};
+/** A reference's target is a formula (shown as (3)) or a box (Theorem 2). */
+export const isRefItem = (it: Item | undefined): it is MathItem & { root: [MSym] } => it?.t === 'm' && it.root.length === 1 && it.root[0].k === 'sym' && !!it.root[0].ref;
 /** Blocks shown as a figure with a caption under it: an image, a diagram. */
 export const isFigure = (k: BlockKind) => k === 'img' || k === 'diagram';
 export const isListKind = (k: BlockKind) => k === 'li' || k === 'ol';

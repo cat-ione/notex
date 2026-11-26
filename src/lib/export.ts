@@ -5,7 +5,8 @@
 // between places (arrows, circles, notes) wraps its targets in
 // \tikzmarknode{...}{...} and is drawn in a tikz overlay after the paragraph.
 
-import type { Arrow, Doc, Id, Item, Mark, MRow } from './model';
+import { BOX_NAME, NUMBERED_BOX, isRefItem, type Arrow, type Block, type BoxKind, type Doc, type Id, type Item, type Mark, type MRow, type MSym } from './model';
+import { OBJ, parseInline, type Link } from './markdown';
 import { cellSpans, findTables } from './tables';
 import { toLatex, toLatexWrapped, type Wraps } from './math/latex';
 import { CMDS } from './math/defs';
@@ -122,6 +123,10 @@ const PKG = {
   xcolor: '\\usepackage{xcolor}',
   amsmath: '\\usepackage{amsmath}',
   graphicx: '\\usepackage{graphicx}',
+  soul: '\\usepackage{soul}',
+  amssymb: '\\usepackage{amssymb}',
+  amsthm: '\\usepackage{amsthm}',
+  hyperref: '\\usepackage{hyperref}',
 };
 
 export function docToLatex(doc: Doc): string {
@@ -204,24 +209,66 @@ export function docToLatex(doc: Doc): string {
   for (const [k, ws] of before) if (!k.includes(':')) mathWraps.before.set(k, opens(ws));
   for (const [k, ws] of after) if (!k.includes(':')) mathWraps.after.set(k, closes(ws));
 
-  // bold / italic runs as \textbf / \emph (closed around a drawing's wrapper, so they nest)
-  const OPEN: Record<string, string> = { b: '\\textbf{', i: '\\emph{', bi: '\\textbf{\\emph{', c: '\\texttt{' };
-  const CLOSE: Record<string, string> = { b: '}', i: '}', bi: '}}', c: '}' };
+  // links: a web address as \url / \href (its text as it is: no escapes in an address), a
+  // note's name as its text
+  const linksOf = new Map<number, Link[]>();
+  const links = (b: number) => {
+    let ls = linksOf.get(b);
+    if (!ls) {
+      const blk = doc.blocks[b];
+      ls = blk.kind === 'code' || blk.kind === 'fence' ? [] : parseInline(blk.items.map((i) => (i.t === 'c' ? i.ch : OBJ)).join('')).links;
+      linksOf.set(b, ls);
+    }
+    return ls;
+  };
+  const urlChar = (c: string) => (c === '%' || c === '#' ? '\\' + c : c);
+  // numbered formulas and boxes: labelled, for references to them
+  const labelOf = (id: Id) => `nx:${id}`;
+  let refs = false;
+  // highlighted / struck / bold / italic runs as \hl / \sout / \textbf / \emph, code as
+  // \texttt (closed around a drawing's wrapper, so they nest)
+  const OPENS: Record<string, string> = { h: '\\hl{', s: '\\sout{', b: '\\textbf{', i: '\\emph{', c: '\\texttt{' };
+  const styleOf = (it: Item) => (it.t !== 'c' ? '' : it.c ? 'c' : (it.h ? 'h' : '') + (it.s ? 's' : '') + (it.b ? 'b' : '') + (it.i ? 'i' : ''));
+  const OPEN = (st: string) => [...st].map((c) => OPENS[c]).join('');
+  const CLOSE = (st: string) => '}'.repeat(st.length);
   // (`base`: where `items` start in their block, for a cell of a table row)
   const inline = (items: Item[], b: number, base = 0) => {
     let out = '', cur = '';
+    const ls = links(b);
     items.forEach((it, i) => {
       const o = base + i;
-      const pre = opens(before.get(`${b}:${o}`)), post = closes(after.get(`${b}:${o}`));
-      const st = it.t === 'c' ? (it.c ? 'c' : (it.b ? 'b' : '') + (it.i ? 'i' : '')) : '';
-      if (st !== cur || pre) (out += CLOSE[cur] ?? ''), (cur = '');
+      const link = ls.find((l) => o >= l.start && o < l.end);
+      const lopen = link && o === link.start ? (link.note ? '' : !link.open ? '\\url{' : `\\href{${[...link.to].map(urlChar).join('')}}{`) : '';
+      const lclose = link && o === link.end - 1 && !link.note ? '}' : '';
+      if (lopen || lclose) need.add('hyperref');
+      const pre = opens(before.get(`${b}:${o}`)) + lopen, post = lclose + closes(after.get(`${b}:${o}`));
+      // a reference: \eqref{…} to a formula, Theorem~\ref{…} to a box
+      if (isRefItem(it)) {
+        const r = it.root[0] as MSym;
+        refs = true;
+        if (cur) (out += CLOSE(cur)), (cur = '');
+        out += pre + (/^\(/.test(r.v) ? `\\eqref{${labelOf(r.ref!)}}` : `${r.v.replace(/\s*\d+$/, '')}~\\ref{${labelOf(r.ref!)}}`) + post;
+        return;
+      }
+      const st = styleOf(it);
+      if (st.includes('s')) need.add('ulem');
+      if (st.includes('h')) need.add('soul'), need.add('xcolor');
+      if (st !== cur || pre) (out += CLOSE(cur)), (cur = '');
       out += pre;
-      if (st !== cur) (out += OPEN[st] ?? ''), (cur = st);
+      if (st !== cur) (out += OPEN(st)), (cur = st);
       // (markdown's markers are what the styles say: not text)
-      out += it.t === 'c' ? (it.m ? '' : (ESC[it.ch] ?? it.ch)) : it.display ? `\n\\[ ${toLatexWrapped(it.root, mathWraps)} \\]\n` : `$${toLatexWrapped(it.root, mathWraps)}$`;
-      if (post) (out += CLOSE[cur] ?? ''), (cur = ''), (out += post);
+      const bare = link && !link.note && !link.open;
+      // (a link's markers: not text, whatever the flags say)
+      const marker = !!link && (o < link.start + link.open || o >= link.end - link.close);
+      out +=
+        it.t === 'c'
+          ? it.m || marker ? '' : bare ? urlChar(it.ch) : (ESC[it.ch] ?? it.ch)
+          : it.display && it.num
+            ? `\n\\begin{equation} ${toLatexWrapped(it.root, mathWraps)} \\label{${labelOf(it.id)}} \\end{equation}\n`
+            : it.display ? `\n\\[ ${toLatexWrapped(it.root, mathWraps)} \\]\n` : `$${toLatexWrapped(it.root, mathWraps)}$`;
+      if (post) (out += CLOSE(cur)), (cur = ''), (out += post);
     });
-    return out + (CLOSE[cur] ?? '');
+    return out + CLOSE(cur);
   };
 
   const out: string[] = [];
@@ -230,7 +277,11 @@ export function docToLatex(doc: Doc): string {
   const pad = (n: number) => '  '.repeat(n);
   let images = 0;
   const tables = findTables(doc.blocks);
-  doc.blocks.forEach((blk, b) => {
+  const closeLists = () => {
+    while (lists.length) out.push(`${pad(lists.length - 1)}\\end{${lists.pop()}}`);
+  };
+  const boxes = new Set<BoxKind>();
+  const emit = (blk: Block, b: number) => {
     // a table row: a tabular's row, its cells between the walls
     const row = tables.get(b);
     if (row) {
@@ -281,19 +332,48 @@ export function docToLatex(doc: Doc): string {
       out.push(`${pad(lists.length)}\\begin{${e}}`);
       lists.push(e);
     }
-    const body = inline(blk.items, b);
+    let body = inline(blk.items, b);
+    // a box's first line: a name in brackets at its start is the box's ([Fermat])
+    const box = blk.box, first = !!box && doc.blocks[b - 1]?.box?.id !== box.id;
+    if (first && box) {
+      const named = box.k !== 'quote' && box.k !== 'proof' ? /^\s*\(([^()]{1,60})\)\s*/.exec(body) : null;
+      if (named) body = body.slice(named[0].length);
+      out.push(`\\begin{${box.k}}${named ? `[${named[1]}]` : ''}${NUMBERED_BOX.has(box.k) ? `\\label{${labelOf(box.id)}}` : ''}`);
+    }
     if (blk.kind === 'h1') out.push(`\\section*{${body}}`);
     else if (blk.kind === 'h2') out.push(`\\subsection*{${body}}`);
     else if (blk.kind === 'h3') out.push(`\\subsubsection*{${body}}`);
+    else if (list && blk.kind === 'li' && blk.check !== undefined) (need.add('amssymb'), out.push(`${pad(depth)}\\item[$${blk.check ? '\\boxtimes' : '\\square'}$] ${body}`));
     else if (list) out.push(`${pad(depth)}\\item ${body}`);
     else out.push(body + (overlays.has(b) ? '' : '\n'));
     const ov = overlays.get(b);
     if (ov) out.push('\\begin{tikzpicture}[remember picture, overlay]', ...ov.map((c) => '  ' + c), '\\end{tikzpicture}' + (blk.kind === 'p' ? '\n' : ''));
+  };
+  doc.blocks.forEach((blk, b) => {
+    const box = blk.box;
+    // (a box opens on its first line, after any list before it; see emit)
+    if (box && doc.blocks[b - 1]?.box?.id !== box.id) closeLists(), boxes.add(box.k);
+    if (box && doc.blocks[b - 1]?.box?.id !== box.id && (blk.kind === 'img' || blk.kind === 'diagram' || blk.kind === 'tr' || blk.kind === 'fence' || blk.kind === 'code' || blk.kind === 'li' || blk.kind === 'ol'))
+      out.push(`\\begin{${box.k}}${NUMBERED_BOX.has(box.k) ? `\\label{${labelOf(box.id)}}` : ''}`), (blk = { ...blk, box: undefined });
+    emit(blk, b);
+    if (box && doc.blocks[b + 1]?.box?.id !== box.id) closeLists(), out.push(`\\end{${box.k}}\n`);
   });
-  while (lists.length) out.push(`${pad(lists.length - 1)}\\end{${lists.pop()}}`);
+  closeLists();
 
+  if (refs) need.add('amsmath');
+  if ([...boxes].some((k) => k !== 'quote')) need.add('amsthm');
   const head: string[] = [];
   if (need.size) head.push('% preamble:', ...[...need].map((p) => `%   ${PKG[p]}`));
+  // the boxes' environments (theorems… examples numbered together)
+  const thm = [...boxes].filter((k) => NUMBERED_BOX.has(k) || k === 'remark');
+  if (thm.length) {
+    const def = (k: BoxKind) => (k === 'remark' ? `\\newtheorem*{remark}{Remark}` : k === 'theorem' ? `\\newtheorem{theorem}{Theorem}` : `\\newtheorem{${k}}[theorem]{${BOX_NAME[k]}}`);
+    const plain = thm.filter((k) => ['lemma', 'proposition', 'corollary'].includes(k));
+    const defs = thm.filter((k) => k === 'definition' || k === 'example');
+    head.push(`%   ${def('theorem')}`, ...plain.map((k) => `%   ${def(k)}`));
+    if (defs.length) head.push('%   \\theoremstyle{definition}', ...defs.map((k) => `%   ${def(k)}`));
+    if (thm.includes('remark')) head.push('%   \\theoremstyle{remark}', `%   ${def('remark')}`);
+  }
   if (names.size) head.push('% (drawings use tikzmark: compile twice)');
   if (images) head.push(`% ${images} image(s): save them from the note as image1, image2, …`);
   if (doc.ink?.length) head.push(`% ${doc.ink.length} drawing(s) on the note itself are not exported (diagrams are)`);

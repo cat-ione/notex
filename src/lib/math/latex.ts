@@ -106,6 +106,10 @@ function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
       const needBase = i === 0 || isScript(prev);
       out += (needBase ? '{}' : '') + cmdLatex(n as MCmd, path, i, o, false);
       if (i === off && i > 0) out += CARET_PRE_SCRIPT;
+    } else if (n.k === 'sym' && n.ref) {
+      // a reference: its label as text (on the page, in the link colour)
+      const label = `\\text{${[...n.v].map((c) => TEXT_ESC[c] ?? c).join('')}}`;
+      out += o.anchors ? `\\htmlData{nx=${n.id}}{\\htmlClass{nx-ref}{${label}}}` : /^\(\d+\)$/.test(n.v) ? `\\eqref{nx:${n.ref}}` : label;
     } else if (n.k === 'sym') {
       const v = text ? (TEXT_ESC[n.v] ?? n.v) : symLatex(n.v);
       out += o.anchors ? `\\htmlData{nx=${n.id}}{${v}}` : v;

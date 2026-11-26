@@ -11,6 +11,7 @@
   import DrawingMenu from './DrawingMenu.svelte';
   import DrawingBar from './DrawingBar.svelte';
   import FindBar from './FindBar.svelte';
+  import Outline from './Outline.svelte';
   import Tooltip from './Tooltip.svelte';
   import StatusLine from './StatusLine.svelte';
   import Toolbar from './Toolbar.svelte';
@@ -23,7 +24,7 @@
   import LabelEditor from './LabelEditor.svelte';
   import { isDesktop, setWindowTitle } from '$lib/files';
   import { base } from '$app/paths';
-  import { isFigure, type Block, type Item } from '$lib/model';
+  import { BOX_NAME, isFigure, type Block, type Item } from '$lib/model';
   import { highlight, type Tk } from '$lib/highlight';
   import { cellSpans, findTables } from '$lib/tables';
 
@@ -260,7 +261,26 @@
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   }
-  const SIGIL = { math: 'ƒ', text: '❯', draw: '✎', style: '✎' };
+  const SIGIL = { math: 'ƒ', text: '❯', draw: '✎', style: '✎', ref: '↗' };
+
+  /** A heading's level (0: not a heading). */
+  const level = (blk: Block) => (blk.kind === 'h1' ? 1 : blk.kind === 'h2' ? 2 : blk.kind === 'h3' ? 3 : 0);
+  /** A click on a box to tick: ticks it (the caret stays where it was). */
+  function tick(e: MouseEvent, b: number) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    ed.toggleCheck(b);
+    ed.touch();
+  }
+  /** A click on a heading's fold mark: folds or unfolds its section. */
+  function fold(e: MouseEvent, b: number) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    ed.toggleFold(b);
+    ed.touch();
+  }
 
   // numbered list items: each counts on from the one before at its depth (a bullet at that
   // depth, or anything that isn't a list, starts again; going back out keeps the outer count)
@@ -294,17 +314,21 @@
       class:b={it.b && !it.m}
       class:i={it.i && !it.m}
       class:c={it.c}
+      class:s={it.s && !it.m}
+      class:hl={it.h && !it.m}
+      class:ln={it.l && !it.m}
       class:mk={it.m}
       class:cs={codeText(it) && !codeText(blk.items[o - 1])}
       class:ce={codeText(it) && !codeText(blk.items[o + 1])}
       data-tk={blk.kind === 'code' ? codeTokens.get(blk.id)?.[o] : undefined}
-      data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}{:else}<MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}{/if}{/snippet}
+      title={it.l && !it.m ? 'ctrl+click to open' : undefined}
+      data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}{:else}<MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} eqn={it.display && it.num ? ed.labels.get(it.id) : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}{/if}{/snippet}
 
 <!-- A cell wall: no width, nothing to see (the cell's border is the wall), but a place for the caret. -->
 {#snippet cellWall(w: Item)}<span class="ch wall" data-nx={w.id}>|</span>{/snippet}
 
-<!-- What comes before a block's text: an image. -->
-{#snippet blockHead(blk: Block, b: number)}{#if blk.kind === 'img'}<div class="figure">
+<!-- What comes before a block's text: an image, a box to tick, a box's name, a heading's fold. -->
+{#snippet blockHead(blk: Block, b: number)}{#if blk.kind === 'li' && blk.check !== undefined}<span class="tick" class:on={blk.check} data-tick={b} role="checkbox" aria-checked={blk.check} tabindex="-1" onmousedown={(e) => tick(e, b)}></span>{/if}{#if level(blk) && (blk.fold || ed.sectionEnd(b) > b + 1)}<span class="foldbtn" class:folded={blk.fold} data-fold={b} role="button" tabindex="-1" data-tip={blk.fold ? 'unfold' : 'fold'} data-tip-key="ctrl+." onmousedown={(e) => fold(e, b)}></span>{/if}{#if blk.box && blk.box.k !== 'quote' && ed.boxStarts(b)}<span class="boxhead">{ed.labels.get(blk.box.id) ?? BOX_NAME[blk.box.k]}.</span>{/if}{#if blk.kind === 'img'}<div class="figure">
       <!-- (an image's id is on the picture: drawings on it are on the picture, not its caption) -->
       <img src={blk.src} alt="" draggable="false" data-nx={blk.id} style:width={blk.w ? `${blk.w}px` : undefined} />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -326,6 +350,9 @@
 <div class="shell">
   <DrawingMenu {ed} />
   <FindBar {ed} />
+  {#if ed.showOutline}
+    <Outline {ed} />
+  {/if}
   {#if ed.sketch.active}
     <SketchBar {ed} />
   {/if}
@@ -336,6 +363,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="scroller"
+    class:outlined={ed.showOutline}
     class:pen-ready={!ed.sketch.active && ed.config.sketch.penDraws && (ed.sketch.penNear || ed.sketch.penSeen)}
     onpointerdowncapture={pointerDown}
     onmousedown={(e) => ed.mouseDown(e)}
@@ -368,6 +396,13 @@
           class:clast={codeBottom(b)}
           class:veiled={veiled(b)}
           class:empty={!blk.items.length}
+          class:task={blk.kind === 'li' && blk.check !== undefined}
+          class:done={blk.kind === 'li' && blk.check === true}
+          class:boxed={!!blk.box}
+          class:bfirst={ed.boxStarts(b)}
+          class:blast={ed.boxEnds(b)}
+          class:folded={ed.folded[b]}
+          data-box={blk.box?.k}
           class:hang={reveal?.b === b && !!reveal.hang}
           data-nx={isFigure(blk.kind) ? undefined : blk.id}
           data-bid={blk.id}
@@ -378,7 +413,7 @@
           style:--hang={reveal?.b === b && reveal.hang ? reveal.hang : undefined}
         >
           <!-- (no whitespace between these: in the pre-wrap text it would show) -->
-          {#if row}{@const cells = cellSpans(blk.items)}{#each cells as [s, e], c (c)}<span class="td" class:csel={selectedCell(b, c)} data-c={c} style:text-align={row.aligns[c] ?? undefined}>{@render cellWall(blk.items[s - 1])}{#each blk.items.slice(s, e) as it, k (it.id)}{@render item(blk, b, it, s + k)}{/each}{#if c === cells.length - 1}{@render cellWall(blk.items[e])}<span class="eol" data-eol={blk.id}>&#8203;</span>{/if}</span>{/each}{:else}{@render blockHead(blk, b)}{#each blk.items as it, o (it.id)}{@render item(blk, b, it, o)}{/each}<span class="eol" data-eol={blk.id}>&#8203;</span>{/if}
+          {#if row}{@const cells = cellSpans(blk.items)}{#each cells as [s, e], c (c)}<span class="td" class:csel={selectedCell(b, c)} data-c={c} style:text-align={row.aligns[c] ?? undefined}>{@render cellWall(blk.items[s - 1])}{#each blk.items.slice(s, e) as it, k (it.id)}{@render item(blk, b, it, s + k)}{/each}{#if c === cells.length - 1}{@render cellWall(blk.items[e])}<span class="eol" data-eol={blk.id}>&#8203;</span>{/if}</span>{/each}{:else}{@render blockHead(blk, b)}{#each blk.items as it, o (it.id)}{@render item(blk, b, it, o)}{/each}<span class="eol" data-eol={blk.id}>&#8203;</span>{#if blk.box?.k === 'proof' && ed.boxEnds(b)}<span class="qed">∎</span>{/if}{#if blk.fold && ed.foldedCount(b)}<span class="foldinfo">⋯ {ed.foldedCount(b)} {ed.foldedCount(b) === 1 ? 'line' : 'lines'}</span>{/if}{/if}
         </div>
       {/each}
 
@@ -437,7 +472,7 @@
           onmousedown={(e) => (e.stopPropagation(), e.preventDefault())}
         >
           <!-- (typing filters it; opened by a click, it says what it is until something is typed) -->
-          <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {#if ed.input === 'mouse' && !ed.palette.query}<span class="what">{ed.palette.ctx === 'draw' ? 'draw' : 'commands'}</span>{:else}{ed.palette.ctx === 'draw' ? '' : '\\'}{ed.palette.query}<span class="blink">▏</span>{/if}</div>
+          <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {#if ed.input === 'mouse' && !ed.palette.query}<span class="what">{ed.palette.ctx === 'draw' ? 'draw' : ed.palette.ctx === 'ref' ? 'refer to' : 'commands'}</span>{:else}{ed.palette.ctx === 'draw' ? '' : ed.palette.ctx === 'ref' ? 'refer to ' : '\\'}{ed.palette.query}<span class="blink">▏</span>{/if}</div>
           <div class="opts" bind:this={paletteList} style:max-height="{room}px">
           {#each ed.paletteItems as item, i (item.name)}
             {#if item.rule}<div class="rule"></div>{/if}
@@ -493,6 +528,12 @@
     cursor: text;
     overflow-y: auto;
     overflow-x: hidden;
+  }
+  /* the outline open on a wide window: the page beside it, not under it */
+  @media (min-width: 980px) {
+    .scroller.outlined {
+      padding-left: 256px;
+    }
   }
   .page {
     position: relative;
@@ -565,13 +606,13 @@
   .block.h1::before, .block.h2::before, .block.h3::before { top: 0.4em; bottom: 0.4em; }
   .block.li,
   .block.ol {
-    padding-left: calc(1.4em + var(--indent, 0) * 1.4em);
+    padding-left: calc(var(--bx, 0px) + 1.4em + var(--indent, 0) * 1.4em);
   }
   /* markers: the text's own size and line height (so they sit on its line), drawn smaller */
   .block.li::after {
     content: '▸';
     position: absolute;
-    left: calc(0.2em + var(--indent, 0) * 1.4em);
+    left: calc(var(--bx, 0px) + 0.2em + var(--indent, 0) * 1.4em);
     top: 0;
     color: var(--accent);
     transform: scale(0.85);
@@ -588,7 +629,7 @@
   .block.ol::after {
     content: attr(data-n) '.';
     position: absolute;
-    left: calc(var(--indent, 0) * 1.4em - 0.6em);
+    left: calc(var(--bx, 0px) + var(--indent, 0) * 1.4em - 0.6em);
     width: 1.8em;
     top: 0;
     text-align: right;
@@ -596,6 +637,145 @@
     color: var(--accent);
     transform: scale(0.82);
     transform-origin: right center;
+  }
+  /* a list item with a box to tick: the box where the bullet would be; ticked, the text done */
+  .block.li.task::after {
+    content: none;
+  }
+  .tick {
+    position: absolute;
+    left: calc(var(--bx, 0px) + 0.15em + var(--indent, 0) * 1.4em);
+    top: calc(1.05em - 0.5em);
+    width: 0.92em;
+    height: 0.92em;
+    box-sizing: border-box;
+    border: 1.5px solid var(--accent);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+  .tick:hover {
+    background: var(--sel-bg);
+  }
+  .tick.on {
+    background: var(--accent);
+  }
+  .tick.on::after {
+    content: '';
+    position: absolute;
+    left: 0.27em;
+    top: 0.08em;
+    width: 0.22em;
+    height: 0.46em;
+    border: solid var(--bg);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .block.done .ch:not(.mk) {
+    color: var(--muted);
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent);
+  }
+  /* a box: a theorem, a definition, a proof, a quote… its blocks on one tinted band with a
+     line down its left, its name before its first line (and a proof's ∎ after its last) */
+  .block.boxed {
+    --bx: 14px;
+    --box-c: var(--accent);
+    padding-left: var(--bx);
+    padding-right: 10px;
+    background: color-mix(in srgb, var(--box-c) 6%, transparent);
+    box-shadow: inset 2px 0 0 var(--box-c);
+  }
+  .block.boxed[data-box='definition'] {
+    --box-c: var(--ink-green);
+  }
+  .block.boxed[data-box='example'] {
+    --box-c: var(--ink-blue);
+  }
+  .block.boxed[data-box='remark'],
+  .block.boxed[data-box='proof'],
+  .block.boxed[data-box='quote'] {
+    --box-c: var(--muted);
+    background: none;
+  }
+  .block.boxed[data-box='quote'] {
+    color: color-mix(in srgb, var(--fg) 78%, var(--muted));
+    font-style: italic;
+  }
+  .block.boxed.bfirst {
+    margin-top: 0.45em;
+    border-top-right-radius: 4px;
+  }
+  .block.boxed.blast {
+    margin-bottom: 0.45em;
+    border-bottom-right-radius: 4px;
+  }
+  .boxhead {
+    margin-right: 0.55em;
+    font-family: var(--mono);
+    font-size: 0.86em;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--box-c);
+    user-select: none;
+  }
+  .block.boxed[data-box='proof'] .boxhead,
+  .block.boxed[data-box='remark'] .boxhead {
+    font-weight: 600;
+    font-style: italic;
+  }
+  .qed {
+    float: right;
+    color: var(--muted);
+    user-select: none;
+  }
+  /* a heading's fold mark, in the margin: shown on hover, always when folded */
+  .foldbtn {
+    position: absolute;
+    left: -38px;
+    top: 0;
+    width: 16px;
+    height: 100%;
+    max-height: 2.1em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6em;
+    color: var(--muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 140ms ease;
+    user-select: none;
+  }
+  .foldbtn::after {
+    content: '▾';
+  }
+  .foldbtn.folded::after {
+    content: '▸';
+  }
+  .block:hover > .foldbtn,
+  .block.current > .foldbtn,
+  .foldbtn.folded {
+    opacity: 1;
+  }
+  .foldbtn:hover {
+    color: var(--accent);
+  }
+  .foldinfo {
+    margin-left: 0.7em;
+    padding: 0 0.45em;
+    font-family: var(--mono);
+    font-size: 0.55em;
+    font-weight: 400;
+    vertical-align: middle;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    user-select: none;
+  }
+  /* what a folded heading hides */
+  .block.folded {
+    display: none;
   }
   /* the text selection, drawn behind the text (see Editor.selectionRects) */
   .selrect {
@@ -647,6 +827,26 @@
   }
   .ch.i {
     font-style: italic;
+  }
+  .ch.s {
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, var(--fg) 70%, transparent);
+  }
+  /* ==highlighted==: a marker pen's colour behind the text (see-through, so a selection shows) */
+  .ch.hl {
+    background: color-mix(in srgb, var(--arrow) 30%, transparent);
+    padding: 0.12em 0;
+  }
+  /* a link's text: the accent, underlined (ctrl+click follows it) */
+  .ch.ln {
+    color: var(--link, var(--accent));
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--link, var(--accent)) 45%, transparent);
+    text-underline-offset: 0.18em;
+    cursor: pointer;
+  }
+  .ch.ln.s {
+    text-decoration: underline line-through;
   }
   /* inline code: a tinted run in the mono font (see-through, so selections show under it) */
   .ch.c {
@@ -1071,6 +1271,8 @@
   }
   :global(html.nx-print) .block::before,
   :global(html.nx-print) :is(.caret, .selrect, .findhit, .mathframe, .pick, .hint, .palette, .grip),
+  :global(html.nx-print) .foldbtn,
+  :global(html.nx-print) .foldinfo,
   :global(html.nx-print) .ch.mk:global(.show),
   :global(html.nx-print .handle),
   :global(html.nx-print .dbar),
@@ -1079,6 +1281,10 @@
   }
   :global(html.nx-print .nx-active-row) {
     background: none;
+  }
+  /* (folded sections print: folding is how the note is looked at, not what's in it) */
+  :global(html.nx-print) .block.folded {
+    display: block;
   }
   :global(html.nx-print) .block.hang {
     text-indent: 0;
