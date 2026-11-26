@@ -3725,13 +3725,14 @@ export class Editor {
     const remember = this.config.rememberCommands;
     const use = (n: string) => (remember ? U.score(p.ctx, n) : 0);
     const order = (names: string[]) => (remember ? U.byUse(p.ctx, names) : names);
-    const find = (names: string[]) => (q ? rank(names, q, use) : order(names));
+    // (as typed: by name, forgiving a typo, or by a word of what it does)
+    const find = (names: string[], desc?: (n: string) => string) => (q ? rank(names, q, use, desc) : order(names));
     const draws = this.drawCommands();
-    const rankDraws = () => find(draws.map((c) => c.name)).map((n) => draws.find((c) => c.name === n)!);
+    const rankDraws = () => find(draws.map((c) => c.name), (n) => draws.find((c) => c.name === n)!.desc).map((n) => draws.find((c) => c.name === n)!);
     if (p.ctx === 'draw') return rankDraws();
     if (p.ctx === 'style') {
       const acts = this.styling ? this.drawingActions(this.styling).filter((a) => !a.keyOnly) : [];
-      return find(acts.map((c) => c.name)).map((n) => {
+      return find(acts.map((c) => c.name), (n) => acts.find((c) => c.name === n)!.desc).map((n) => {
         const c = acts.find((c) => c.name === n)!;
         return { name: c.name, desc: `${c.desc}  ${keyLabel(c.keys[0])}` };
       });
@@ -3750,7 +3751,7 @@ export class Editor {
     const cmds = this.textCommands();
     // what fits where the caret is comes first (as typed, an exact name still wins)
     const near = this.nearCommands();
-    const found = find(cmds.map((c) => c.name));
+    const found = find(cmds.map((c) => c.name), (n) => cmds.find((c) => c.name === n)!.desc);
     const listed = !near
       ? found
       : q

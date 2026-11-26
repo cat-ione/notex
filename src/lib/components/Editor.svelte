@@ -3,7 +3,7 @@
   import { fly, scale, fade } from 'svelte/transition';
   import { cubicOut, backOut } from 'svelte/easing';
   import { Editor } from '$lib/editor.svelte';
-  import { matchAt } from '$lib/match';
+  import { marked } from '$lib/match';
   import MathView from './MathView.svelte';
   import ArrowLayer from './ArrowLayer.svelte';
   import MarkLayer from './MarkLayer.svelte';
@@ -28,7 +28,7 @@
 
   /** A name in runs of matched and unmatched letters, for the palette to mark what was typed. */
   function matched(name: string, q: string): [string, boolean][] {
-    const hit = new Set(matchAt(name, q) ?? []);
+    const hit = new Set(marked(name, q));
     const out: [string, boolean][] = [];
     [...name].forEach((ch, i) => {
       const last = out.at(-1);

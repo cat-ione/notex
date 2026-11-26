@@ -378,3 +378,25 @@ test('remembering can be switched off, and forget clears it', async ({ page }) =
   await type(page, '\\');
   expect((await names(page))[0]).toBe('arrow');
 });
+
+// ── fuzzy ──
+
+test('a typo still finds the command, and Enter runs it', async ({ page }) => {
+  await type(page, '\\tabel');
+  expect((await names(page))[0]).toBe('table');
+  await page.keyboard.press('Enter');
+  expect(await rows(page)).toBe(2);
+});
+
+test('a word of what a command does finds it', async ({ page }) => {
+  await type(page, '\\heading');
+  expect((await names(page)).slice(0, 3)).toEqual(['h1', 'h2', 'h3']);
+});
+
+test('in math, a typo finds the command too', async ({ page }) => {
+  await type(page, '$');
+  await type(page, '\\farc');
+  expect((await names(page))[0]).toBe('frac');
+  await page.keyboard.press('Enter');
+  expect((await formulas(page))[0]).toContain('\\frac');
+});

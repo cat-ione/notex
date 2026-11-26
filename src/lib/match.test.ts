@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchAt, rank } from './match';
+import { marked, matchAt, rank, typoAt, typos } from './match';
 
 const cmds = ['inlinecode', 'print', 'drawings', 'settings', 'underline', 'substitutions', 'image', 'italic', 'addrow', 'deleterow', 'addcolumn', 'deletecolumn', 'h1', 'h2', 'help', 'highlight'];
 
@@ -33,4 +33,47 @@ describe('ranking', () => {
     expect(rank(['cxb', 'cbx'], 'cb')).toEqual(['cbx', 'cxb']);
   });
   it('nothing typed: everything, in its order', () => expect(rank(cmds, '')).toEqual(cmds));
+});
+
+describe('typos', () => {
+  it('counts a letter wrong, missing, extra, or two swapped as one', () => {
+    expect(typos('tabel', 'table')).toBe(1);
+    expect(typos('tble', 'table')).toBe(1);
+    expect(typos('taable', 'table')).toBe(1);
+    expect(typos('tavle', 'table')).toBe(1);
+    expect(typos('abc', 'xyz')).toBe(3);
+  });
+  it('finds a name from its start typed with a typo', () => {
+    expect(typoAt('table', 'tabel')).not.toBeNull();
+    expect(typoAt('italic', 'itlaic')).not.toBeNull();
+    expect(typoAt('frac', 'farc')).not.toBeNull();
+    expect(typoAt('settings', 'setings')).not.toBeNull();
+  });
+  it('forgives none in 1–2 letters, one up to 5, two from 6', () => {
+    expect(typoAt('h1', 'h2')).toBeNull();
+    expect(typoAt('table', 'tbxle')).toBeNull();
+    expect(typoAt('substitutions', 'sbustitutoins')).not.toBeNull();
+    expect(typoAt('theme', 'zzzme')).toBeNull();
+  });
+  it('marks the letters that agree', () => {
+    expect(marked('table', 'tabel')).toEqual([0, 1, 2]);
+    expect(marked('table', 'tab')).toEqual([0, 1, 2]);
+  });
+});
+
+describe('fuzzy ranking', () => {
+  const cmds = { table: 'insert a table', theme: 'next theme', h1: 'heading 1', h2: 'heading 2', pdf: 'save as PDF', print: 'print  ctrl+p', italic: 'italic  ctrl+i' } as Record<string, string>;
+  const r = (q: string) => rank(Object.keys(cmds), q, () => 0, (n) => cmds[n]);
+  it('a typo still finds it', () => {
+    expect(r('tabel')).toEqual(['table']);
+    expect(r('itlaic')).toEqual(['italic']);
+  });
+  it('a word of what it does finds it', () => {
+    expect(r('heading')).toEqual(['h1', 'h2']);
+    expect(r('save')).toEqual(['pdf']);
+  });
+  it('real matches come before typos, and typos before descriptions', () => {
+    expect(r('pri')).toEqual(['print']);
+    expect(rank(['tab', 'tbx', 'other'], 'tab', () => 0, (n) => (n === 'other' ? 'a tab' : ''))).toEqual(['tab', 'tbx', 'other']);
+  });
 });
