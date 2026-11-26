@@ -5,7 +5,7 @@
   let { ed }: { ed: Editor } = $props();
 
   const LABEL: Record<string, string> = {
-    text: 'TEXT', math: 'MATH', pick: 'DRAW', style: 'DRAW', hint: 'JUMP', palette: 'CMD', label: 'LABEL',
+    text: 'TEXT', math: 'MATH', pick: 'DRAW', style: 'DRAW', hint: 'JUMP', palette: 'CMD', label: 'LABEL', sketch: 'SKETCH',
   };
   const HINTS: Record<string, string> = {
     text: '$ math · \\ commands · F1 help',
@@ -14,7 +14,10 @@
     hint: 'type a label to jump · esc cancel',
     palette: 'enter accept · ↑↓ choose · esc cancel',
     label: 'enter save · esc cancel',
+    sketch: 'v select · p pen · a arrow · r box · o ellipse · d diamond · t text · e eraser · enter new box · esc done',
   };
+  // drawing, with something selected
+  const SKETCH_SEL = 'enter label · ctrl+→ add a box joined to it · ←→↑↓ move · del delete · c colour · w width · - dashes · f fill · ctrl+d copy · esc done';
   // after a click: what the mouse can do (the keys again after a key)
   const MOUSE: Record<string, string> = {
     text: 'right-click for more · alt+drag draws an arrow, alt+shift+drag a box',
@@ -22,9 +25,10 @@
     pick: 'click what it starts at, then where it ends · esc cancel',
     palette: 'click one to choose · type to filter',
     style: 'drag its dots to reshape it · scroll over it to change it · click elsewhere when done',
+    sketch: 'drag to draw · a tap with a box tool makes one · double-click a box to label it · a pen draws, its eraser end erases · esc done',
   };
   // typing a note: NOTE (in its math: MATH, as on the page)
-  const name = $derived(ed.note && ed.mode === 'text' ? 'NOTE' : LABEL[ed.mode]);
+  const name = $derived(ed.note && ed.mode === 'text' ? 'NOTE' : ed.mode === 'sketch' && ed.sketch.on?.kind === 'block' ? 'DIAGRAM' : LABEL[ed.mode]);
   // a drawing's keys, from the same table as its menu
   const styleHint = $derived(
     ed.mode === 'style' && ed.styling
@@ -57,7 +61,7 @@
   {:else if ed.tipText}
     <span class="tip" in:fade={{ duration: 300 }}><span class="tag">tip</span>{ed.tipText}</span>
   {:else}
-    <span class="keys">{ed.note && ed.mode === 'text' ? HINTS.label : ed.input === 'mouse' && MOUSE[ed.mode] ? MOUSE[ed.mode] : ed.mode === 'style' ? styleHint : HINTS[ed.mode]}</span>
+    <span class="keys">{ed.note && ed.mode === 'text' ? HINTS.label : ed.input === 'mouse' && MOUSE[ed.mode] ? MOUSE[ed.mode] : ed.mode === 'style' ? styleHint : ed.mode === 'sketch' && ed.sketch.sel.length ? SKETCH_SEL : HINTS[ed.mode]}</span>
   {/if}
   <span class="spacer"></span>
   <!-- (the toolbar shows the note's name) -->
@@ -97,7 +101,7 @@
     transition: background-color 200ms ease;
   }
   .m-math, .m-palette { background: var(--mode-math); }
-  .m-pick, .m-style, .m-hint, .m-label { background: var(--mode-arrow); }
+  .m-pick, .m-style, .m-hint, .m-label, .m-sketch { background: var(--mode-arrow); }
   .keys { overflow: hidden; text-overflow: ellipsis; }
   .msg { color: var(--fg); }
   .tip { color: var(--muted); }

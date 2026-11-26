@@ -17,9 +17,13 @@
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
   import NotesPanel from './NotesPanel.svelte';
+  import SketchShapes from './SketchShapes.svelte';
+  import NoteInk from './NoteInk.svelte';
+  import SketchBar from './SketchBar.svelte';
+  import LabelEditor from './LabelEditor.svelte';
   import { isDesktop, setWindowTitle } from '$lib/files';
   import { base } from '$app/paths';
-  import type { Block, Item } from '$lib/model';
+  import { isFigure, type Block, type Item } from '$lib/model';
   import { highlight, type Tk } from '$lib/highlight';
   import { cellSpans, findTables } from '$lib/tables';
 
@@ -74,6 +78,14 @@
         ed.key(e);
       }),
       on('pointerdown', () => (ed.input = 'mouse')),
+      // drawing: the pointer's way across the page, and a pen hovering near it
+      on('pointermove', (e) => {
+        if (e.pointerType === 'pen' && !e.buttons) ed.sketch.penHover(e, true);
+        ed.sketch.pointerMove(e);
+      }),
+      on('pointerup', (e) => ed.sketch.pointerUp(e)),
+      on('pointercancel', (e) => ed.sketch.pointerCancel(e)),
+      on('pointerout', (e) => e.pointerType === 'pen' && !e.relatedTarget && ed.sketch.penHover(e, false)),
       on('copy', (e) => ed.copy(e, false)),
       on('cut', (e) => ed.copy(e, true)),
       on('paste', (e) => ed.paste(e)),
@@ -203,6 +215,28 @@
     return out;
   });
 
+  /**
+   * A pointer down on the page, before anything else sees it: drawing may take it (a pen, a
+   * finger while drawing, anything on a diagram), else it goes on to the text as usual.
+   */
+  function pointerDown(e: PointerEvent) {
+    const t = e.target as Element;
+    const grip = t.closest?.('[data-dgrip]') as HTMLElement | null;
+    if (grip && e.button === 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      ed.sketch.resizeDown(e, grip.dataset.dgrip!);
+      return;
+    }
+    if (t.closest?.('.dbar, .lbl-edit, .palette')) return;
+    const svg = t.closest?.('svg.canvas');
+    const canvas = svg ? ((svg.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null) : null;
+    if (ed.sketch.pointerDown(e, canvas)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
   /** Dragging an image's corner: it grows on both sides (it's centred), one undo step. */
   function resizeImage(e: MouseEvent, b: number) {
     if (e.button !== 0) return;
@@ -268,11 +302,26 @@
       <img src={blk.src} alt="" draggable="false" data-nx={blk.id} style:width={blk.w ? `${blk.w}px` : undefined} />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="grip" onmousedown={(e) => resizeImage(e, b)} data-tip="drag to resize" data-tip-key="alt+← →"></span>
+    </div>{:else if blk.kind === 'diagram'}{@const on = ed.sketch.isOn(blk.id)}<div class="figure diagram" class:on data-diagram={blk.id}>
+      <!-- (its own coordinates, scaled down to fit a narrower page; a drawing on it is on the diagram) -->
+      <svg class="canvas" class:tool-select={on && ed.sketch.tool === 'select'} viewBox="0 0 {blk.w ?? 720} {blk.h ?? 280}" style:width="min(100%, {blk.w ?? 720}px)" data-nx={blk.id} role="img" aria-label="diagram">
+        {#if on}
+          <SketchShapes shapes={blk.shapes ?? []} sel={ed.sketch.sel} draft={ed.sketch.draft} marquee={ed.sketch.marquee} handles={ed.sketch.handles()} selBox={ed.sketch.selBox} editing={ed.sketch.editing} />
+        {:else}
+          <SketchShapes shapes={blk.shapes ?? []} />
+        {/if}
+      </svg>
+      {#if !blk.shapes?.length && !on}<span class="dhint">{ed.input === 'mouse' ? 'an empty diagram: click it to draw' : 'an empty diagram: ctrl+shift+d to draw'}</span>{/if}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span class="dgrip" data-dgrip={blk.id} data-tip="drag to make it taller or shorter"></span>
     </div>{/if}{/snippet}
 
 <div class="shell">
   <DrawingMenu {ed} />
   <FindBar {ed} />
+  {#if ed.sketch.active}
+    <SketchBar {ed} />
+  {/if}
   <Tooltip {ed} />
   {#if ed.config.ui.toolbar}
     <Toolbar {ed} />
@@ -280,6 +329,8 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="scroller"
+    class:pen-ready={!ed.sketch.active && ed.config.sketch.penDraws && (ed.sketch.penNear || ed.sketch.penSeen)}
+    onpointerdowncapture={pointerDown}
     onmousedown={(e) => ed.mouseDown(e)}
     oncontextmenu={(e) => ed.openPageMenu(e)}
     onscroll={() => ed.scrolled()}
@@ -311,7 +362,8 @@
           class:veiled={veiled(b)}
           class:empty={!blk.items.length}
           class:hang={reveal?.b === b && !!reveal.hang}
-          data-nx={blk.kind === 'img' ? undefined : blk.id}
+          data-nx={isFigure(blk.kind) ? undefined : blk.id}
+          data-bid={blk.id}
           data-depth={blk.indent || undefined}
           data-n={listNums[b]}
           data-lang={blk.kind === 'fence' ? blk.lang : undefined}
@@ -327,8 +379,15 @@
       <ArrowLayer {ed} />
       <LabelLayer {ed} />
       <DrawingBar {ed} />
+      <NoteInk {ed} />
+      {#if ed.sketch.editing}
+        <!-- (one per shape: going on to the next box is a new editor) -->
+        {#key ed.sketch.editing}
+          <LabelEditor {ed} />
+        {/key}
+      {/if}
 
-      {#if ed.caret}
+      {#if ed.caret && ed.mode !== 'sketch'}
         <div
           class="caret {ed.caret.shape}"
           class:resting={caretResting}
@@ -604,7 +663,8 @@
     border-radius: 3px;
   }
   /* an image, centred, its caption under it */
-  .block.img {
+  .block.img,
+  .block.diagram {
     text-align: center;
     padding: 0.5em 0 0.3em;
     font-size: 0.9em;
@@ -648,7 +708,72 @@
   .block.img.current .grip {
     opacity: 1;
   }
+  /* a diagram: its canvas the page's width (or less), a faint frame where the caret is and
+     dots to draw on while drawing in it */
+  .figure.diagram {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+  .canvas {
+    display: block;
+    height: auto;
+    overflow: hidden;
+    border-radius: 6px;
+    outline: 1px solid transparent;
+    outline-offset: 2px;
+    transition: outline-color 120ms ease, background-color 120ms ease;
+  }
+  .figure.diagram:hover .canvas,
+  .block.diagram.current .canvas {
+    outline-color: var(--border);
+  }
+  .figure.diagram.on .canvas {
+    outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+    background-image: radial-gradient(circle, color-mix(in srgb, var(--muted) 40%, transparent) 0.8px, transparent 1.2px);
+    background-size: 16px 16px;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  .figure.diagram.on .canvas.tool-select {
+    cursor: default;
+  }
+  .dhint {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .dgrip {
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    width: 36px;
+    height: 7px;
+    transform: translateX(-50%);
+    border-radius: 4px;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    cursor: ns-resize;
+    touch-action: none;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .figure.diagram:hover .dgrip,
+  .figure.diagram.on .dgrip {
+    opacity: 1;
+  }
+  /* a pen near the screen: the page doesn't pan under it (a finger scrolls it, see Sketcher) */
+  .scroller.pen-ready {
+    touch-action: none;
+  }
   /* the caption, when there's none yet and the caret is on it */
+  .block.diagram.empty.current .eol::after,
   .block.img.empty.current .eol::after {
     content: 'caption';
     position: absolute;

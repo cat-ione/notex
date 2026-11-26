@@ -32,9 +32,11 @@ import * as M from './math/edit';
 import { BARE_OPS, BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
-import { allIds, block, ch, chars, cloneRow, cmd, isListKind, MAX_INDENT, math, sym, uid, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
+import { Sketcher } from './sketch/sketcher.svelte';
+import type { Placed } from './sketch/shapes';
+import { allIds, block, ch, chars, cloneRow, cmd, isFigure, isListKind, MAX_INDENT, math, sym, uid, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
-export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette';
+export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'sketch';
 
 /** What's shown of the markdown at the caret (see Editor.reveal). */
 export type Reveal = {
@@ -103,6 +105,8 @@ const MAX_ROOM = 400;
 
 export class Editor {
   doc = $state<Doc>({ blocks: [block()], arrows: [], marks: [] });
+  /** Drawing and diagramming (in a diagram block, or on top of the note). */
+  sketch: Sketcher = new Sketcher(this);
   mode = $state<Mode>('text');
   /** Block index and item offset of the text caret (0..items.length). */
   b = $state(0);
@@ -228,6 +232,9 @@ export class Editor {
   touch() {
     // tables kept whole, whatever the action was (keys, the mouse, paste, undo)
     this.tidyTables();
+    // what's drawn on a block that went: on the one before it
+    this.sketch.tidy(this.blockIndex);
+    if (this.doc.ink?.length) this.blockIndex = new Map(this.doc.blocks.map((b, i) => [b.id, i]));
     // a selection's other end, still on the page (an edit may have taken text from under it)
     const a = this.anchor, ab = a && this.doc.blocks[a.b];
     if (a && a.b !== NOTE_B && (!ab || a.o > ab.items.length)) this.anchor = ab ? { b: a.b, o: ab.items.length } : null;
@@ -245,6 +252,8 @@ export class Editor {
     this.version++;
   }
   private touchedEdits = 0;
+  /** Where each block was at the last action (for drawings on a block that's gone since). */
+  private blockIndex = new Map<Id, number>();
 
   // ── snapshots (shared between undo states, autosave and lookups) ──
 
@@ -321,7 +330,13 @@ export class Editor {
       blocks: this.doc.blocks.map((b) => this.snapBlock(b)),
       arrows: $state.snapshot(this.doc.arrows) as Arrow[],
       marks: $state.snapshot(this.doc.marks) as Mark[],
+      ...(this.doc.ink?.length ? { ink: $state.snapshot(this.doc.ink) as Placed[] } : {}),
     };
+  }
+
+  /** Every id in a block (its items and math nodes). */
+  itemIds(blk: Block): Set<Id> {
+    return this.idsOf(blk);
   }
 
   private idsOf(blk: Block): Set<Id> {
@@ -730,6 +745,7 @@ export class Editor {
     this.anchor = null;
     this.pick = null;
     this.styling = null;
+    this.sketch.exit();
     this.setMode('text');
   }
 
@@ -783,6 +799,7 @@ export class Editor {
     this.doc.blocks = s.doc.blocks.map((sb) => live.get(sb) ?? (structuredClone(sb) as Block));
     this.doc.arrows = structuredClone(s.doc.arrows);
     this.doc.marks = structuredClone(s.doc.marks);
+    this.doc.ink = s.doc.ink ? structuredClone(s.doc.ink) : undefined;
     this.doc.blocks.forEach((blk, i) => this.blockSnaps.set(blk, s.doc.blocks[i]));
     this.b = Math.min(s.b, this.doc.blocks.length - 1);
     this.o = Math.min(s.o, this.blk.items.length);
@@ -790,7 +807,9 @@ export class Editor {
     this.lastKind = '';
     this.dirty = true;
     this.edits++;
-    this.setMode('text');
+    // (while drawing, undo keeps drawing; what's selected may be gone)
+    if (this.mode === 'sketch') this.sketch.sel = this.sketch.sel.filter((id) => this.sketch.shapes().some((x) => x.id === id));
+    else this.setMode('text');
     this.touch();
   }
   undo = () => (this.note ? this.noteUndo(-1) : this.restore(this.undoStack, this.redoStack, 'undo'));
@@ -1035,6 +1054,11 @@ export class Editor {
 
   /** Handle a DOM copy/cut event. */
   copy(e: ClipboardEvent, cut: boolean) {
+    if (this.mode === 'sketch') {
+      if (this.sketch.editing) return;
+      this.sketch.copy(e, cut);
+      return this.touch();
+    }
     const range = this.mathSelRange;
     if (this.mode === 'math' && range) {
       // Part of a formula: copy it as LaTeX, which pastes back as structure.
@@ -1092,7 +1116,9 @@ export class Editor {
   /** Handle a DOM paste event. */
   paste(e: ClipboardEvent) {
     const text = e.clipboardData?.getData('text/plain') ?? '';
+    if (this.mode === 'sketch' && this.sketch.editing) return;
     e.preventDefault();
+    if (this.mode === 'sketch') return void (this.sketch.paste(text), this.touch());
     // an image (a screenshot, one copied from a page): as an image
     const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
     if (files.length && !this.note && this.mode !== 'math') return void this.insertImages(files);
@@ -1143,11 +1169,11 @@ export class Editor {
       const blk = this.blk;
       const imgs = got.map(({ src, w }) => Object.assign(block([], 'img'), { src, w }));
       const blocks = this.doc.blocks;
-      if (!blk.items.length && blk.kind !== 'img') {
+      if (!blk.items.length && !isFigure(blk.kind)) {
         // an empty line: the images, then the line to go on typing on
         blocks.splice(this.b, 0, ...imgs);
         this.b += imgs.length;
-      } else if (this.o === 0 && blk.kind !== 'img') {
+      } else if (this.o === 0 && !isFigure(blk.kind)) {
         blocks.splice(this.b, 0, ...imgs);
         this.b += imgs.length;
       } else {
@@ -1160,6 +1186,44 @@ export class Editor {
       this.anchor = null;
       this.touch();
     });
+  }
+
+  /**
+   * Put a figure block (a diagram) at the caret: on an empty line, there; at a line's start,
+   * before it; otherwise the line is split round it. One undo step.
+   */
+  insertBlock(fig: Block) {
+    this.withFrame(() => {
+      if (this.mode === 'math') this.exitMath(true);
+      if (this.mode !== 'text') this.setMode('text');
+      this.checkpoint();
+      this.deleteSelection();
+      const blk = this.blk, blocks = this.doc.blocks;
+      if (!blk.items.length && !isFigure(blk.kind) && blk.kind !== 'tr') blocks.splice(this.b, 1, fig, blk);
+      else if (this.o === 0 && !isFigure(blk.kind) && blk.kind !== 'tr') blocks.splice(this.b, 0, fig);
+      else if (isFigure(blk.kind) || blk.kind === 'tr') {
+        // after a figure or a table (its last row): on a line of its own after it
+        let e = this.b;
+        while (blocks[e + 1]?.kind === 'tr' && blk.kind === 'tr') e++;
+        blocks.splice(e + 1, 0, fig, ...(blocks[e + 2] ? [] : [block()]));
+        this.b = e + 1;
+      } else {
+        const rest = blk.items.splice(this.o);
+        blocks.splice(this.b + 1, 0, fig, block(rest));
+        this.b++;
+      }
+      this.b = blocks.indexOf(fig);
+      this.o = 0;
+      this.anchor = null;
+      this.touch();
+    });
+  }
+
+  /** The caret to a place (no selection). */
+  placeCaret(b: number, o: number) {
+    this.b = Math.max(0, Math.min(b, this.doc.blocks.length - 1));
+    this.o = Math.min(o, this.blk.items.length);
+    this.anchor = null;
   }
 
   /** Width of an image block, by hand (the mouse on its corner, or Alt+← →). */
@@ -1329,6 +1393,13 @@ export class Editor {
     this.withFrame(() => this.mouseDownInner(e));
   }
 
+  /** A tap (a finger, when fingers don't reach the page by themselves): a click there. */
+  tap(x: number, y: number) {
+    const ev = { clientX: x, clientY: y, button: 0, detail: 1, shiftKey: false, altKey: false, preventDefault() {} } as unknown as MouseEvent;
+    this.mouseDown(ev);
+    this.mouseUp();
+  }
+
   private mouseDownInner(e: MouseEvent) {
     if (this.menu) {
       this.menu = null;
@@ -1337,6 +1408,8 @@ export class Editor {
     }
     if (e.button !== 0) return;
     e.preventDefault();
+    // a click on the text while drawing (outside the diagram): back to the text
+    if (this.mode === 'sketch') this.sketch.exit();
     if (e.altKey && (this.mode === 'text' || this.mode === 'math' || this.mode === 'style') && this.beginAltDraw(e)) return;
     if (this.mode === 'pick') {
       const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
@@ -2138,6 +2211,8 @@ export class Editor {
     this.arrowGeos = geos;
     // (after the arrows: room is made for their notes too)
     this.makeRoom(mgeos, origin, active, near);
+    // what's drawn on the note follows its blocks
+    this.sketch.measure();
 
     // Keep the caret in view (after an action; not while the page is being scrolled)
     if (this.version !== this.followed) {
@@ -2755,7 +2830,19 @@ export class Editor {
       e.preventDefault();
       return;
     }
-    if (k === 'C-d' && this.openDrawMenu()) {
+    // drawing: ctrl+shift+d draws in the diagram at the caret, or on the note (and stops)
+    if (k === 'C-S-d') {
+      e.preventDefault();
+      if (this.mode === 'sketch') this.sketch.exit();
+      else if (this.blk.kind === 'diagram' && this.mode === 'text') this.sketch.enter({ kind: 'block', id: this.blk.id });
+      else if (this.mode === 'text' || this.mode === 'math') this.sketch.toggleFree();
+      this.touch();
+      return;
+    }
+    // put there by a pen: typing goes back to the text (Esc and undo stay with the drawing)
+    if (this.mode === 'sketch' && this.sketch.auto && !/^(Escape|C-z|C-y|C-S-z|Delete|Backspace)$/.test(k) && !this.sketch.editing) this.sketch.exit();
+    if (this.mode === 'sketch' && this.sketch.editing) return;
+    if (k === 'C-d' && this.mode !== 'sketch' && this.openDrawMenu()) {
       e.preventDefault();
       return;
     }
@@ -3051,7 +3138,7 @@ export class Editor {
     const blocks = this.doc.blocks;
     const blk = this.blk, other = blocks[this.b + d];
     if (this.b === NOTE_B) return false;
-    if (blk.kind === 'img') {
+    if (isFigure(blk.kind)) {
       if (d < 0 && !blk.items.length) {
         this.checkpoint();
         blocks.splice(this.b, 1);
@@ -3065,7 +3152,7 @@ export class Editor {
       this.o = blocks[this.b].items.length;
       return true;
     }
-    if (other?.kind !== 'img' || blk.kind !== 'p') return false;
+    if (!other || !isFigure(other.kind) || blk.kind !== 'p') return false;
     if (!blk.items.length) {
       this.checkpoint();
       blocks.splice(this.b, 1);
@@ -3241,6 +3328,13 @@ export class Editor {
   }
 
   /** Drop what's remembered of a block (it changed outside an edit's usual reach). */
+  /** A block changed outside the text (a diagram's shapes): its cached copies are stale. */
+  forgetBlock(blk: Block) {
+    this.forget(blk);
+    this.dirty = true;
+    this.edits++;
+  }
+
   private forget(blk: Block) {
     this.blockSnaps.delete(blk);
     this.idSets.delete(blk);
@@ -3931,7 +4025,7 @@ export class Editor {
       }
       for (let b = first; b <= last; b++) {
         const blk = this.doc.blocks[b];
-        if (blk.kind === 'img' || blk.kind === 'code' || blk.kind === 'fence') continue;
+        if (isFigure(blk.kind) || blk.kind === 'code' || blk.kind === 'fence') continue;
         const had = headingOf(plainText(blk.items))?.prefix ?? 0;
         const want = /^h[1-3]$/.test(kind) ? '#'.repeat(+kind[1]) + ' ' : '';
         blk.items.splice(0, had, ...chars(want));
@@ -3956,6 +4050,8 @@ export class Editor {
       { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i'), keep: true },
       { name: 'code', desc: 'code block  ```', run: setKind('code'), keep: true },
       { name: 'table', desc: 'insert a table (tab: next cell, enter: new row)', run: () => this.insertTable() },
+      { name: 'diagram', desc: 'insert a diagram: boxes, arrows, pen  ctrl+shift+d in one', run: () => this.sketch.insertDiagram() },
+      { name: 'sketch', desc: `${this.sketch.on?.kind === 'free' ? 'stop drawing' : 'draw'} on the note (a pen draws on it anyway)  ctrl+shift+d`, run: () => this.sketch.toggleFree() },
       ...(this.tableRow() ? TABLE_ACTIONS.map(([what, name, desc]) => ({ name, desc, run: () => this.tableCommand(what) })) : []),
       { name: 'image', desc: 'insert an image (or paste / drop one)', run: () => void this.chooseImages() },
       { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c'), keep: true },
@@ -4064,7 +4160,7 @@ export class Editor {
   private level0(): Loc[] {
     const out: Loc[] = [];
     this.doc.blocks.forEach((blk, b) => {
-      if (blk.kind === 'img') out.push({ k: 'block', b }); // an image, then its caption's words
+      if (isFigure(blk.kind)) out.push({ k: 'block', b }); // an image, then its caption's words
       let s = -1;
       blk.items.forEach((it, o) => {
         if (it.t === 'c' && !/\s/.test(it.ch)) {
@@ -5409,6 +5505,7 @@ export class Editor {
       case 'style': return this.styleKey(k);
       case 'hint': return this.hintKey(k);
       case 'palette': return this.paletteKey(k);
+      case 'sketch': return this.sketch.key(k);
     }
   }
 

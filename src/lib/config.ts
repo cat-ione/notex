@@ -46,6 +46,11 @@ export type Config = {
   rememberCommands: boolean;
   /** The bars around the page: the toolbar (and whether it fades while you type) and the status bar. */
   ui: { toolbar: boolean; fadeToolbar: boolean; statusBar: boolean };
+  /**
+   * Drawing: a pen put on the note draws on it (else only while drawing, ctrl+shift+d);
+   * a finger draws (`draw`), scrolls (`scroll`), or draws until a pen has been used (`auto`).
+   */
+  sketch: { penDraws: boolean; touch: 'auto' | 'draw' | 'scroll' };
 };
 
 export type Paper = 'A4' | 'Letter';
@@ -81,6 +86,7 @@ export const DEFAULT_CONFIG: Config = {
   ui: { toolbar: true, fadeToolbar: true, statusBar: true },
   highlightCode: true,
   rememberCommands: true,
+  sketch: { penDraws: true, touch: 'auto' },
 };
 
 const LOCAL_KEY = 'notex.config';
@@ -104,6 +110,7 @@ export function withDefaults(user: Partial<Config> | null | undefined): Config {
     },
     pdf: { ...DEFAULT_CONFIG.pdf, ...(u.pdf ?? {}) },
     ui: { ...DEFAULT_CONFIG.ui, ...(u.ui ?? {}) },
+    sketch: { ...DEFAULT_CONFIG.sketch, ...(u.sketch ?? {}) },
   };
 }
 

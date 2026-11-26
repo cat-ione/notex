@@ -23,6 +23,9 @@
     // (in a table: that table's rows, columns and alignment)
     { id: 'table', glyph: '▦', label: 'table', tip: 'a table (tab: next cell, enter: new row)', run: (at) => ed.openTableMenu(at) || ed.insertTable() },
     { id: 'image', glyph: '▣', label: 'image', tip: 'an image (or paste / drop one)', run: () => ed.chooseImages() },
+    { id: 'diagram', glyph: '◇', label: 'diagram', tip: 'a diagram: boxes, arrows, the pen', run: () => ed.sketch.insertDiagram() },
+    // (on: drawing on the note; a pen draws on it anyway)
+    { id: 'pen', glyph: '✐', label: 'pen', tip: 'draw on the note (a pen draws on it anyway)', keys: 'ctrl+shift+d', run: () => ed.sketch.toggleFree() },
   ];
   const right: Button[] = [
     { id: 'find', glyph: '/', label: 'find', tip: 'find', keys: 'ctrl+f', run: () => ed.openFind() },
@@ -59,9 +62,9 @@
 </script>
 
 {#snippet button(b: Button)}
-  {@const here = b.id === 'table' && ed.inTable}
-  <button class="b b-{b.id}" class:glyph={!b.label} class:here onmousedown={(e) => press(e, b)} onclick={(e) => e.preventDefault()} data-tip={here ? 'this table: rows, columns, alignment' : b.tip} data-tip-key={here ? 'right-click a cell' : b.keys} aria-label={here ? 'this table' : b.tip}>
-    <span class="g">{b.glyph}</span>{#if b.label}<span class="l">{b.label}</span>{/if}{#if here}<span class="caret">▾</span>{/if}
+  {@const here = (b.id === 'table' && ed.inTable) || (b.id === 'pen' && ed.sketch.on?.kind === 'free')}
+  <button class="b b-{b.id}" class:glyph={!b.label} class:here onmousedown={(e) => press(e, b)} onclick={(e) => e.preventDefault()} data-tip={here ? (b.id === 'pen' ? 'stop drawing on the note' : 'this table: rows, columns, alignment') : b.tip} data-tip-key={here ? (b.id === 'pen' ? 'esc' : 'right-click a cell') : b.keys} aria-label={here ? (b.id === 'pen' ? 'stop drawing' : 'this table') : b.tip}>
+    <span class="g">{b.glyph}</span>{#if b.label}<span class="l">{b.label}</span>{/if}{#if here && b.id === 'table'}<span class="caret">▾</span>{/if}
   </button>
 {/snippet}
 
