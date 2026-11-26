@@ -4,7 +4,7 @@ import { withMarkdown } from './format';
 import { isDesktop } from './files';
 import { parseLatex } from './math/parse';
 import { boxShape, inkShape, lineShape, type Shape } from './sketch/shapes';
-import { block, chars, math, uid, type Arrow, type Block, type BlockKind, type Doc, type Id, type Item, type Mark, type MarkKind, type MathItem, type MNode, type MRow } from './model';
+import { block, chars, math, uid, type Arrow, type Block, type BlockKind, type BoxKind, type Doc, type Id, type Item, type Mark, type MarkKind, type MathItem, type MNode, type MRow } from './model';
 
 /** A formula from LaTeX. */
 const M = (tex: string, display = false) => math(parseLatex(tex).row, display);
@@ -99,6 +99,24 @@ export function welcomeDoc(): Doc {
   ];
   const diagram = Object.assign(block(chars('A diagram: drawn with the mouse, the keys or a pen'), 'diagram'), { w: 680, h: 300, shapes });
 
+  // ── a graph ──
+  const graph = Object.assign(block(chars('\\graph: what to plot, as you’d write it'), 'diagram'), {
+    w: 680,
+    h: 230,
+    shapes: [boxShape('plot', { x: 80, y: 12, w: 520, h: 206 }, { label: 'y = sin x\ny = sin x + sin(3x)/3 + sin(5x)/5\nx: -2pi..2pi' })],
+  });
+
+  // ── structure: boxes, a numbered formula and a reference to it, boxes to tick ──
+  const inBox = (k: BoxKind, ...bs: Block[]) => {
+    const id = uid();
+    for (const b of bs) b.box = { k, id };
+    return bs;
+  };
+  const parseval = Object.assign(M('\\frac{1}{2\\pi}\\int_{-\\pi}^{\\pi}|f|^2 = \\sum_{n\\in\\mathbb{Z}}|\\hat f(n)|^2', true), { num: true as const });
+  const ref = math([{ k: 'sym', id: uid(), v: '(1)', ref: parseval.id }]);
+  const done = Object.assign(P('read chapter 3', 'li'), { check: true });
+  const todo = Object.assign(P('exercises 4 to 7, for [[Problem set 2]]', 'li'), { check: false });
+
   // ── math ──
   const intro = P('Math notes at lecture speed. This note is yours to play with: click anywhere, type, draw. F1 lists every key.');
 
@@ -121,6 +139,16 @@ export function welcomeDoc(): Doc {
       P('\\diagram makes one: boxes, ellipses and diamonds with $math$ in their labels, arrows that stay attached to the boxes they join, and the pen. Ctrl+arrow on a box adds the next one, joined to it.'),
       diagram,
       P('Ctrl+Shift+D draws in a diagram, or anywhere on the note: the drawing stays with the line under it. A pen just draws, and its eraser end erases; once a pen has been used, a finger scrolls instead.'),
+      graph,
+
+      P('Theorems, proofs and lists to tick', 'h2'),
+      ...inBox('definition', T(['The Fourier coefficients of ', M('f'), ' are ', M('\\hat f(n)=\\frac{1}{2\\pi}\\int_{-\\pi}^{\\pi} f(x)e^{-inx}\\,dx'), '.'])),
+      ...inBox('theorem', P('(Parseval) For square-integrable f,'), T([parseval])),
+      ...inBox('proof', T(['The exponentials are orthonormal, so both sides of ', ref, ' are the length of f squared.'])),
+      P('\\theorem, \\definition, \\proof… put a line in a box, numbered as in a book; Enter goes on in it, Enter on an empty line leaves it, and > makes a quote. \\ref refers to a box or a numbered formula (\\number), and its number follows along.'),
+      done,
+      todo,
+      P('[ ] makes a box to tick, and Ctrl+Enter ticks it. [[A note]] links to another note, and an https:// address links itself: Ctrl+click opens either. Ctrl+. folds the section under a heading, Ctrl+Shift+O shows the outline, and Ctrl+H finds and replaces.'),
 
       P('Type math the way you say it', 'h2'),
       P('$ starts a formula and $$ a centred one; $, → or Esc goes back to text. While typing:'),
@@ -165,7 +193,7 @@ export function welcomeDoc(): Doc {
             P('Once opened, notex works offline, and the browser can install it as an app.', 'li'),
           ]),
       P('\\pdf saves it as a PDF, drawings and all, and Ctrl+P prints it.', 'li'),
-      P('\\export copies it as LaTeX, drawings included.', 'li'),
+      P('\\export copies it as LaTeX, drawings included; \\markdown saves it as markdown, and .md files open as notes.', 'li'),
       P('Press F1 for every shortcut, and type \\welcome to bring this note back.'),
     ],
     arrows,

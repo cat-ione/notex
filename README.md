@@ -15,9 +15,15 @@ and draw arrows and boxes *between parts of equations*.
 - **Draw on your notes.** Alt+drag from one word or symbol to another draws an arrow;
   Alt+Shift+drag draws a box, circle, underline or brace. Press `L` to write a note on it.
   Drawings stay attached to what they point at as you keep editing.
-- **Markdown, like Obsidian.** `# ` headings, `- ` and `1. ` lists, `**bold**`, `*italic*`,
-  `` `code` `` and code blocks, coloured by their language (Python, C++, Julia,
-  R, MATLAB and more). The markers hide once the caret moves on.
+- **Markdown, like Obsidian.** `# ` headings, `- ` and `1. ` lists, `- [ ]` lists to tick,
+  `**bold**`, `*italic*`, `~~struck~~`, `==highlighted==`, `> ` quotes, `[[links]]` to other
+  notes and web addresses, `` `code` `` and code blocks, coloured by their language (Python,
+  C++, Julia, R, MATLAB and more). The markers hide once the caret moves on.
+- **Structured like a textbook.** `\theorem`, `\definition`, `\lemma`, `\proof`… put lines in a
+  box, numbered as in a book. `\number` numbers a display formula and `\ref` refers to it or to
+  a theorem, and the number follows along as things move. Fold a section under its heading
+  (Ctrl+.), see the outline (Ctrl+Shift+O), find and replace (Ctrl+H), and find a note by what
+  it says from the notes list.
 - **Tables**, as in markdown (`| a | b |` with a `| --- |` line under the header), or `\table`.
   Cells work as in a word processor: Tab moves between them, Enter adds a row, selecting
   across cells selects whole cells, and a right-click in one adds or removes rows and columns
@@ -29,11 +35,15 @@ and draw arrows and boxes *between parts of equations*.
   the line under it. A pen just draws (its width follows the pressure, its eraser end erases);
   a finger draws too, until a pen has been used, then it scrolls and a resting palm does
   nothing. Diagrams export to LaTeX as TikZ.
+- **Graphs.** `\graph` plots what you type: `y = sin x`, a line each, `x: -pi..pi` for the range.
+- **Zoom.** Ctrl+wheel, a pinch on a trackpad or touch screen, or Ctrl+= / Ctrl+- / Ctrl+0: the
+  text, images, diagrams and what's drawn on the page grow together.
 - **Images.** Paste or drop them in; they're kept inside the note.
 - **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
   type, and your own CSS (Ctrl+,).
-- **PDF and LaTeX.** `\pdf` saves the note as a PDF, drawings and all (Ctrl+P prints it);
-  `\export` copies it as LaTeX, drawings included (tikz).
+- **PDF, LaTeX and markdown.** `\pdf` saves the note as a PDF, drawings and all (Ctrl+P prints
+  it); `\export` copies it as LaTeX, drawings, theorems and references included (tikz,
+  amsthm); `\markdown` saves it as markdown, and `.md` files open as notes.
 
 Press **F1** in the app for every shortcut.
 
@@ -49,10 +59,16 @@ Press **F1** in the app for every shortcut.
 | Alt+drag, Alt+Shift+drag | arrow, shape |
 | Ctrl+D | draw menu |
 | Ctrl+Shift+D | draw in a diagram, or on the note (`\diagram` makes one) |
-| `v p l a r o d t e` | while drawing: select, pen, line, arrow, box, ellipse, diamond, text, eraser |
+| `v p l a r o d t g e` | while drawing: select, pen, line, arrow, box, ellipse, diamond, text, graph, eraser |
 | Ctrl+B / Ctrl+I | bold / italic |
+| Ctrl+Shift+X / Ctrl+Shift+H | strike out / highlight |
+| `[ ]` then space, Ctrl+Enter | a box to tick, tick it |
+| `\theorem` `\proof` `\ref` | a theorem, a proof, a reference |
+| Ctrl+. / Ctrl+Shift+O | fold a section / the outline |
+| Ctrl+click | open a link, go to what a reference points at |
 | Tab / Shift+Tab | indent / outdent a list item |
-| Ctrl+F | find |
+| Ctrl+F / Ctrl+H | find / find and replace |
+| Ctrl+wheel, a pinch, Ctrl+= / Ctrl+- / Ctrl+0 | zoom |
 | Ctrl+S / Ctrl+O / Ctrl+N | save / open / new |
 | `\pdf` / Ctrl+P | save as PDF / print |
 
