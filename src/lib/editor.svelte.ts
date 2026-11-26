@@ -5770,6 +5770,16 @@ export class Editor {
     this.findFocus++;
   }
 
+  /** Find `q` (from the notes list, a note found by what it says): its first match selected. */
+  findText(q: string) {
+    this.b = 0;
+    this.o = 0;
+    this.anchor = null;
+    this.find = { q, i: 0, replace: false, with: this.lastReplace };
+    this.findFrom();
+    this.findFocus++;
+  }
+
   /** The last replacement typed (Ctrl+H starts from it). */
   private lastReplace = '';
 

@@ -303,6 +303,22 @@ test.describe('find and replace', () => {
   });
 });
 
+test('the notes list finds notes by what they say, shows the line, and opening one finds it there', async ({ page }) => {
+  await type(page, 'first note\nthe Parseval identity holds');
+  await saved(page);
+  await page.keyboard.press('Control+n');
+  await type(page, 'second note');
+  await saved(page);
+  await page.keyboard.press('Control+o');
+  await page.keyboard.type('parseval');
+  await expect(page.locator('.panel .row .snippet')).toHaveText('the Parseval identity holds');
+  await expect(page.locator('.panel .row .snippet .hit')).toHaveText('Parseval');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => text(page)).toBe('first note\nthe Parseval identity holds');
+  await expect(page.locator('.findbar input').first()).toHaveValue('parseval');
+  expect(await ed(page, (e) => [e.b, e.anchor?.o, e.o])).toEqual([1, 4, 12]);
+});
+
 test('every kind of block survives an undo and redo', async ({ page }) => {
   await command(page, 'theorem');
   await type(page, 'a\n\n[ ] b');

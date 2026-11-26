@@ -1,12 +1,14 @@
 <script lang="ts">
   // The notes kept in the browser (ctrl+o in the web version): open, rename, delete, and
-  // files from disk, and the welcome note. Type to filter; ↑ ↓ and Enter open; F2 renames;
-  // del twice deletes. With the mouse: click to open, ✎ renames, ✕ then "delete" deletes.
+  // files from disk, and the welcome note. Type to filter (by name, and by what the notes
+  // say: the line it's in shows, and opening the note finds it there); ↑ ↓ and Enter open;
+  // F2 renames; del twice deletes. With the mouse: click to open, ✎ renames, ✕ then
+  // "delete" deletes.
   import { onMount, tick } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import type { Editor } from '$lib/editor.svelte';
-  import { listNotes, shownName, type NoteMeta } from '$lib/library';
+  import { listNotes, searchNotes, shownName, type NoteMeta } from '$lib/library';
   import { canUseFiles } from '$lib/files';
 
   let { ed }: { ed: Editor } = $props();
@@ -23,9 +25,29 @@
   let nameInput: HTMLInputElement | undefined = $state();
 
   type Row = { kind: 'note'; note: NoteMeta } | { kind: 'new' } | { kind: 'file' } | { kind: 'welcome' };
+  /** The notes whose text has what's typed, with the line it's in. */
+  let hits = $state(new Map<string, string>());
+  const byName = (n: NoteMeta) => `${shownName(n)} ${n.title} ${n.file ?? ''}`.toLowerCase().includes(query.trim().toLowerCase());
+  // (found by name first, then by what they say)
   const shown = $derived(
-    notes.filter((n) => !query.trim() || `${shownName(n)} ${n.title} ${n.file ?? ''}`.toLowerCase().includes(query.trim().toLowerCase())),
+    !query.trim() ? notes : [...notes.filter(byName), ...notes.filter((n) => !byName(n) && hits.has(n.id))],
   );
+  let searching = 0;
+  $effect(() => {
+    const q = query;
+    const n = ++searching;
+    if (q.trim().length < 2) return void (hits = new Map());
+    const t = setTimeout(async () => {
+      const found = await searchNotes(q);
+      if (n === searching) hits = found;
+    }, 120);
+    return () => clearTimeout(t);
+  });
+  /** The line a note was found by, marked where what's typed is in it. */
+  function snippet(line: string): [string, boolean][] {
+    const q = query.trim().toLowerCase(), at = line.toLowerCase().indexOf(q);
+    return at < 0 ? [[line, false]] : [[line.slice(0, at), false], [line.slice(at, at + q.length), true], [line.slice(at + q.length), false]];
+  }
   const rows = $derived<Row[]>([...shown.map((note) => ({ kind: 'note' as const, note })), { kind: 'new' }, { kind: 'file' }, { kind: 'welcome' }]);
 
   async function refresh() {
@@ -38,7 +60,12 @@
   const close = () => (ed.showNotes = false);
 
   async function act(r: Row) {
-    if (r.kind === 'note') await ed.openKept(r.note.id);
+    // (found by what it says: there, found)
+    if (r.kind === 'note') {
+      const found = !byName(r.note) && hits.has(r.note.id) ? query.trim() : '';
+      await ed.openKept(r.note.id);
+      if (found) ed.findText(found);
+    }
     else if (r.kind === 'new') (close(), await ed.newNote());
     else if (r.kind === 'welcome') await ed.openWelcome();
     else await ed.openFromDisk();
@@ -153,6 +180,9 @@
               {:else}
                 <button class="icon danger" title="delete (del twice)" aria-label="delete" onclick={(e) => (e.stopPropagation(), remove(n, 'mouse'))}>✕</button>
               {/if}
+              {#if query.trim() && hits.has(n.id) && !byName(n)}
+                <span class="snippet">{#each snippet(hits.get(n.id)!) as [part, hit], k (k)}<span class:hit>{part}</span>{/each}</span>
+              {/if}
             {/if}
           {:else if r.kind === 'new'}
             <span class="name">+ new note</span>{#if ed.input === 'keys'}<kbd>ctrl+n</kbd>{/if}
@@ -221,8 +251,9 @@
   .list { overflow-y: auto; }
   .row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 2px 10px;
     padding: 6px 18px;
     cursor: pointer;
     color: var(--fg);
@@ -246,6 +277,21 @@
   .file, .when, kbd { color: var(--muted); font-size: 11px; white-space: nowrap; font-family: inherit; }
   .file { max-width: 30%; overflow: hidden; text-overflow: ellipsis; }
   .warn { color: var(--danger); font-size: 11px; }
+  /* the line a note was found by */
+  .snippet {
+    flex-basis: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+    font-family: var(--prose);
+    font-size: 12px;
+  }
+  .snippet .hit {
+    color: var(--fg);
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-radius: 2px;
+  }
   .confirm {
     background: var(--danger);
     border: none;

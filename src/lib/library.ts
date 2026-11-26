@@ -97,3 +97,30 @@ export async function noteForFile(h: FileSystemFileHandle): Promise<string | nul
   for (const r of rows) if (r.handle && (await r.handle.isSameEntry(h))) return r.id;
   return null;
 }
+
+/**
+ * The notes with `q` in their text (not only their name), each with the line it's in, cut
+ * down round it: what the notes list shows under a note found by what it says.
+ */
+export async function searchNotes(q: string): Promise<Map<string, string>> {
+  const want = q.trim().toLowerCase();
+  const out = new Map<string, string>();
+  if (want.length < 2) return out;
+  const rows = (await done((await store('readonly')).getAll())) as Row[];
+  for (const r of rows) {
+    // (a quick look at the stored text first: most notes don't have it)
+    if (!r.doc.toLowerCase().includes(want)) continue;
+    try {
+      const file = JSON.parse(r.doc) as { blocks?: { content?: unknown[] }[] };
+      for (const b of file.blocks ?? []) {
+        const line = (b.content ?? []).map((c) => (typeof c === 'string' ? c : c && typeof c === 'object' && 's' in c ? String((c as { s: string }).s) : ' … ')).join('');
+        const at = line.toLowerCase().indexOf(want);
+        if (at < 0) continue;
+        const from = Math.max(0, at - 24), to = Math.min(line.length, at + want.length + 40);
+        out.set(r.id, (from ? '…' : '') + line.slice(from, to).trim() + (to < line.length ? '…' : ''));
+        break;
+      }
+    } catch {}
+  }
+  return out;
+}
