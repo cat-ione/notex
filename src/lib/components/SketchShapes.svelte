@@ -15,6 +15,7 @@
     sel = [],
     draft = null,
     marquee = null,
+    lasso = null,
     handles = [],
     selBox = null,
     editing = null,
@@ -24,6 +25,7 @@
     sel?: Id[];
     draft?: Shape | null;
     marquee?: Box | null;
+    lasso?: Pt[] | null;
     handles?: { h: string; p: Pt }[];
     selBox?: Box | null;
     editing?: Id | null;
@@ -143,6 +145,9 @@
   {#each handles as h (h.h)}
     <circle class="handle" cx={h.p.x} cy={h.p.y} r={4.5 / scale} stroke-width={1.2 / scale} />
   {/each}
+{/if}
+{#if lasso && lasso.length > 1}
+  <path class="marquee lasso" d={'M' + lasso.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('L') + 'Z'} stroke-width={1 / scale} />
 {/if}
 {#if marquee}
   <rect class="marquee" x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} stroke-width={1 / scale} />

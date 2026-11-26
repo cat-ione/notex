@@ -360,7 +360,7 @@
       <!-- (its own coordinates, scaled down to fit a narrower page; a drawing on it is on the diagram) -->
       <svg class="canvas" class:tool-select={on && ed.sketch.tool === 'select'} viewBox="0 0 {blk.w ?? 720} {blk.h ?? 280}" style:width="min(100%, calc({blk.w ?? 720}px * var(--zoom, 1)))" data-nx={blk.id} role="img" aria-label="diagram">
         {#if on}
-          <SketchShapes shapes={blk.shapes ?? []} sel={ed.sketch.sel} draft={ed.sketch.draft} marquee={ed.sketch.marquee} handles={ed.sketch.handles()} selBox={ed.sketch.selBox} editing={ed.sketch.editing} />
+          <SketchShapes shapes={blk.shapes ?? []} sel={ed.sketch.sel} draft={ed.sketch.draft} marquee={ed.sketch.marquee} lasso={ed.sketch.lasso} handles={ed.sketch.handles()} selBox={ed.sketch.selBox} editing={ed.sketch.editing} />
         {:else}
           <SketchShapes shapes={blk.shapes ?? []} />
         {/if}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attachTarget, boundsOf, bounds, boxOf, boxShape, cloneShapes, detach, erased, hits, inkShape, lineEnds, lineShape, lookupIn,
-  labelled, lineLabelBox, moved, outlinePoint, penOutline, scaled, shapeAt, shapesIn, simplify, smoothPath, type BoxShape, type LineShape,
+  inPolygon, labelled, lineLabelBox, moved, outlinePoint, penOutline, scaled, shapeAt, shapesIn, shapesInLasso, simplify, smoothPath, type BoxShape, type LineShape,
 } from './shapes';
 
 const rect = (x: number, y: number, w = 100, h = 50, k: BoxShape['k'] = 'rect') => boxShape(k, { x, y, w, h });
@@ -145,5 +145,21 @@ describe('line labels', () => {
     expect(b.y + b.h / 2).toBeCloseTo(25);
     expect(labelled(l)).toBe(true);
     expect(labelled(inkShape([0, 0, 0.5], false))).toBe(false);
+  });
+});
+
+describe('a lasso', () => {
+  const sq = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+  it('knows inside from outside', () => {
+    expect(inPolygon(sq, { x: 50, y: 50 })).toBe(true);
+    expect(inPolygon(sq, { x: 150, y: 50 })).toBe(false);
+  });
+  it('takes what it mostly goes round, not what it only touches', () => {
+    const inside = boxShape('rect', { x: 10, y: 10, w: 30, h: 30 });
+    const half = boxShape('rect', { x: 80, y: 10, w: 60, h: 30 });
+    const stroke = inkShape([20, 60, 0.5, 40, 70, 0.5, 60, 80, 0.5], false);
+    const ln = lineShape({ x: 10, y: 90 }, { x: 90, y: 95 }, 'none');
+    expect(shapesInLasso([inside, half, stroke, ln], sq).map((s) => s.id)).toEqual([inside.id, stroke.id, ln.id]);
+    expect(shapesInLasso([inside], sq.slice(0, 2))).toEqual([]);
   });
 });

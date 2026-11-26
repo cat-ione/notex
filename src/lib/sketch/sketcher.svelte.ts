@@ -12,7 +12,7 @@ import { INKS } from '../marks';
 import { recognize } from './recognize';
 import {
   attachTarget, boundsOf, boxOf, boxShape, centre, cloneShapes, detach, erased, inkShape, isBox, labelled, lineShape, lookupIn,
-  lineEnds, moved, scaled, shapeAt, shapesIn, simplify, WIDTHS, bounds,
+  lineEnds, moved, scaled, shapeAt, shapesIn, shapesInLasso, simplify, WIDTHS, bounds,
   type Box, type BoxKind, type BoxShape, type End, type LineShape, type Placed, type Pt, type Shape, type Width,
 } from './shapes';
 
@@ -56,6 +56,8 @@ type Gesture =
   | { k: 'move'; id: number; from: Pt; orig: Shape[]; done: boolean }
   | { k: 'handle'; id: number; h: Handle; from: Pt; orig: Shape[]; box: Box; done: boolean }
   | { k: 'marquee'; id: number; from: Pt; add: Id[] }
+  /** A pen drawing round what to select. */
+  | { k: 'lasso'; id: number; pts: Pt[]; add: Id[] }
   | { k: 'pan'; id: number; y: number; x: number; t: number; v: number; sx: number; sy: number }
   /** Two fingers: the page zooms (how far apart they were, and their middle, at the start). */
   | { k: 'pinch'; id: number; other: number; d0: number; c0: Pt; k1: number }
@@ -76,6 +78,8 @@ export class Sketcher {
   draft = $state.raw<Shape | null>(null);
   /** The selection rectangle being dragged. */
   marquee = $state.raw<Box | null>(null);
+  /** The loop a pen is drawing round what to select. */
+  lasso = $state.raw<Pt[] | null>(null);
   /** The shape whose label is being typed. */
   editing = $state<Id | null>(null);
   /** Where each block that has drawings on it is on the page (for what's drawn on the note). */
@@ -385,6 +389,9 @@ export class Sketcher {
     }
     if (type === 'touch') this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const eraserEnd = type === 'pen' && (e.button === 5 || (e.buttons & 32) !== 0);
+    // the pen's side button held: it selects (and moves what it picks), whatever the tool
+    const barrel = type === 'pen' && !eraserEnd && (e.button === 2 || (e.buttons & 2) !== 0);
+    if (barrel) this.menuAfterBarrel = performance.now();
     if (!this.on) {
       const penDraws = type === 'pen' && ed.config.sketch.penDraws && (ed.mode === 'text' || ed.mode === 'math' || ed.mode === 'style');
       if (penDraws) {
@@ -407,14 +414,14 @@ export class Sketcher {
         return false;
       }
     }
-    if (e.button === 2) return false;
+    if (e.button === 2 && !barrel) return false;
     this.commitLabel();
     if (type === 'touch' && !this.touchDraws) {
       this.g = { k: 'pan', id: e.pointerId, y: e.clientY, x: e.clientX, t: e.timeStamp, v: 0, sx: e.clientX, sy: e.clientY };
       return true;
     }
     const p = this.toSurface(e);
-    const tool: Tool = eraserEnd ? 'eraser' : this.tool;
+    const tool: Tool = eraserEnd ? 'eraser' : barrel ? 'select' : this.tool;
     const id = e.pointerId;
     this.lastType = type;
     // a second press soon after, near the first: a double-click (or double tap)
@@ -459,7 +466,7 @@ export class Sketcher {
     if (g.k === 'pan') return this.panTo(e);
     if (g.k === 'resize') return this.resizeTo(e);
     // every point the pen went through (the browser coalesces them between frames)
-    const evs = g.k === 'draw' && typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+    const evs = (g.k === 'draw' || g.k === 'lasso') && typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
     const p = this.toSurface(e);
     switch (g.k) {
       case 'draw': {
@@ -506,8 +513,24 @@ export class Sketcher {
         this.sel = [...new Set([...g.add, ...shapesIn(this.shapes(), r).map((s) => s.id)])];
         break;
       }
+      case 'lasso': {
+        for (const c of evs.length ? evs : [e]) {
+          const q = this.rawSurface(c), last = g.pts[g.pts.length - 1];
+          if (Math.hypot(q.x - last.x, q.y - last.y) >= 2) g.pts.push(q);
+        }
+        this.lasso = g.pts.slice();
+        this.sel = [...new Set([...g.add, ...shapesInLasso(this.shapes(), g.pts).map((s) => s.id)])];
+        break;
+      }
     }
     // (no touch: what's drawn shows by itself; the note is laid out again once the pointer is up)
+  }
+
+  /** When the pen's side button last went down (the right-click the browser makes of it is swallowed). */
+  private menuAfterBarrel = -Infinity;
+  /** Is a right-click now one the pen's side button made (to be ignored)? */
+  barrelClick(): boolean {
+    return performance.now() - this.menuAfterBarrel < 2000;
   }
 
   /** The fingers on the page that drawing has (for a pinch: where each is). */
@@ -553,6 +576,9 @@ export class Sketcher {
       }
       case 'marquee':
         this.marquee = null;
+        break;
+      case 'lasso':
+        this.lasso = null;
         break;
       case 'pan':
         // a tap, not a scroll: as a click there (fingers don't reach the text by themselves while a pen may draw)
@@ -715,7 +741,9 @@ export class Sketcher {
       this.g = { k: 'move', id, from: p, orig: this.selected.map((s) => structuredClone($state.snapshot(s) as Shape)), done: false };
       return;
     }
-    this.g = { k: 'marquee', id, from: p, add: e.shiftKey ? [...this.sel] : [] };
+    // (a pen draws round what it selects; a mouse or finger drags a rectangle)
+    if (e.pointerType === 'pen') this.g = { k: 'lasso', id, pts: [p], add: e.shiftKey ? [...this.sel] : [] };
+    else this.g = { k: 'marquee', id, from: p, add: e.shiftKey ? [...this.sel] : [] };
     if (!e.shiftKey) this.sel = [];
   }
 

@@ -265,6 +265,25 @@ test('a pen draws with its pressure; its eraser end erases', async ({ page }) =>
   expect(await shapes(page)).toHaveLength(0);
 });
 
+/** A loop round a box (a lasso's way): `n` points on an ellipse. */
+const loop = (x: number, y: number, w: number, h: number, n = 24): P[] =>
+  Array.from({ length: n + 1 }, (_, i) => [x + w / 2 + (w / 2) * Math.cos((2 * Math.PI * i) / n), y + h / 2 + (h / 2) * Math.sin((2 * Math.PI * i) / n), 0.5]);
+
+/** A pen with its side button held, along points. */
+async function barrel(page: Page, pts: P[]) {
+  await page.evaluate((pts) => {
+    const fire = (type: string, x: number, y: number, buttons: number, button: number) =>
+      (document.elementFromPoint(x, y) ?? document.body).dispatchEvent(new PointerEvent(type, { pointerType: 'pen', pointerId: 7, isPrimary: true, clientX: x, clientY: y, pressure: 0.5, buttons, button, bubbles: true, cancelable: true, composed: true }));
+    fire('pointermove', pts[0][0], pts[0][1], 0, -1);
+    fire('pointerdown', pts[0][0], pts[0][1], 3, 2);
+    for (const [x, y] of pts.slice(1)) fire('pointermove', x, y, 3, -1);
+    const [x1, y1] = pts[pts.length - 1];
+    fire('pointerup', x1, y1, 0, 2);
+    // (the right-click a browser makes of it)
+    (document.elementFromPoint(x1, y1) ?? document.body).dispatchEvent(new MouseEvent('contextmenu', { clientX: x1, clientY: y1, button: 2, bubbles: true, cancelable: true }));
+  }, pts);
+}
+
 test('a pen with the select tool selects (a drag round some too); a box drawn by pen keeps the tool, no label to type', async ({ page }) => {
   const c = await diagram(page);
   // the box tool, by pen: a box, no label editor, still the box tool
@@ -275,9 +294,37 @@ test('a pen with the select tool selects (a drag round some too); a box drawn by
   await page.keyboard.press('v');
   await stroke(page, 'pen', [[c.x + 100, c.y + 60]]);
   expect(await sk(page, (s) => s.sel.length)).toBe(1);
-  await stroke(page, 'pen', line(c.x + 20, c.y + 20, c.x + 400, c.y + 130));
+  // a lasso round both
+  await stroke(page, 'pen', loop(c.x + 10, c.y + 10, c.x + 400 - c.x, 130));
   expect(await sk(page, (s) => s.sel.length)).toBe(2);
   expect(await shapes(page)).toHaveLength(2);
+});
+
+test('the pen’s side button lassoes what it goes round, whatever the tool, with no right-click menu', async ({ page }) => {
+  const c = await diagram(page);
+  await stroke(page, 'pen', line(c.x + 40, c.y + 40, c.x + 160, c.y + 96));
+  await stroke(page, 'pen', line(c.x + 240, c.y + 40, c.x + 360, c.y + 96));
+  await page.keyboard.press('p');
+  // round the first box only
+  await barrel(page, loop(c.x + 30, c.y + 20, 140, 96));
+  const ids = (await shapes(page)).map((s) => s.id);
+  expect(await sk(page, (s) => s.sel)).toEqual([ids[0]]);
+  expect(await sk(page, (s) => [s.tool, s.lasso])).toEqual(['pen', null]);
+  await expect(page.locator('.menu')).toHaveCount(0);
+  expect(await shapes(page)).toHaveLength(2);
+  // on a shape: it's picked, and dragged along
+  const before = (await shapes(page))[1].x;
+  await barrel(page, line(c.x + 300, c.y + 68, c.x + 340, c.y + 68));
+  expect(await sk(page, (s) => s.sel)).toEqual([ids[1]]);
+  expect((await shapes(page))[1].x).toBeGreaterThan(before + 30);
+});
+
+test('the side button lassoes what is drawn on the note too', async ({ page }) => {
+  await type(page, 'some text to draw on');
+  await stroke(page, 'pen', line(300, 200, 400, 200));
+  await stroke(page, 'pen', line(300, 260, 400, 260));
+  await barrel(page, loop(280, 180, 140, 40));
+  expect(await sk(page, (s) => s.sel.length)).toBe(1);
 });
 
 test('the diagram grows to hold what is drawn below it; its bottom edge drags', async ({ page }) => {

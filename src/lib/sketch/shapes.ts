@@ -194,6 +194,39 @@ export const within = (a: Box, b: Box) => a.x >= b.x && a.y >= b.y && a.x + a.w 
 /** The shapes wholly inside a box (a selection rectangle). */
 export const shapesIn = (list: Shape[], r: Box, find: Lookup = lookupIn(list)) => list.filter((s) => within(bounds(s, find), r));
 
+/** Whether p is inside a closed loop (its last point joined to its first). */
+export function inPolygon(poly: Pt[], p: Pt): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * The shapes a lasso goes round: most of each one's points inside the loop (a stroke's
+ * points, a line's ends and middle, a box's sides' middles and its own), so a loose loop will do.
+ */
+export function shapesInLasso(list: Shape[], poly: Pt[], find: Lookup = lookupIn(list)): Shape[] {
+  if (poly.length < 3) return [];
+  const points = (s: Shape): Pt[] => {
+    if (s.k === 'ink') return inkPoints(s);
+    if (s.k === 'line') {
+      const [a, b] = lineEnds(s, find);
+      return [a, b, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }];
+    }
+    const b = bounds(s, find);
+    // (the middles of its sides, not its corners: a snug loop round a box misses those)
+    const c = centre(b);
+    return [{ x: c.x, y: b.y }, { x: b.x + b.w, y: c.y }, { x: c.x, y: b.y + b.h }, { x: b.x, y: c.y }, c];
+  };
+  return list.filter((s) => {
+    const ps = points(s);
+    return ps.length > 0 && ps.filter((p) => inPolygon(poly, p)).length >= Math.ceil(ps.length * 0.75);
+  });
+}
+
 /** The shapes a stroke of the eraser from a to b goes over (within `tol`). */
 export function erased(list: Shape[], a: Pt, b: Pt, tol: number, find: Lookup = lookupIn(list)): Shape[] {
   const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / Math.max(1, tol)));

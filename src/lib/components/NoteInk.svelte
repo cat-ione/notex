@@ -17,7 +17,7 @@
   <svg class="note-ink" aria-hidden="true">
     <g transform={ed.zoom === 1 ? undefined : `scale(${ed.zoom})`}>
       {#if on}
-        <SketchShapes {shapes} sel={sk.sel} draft={sk.draft} marquee={sk.marquee} handles={sk.handles()} selBox={sk.selBox} editing={sk.editing} />
+        <SketchShapes {shapes} sel={sk.sel} draft={sk.draft} marquee={sk.marquee} lasso={sk.lasso} handles={sk.handles()} selBox={sk.selBox} editing={sk.editing} />
       {:else}
         <SketchShapes {shapes} />
       {/if}

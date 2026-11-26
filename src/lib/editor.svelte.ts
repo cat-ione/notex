@@ -6099,6 +6099,8 @@ export class Editor {
    */
   openPageMenu(e: MouseEvent) {
     e.preventDefault();
+    // (the pen's side button selects: not a right-click)
+    if (this.sketch.barrelClick()) return;
     // drawing, or on a diagram: what can be done to the shape there (or what can be drawn)
     const svg = (e.target as Element | null)?.closest?.('svg.canvas');
     const canvas = svg ? ((svg.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null) : null;
