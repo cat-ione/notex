@@ -392,6 +392,8 @@ export class Sketcher {
     // the pen's side button held: it selects (and moves what it picks), whatever the tool
     const barrel = type === 'pen' && !eraserEnd && (e.button === 2 || (e.buttons & 2) !== 0);
     if (barrel) this.menuAfterBarrel = performance.now();
+    // (a tap of it, not a drag: the ring menu there, once it's up)
+    this.barrelDown = barrel ? { x: e.clientX, y: e.clientY, id: e.pointerId, moved: false } : null;
     if (!this.on) {
       const penDraws = type === 'pen' && ed.config.sketch.penDraws && (ed.mode === 'text' || ed.mode === 'math' || ed.mode === 'style');
       if (penDraws) {
@@ -404,6 +406,7 @@ export class Sketcher {
       } else if (type === 'touch' && this.penSeen && ed.config.sketch.penDraws) {
         // (the page doesn't scroll by itself while a pen may draw on it: fingers scroll it here)
         this.g = { k: 'pan', id: e.pointerId, y: e.clientY, x: e.clientX, t: e.timeStamp, v: 0, sx: e.clientX, sy: e.clientY };
+        this.holdForMenu(e);
         return true;
       } else return false;
     } else if (this.on.kind === 'block' && canvas !== this.on.id) {
@@ -418,6 +421,7 @@ export class Sketcher {
     this.commitLabel();
     if (type === 'touch' && !this.touchDraws) {
       this.g = { k: 'pan', id: e.pointerId, y: e.clientY, x: e.clientX, t: e.timeStamp, v: 0, sx: e.clientX, sy: e.clientY };
+      this.holdForMenu(e);
       return true;
     }
     const p = this.toSurface(e);
@@ -453,6 +457,9 @@ export class Sketcher {
 
   pointerMove(e: PointerEvent) {
     const g = this.g;
+    // (the side button dragged, not tapped: no ring menu when it's let go)
+    const bd = this.barrelDown;
+    if (bd && bd.id === e.pointerId && Math.hypot(e.clientX - bd.x, e.clientY - bd.y) >= 6) bd.moved = true;
     if (this.fingers.has(e.pointerId)) this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (g?.k === 'pinch' && (e.pointerId === g.id || e.pointerId === g.other)) {
       const a = this.fingers.get(g.id), b = this.fingers.get(g.other);
@@ -526,6 +533,36 @@ export class Sketcher {
     // (no touch: what's drawn shows by itself; the note is laid out again once the pointer is up)
   }
 
+  /** Where the pen's side button went down (a tap of it opens the ring menu). */
+  private barrelDown: { x: number; y: number; id: number; moved: boolean } | null = null;
+  /** A finger held still while it scrolls: the ring menu, after a moment. */
+  private holdTimer: ReturnType<typeof setTimeout> | undefined;
+  private holdFrom: { x: number; y: number } | null = null;
+
+  /** A finger went down to scroll: held still a moment, it opens the ring menu there instead. */
+  private holdForMenu(e: PointerEvent) {
+    clearTimeout(this.holdTimer);
+    const id = e.pointerId, x = e.clientX, y = e.clientY;
+    this.holdFrom = { x, y };
+    this.holdTimer = setTimeout(() => {
+      if (this.g?.k !== 'pan' || this.g.id !== id || !this.holdFrom) return;
+      this.g = null;
+      this.holdFrom = null;
+      this.ed.openRadial(x, y, id);
+      this.ed.touch();
+    }, 500);
+  }
+
+  /** What a pointer was doing, dropped (a long press became the ring menu). */
+  cancelGesture() {
+    clearTimeout(this.holdTimer);
+    if (this.g?.k === 'draw') clearTimeout(this.g.still);
+    this.g = null;
+    this.draft = null;
+    this.marquee = null;
+    this.lasso = null;
+  }
+
   /** When the pen's side button last went down (the right-click the browser makes of it is swallowed). */
   private menuAfterBarrel = -Infinity;
   /** Is a right-click now one the pen's side button made (to be ignored)? */
@@ -538,6 +575,15 @@ export class Sketcher {
 
   pointerUp(e: PointerEvent) {
     this.fingers.delete(e.pointerId);
+    clearTimeout(this.holdTimer);
+    // the pen's side button tapped (not dragged): the ring menu there (on a shape: it's picked first)
+    const bd = this.barrelDown;
+    if (bd && bd.id === e.pointerId) {
+      this.barrelDown = null;
+      if (!bd.moved && Math.hypot(e.clientX - bd.x, e.clientY - bd.y) < 6) {
+        queueMicrotask(() => (this.ed.openRadial(e.clientX, e.clientY), this.ed.touch()));
+      }
+    }
     const pg = this.g;
     // a finger of a pinch lifted: the zoom it came to (the other finger does nothing more)
     if (pg?.k === 'pinch' && (e.pointerId === pg.id || e.pointerId === pg.other)) {
@@ -721,7 +767,8 @@ export class Sketcher {
 
   private handleAt(p: Pt, type: string) {
     const tol = this.tol(type);
-    return this.handles().find((h) => Math.hypot(h.p.x - p.x, h.p.y - p.y) <= tol + 3);
+    // (a pen's or finger's handles are drawn bigger: as big to take hold of)
+    return this.handles().find((h) => Math.hypot(h.p.x - p.x, h.p.y - p.y) <= tol + (type === 'mouse' ? 3 : 6));
   }
 
   private selectDown(e: PointerEvent, p: Pt) {
@@ -801,6 +848,8 @@ export class Sketcher {
   private panTo(e: PointerEvent) {
     const g = this.g;
     if (g?.k !== 'pan') return;
+    // (moving: a scroll, not a hold)
+    if (this.holdFrom && Math.hypot(e.clientX - this.holdFrom.x, e.clientY - this.holdFrom.y) > 8) clearTimeout(this.holdTimer), (this.holdFrom = null);
     const sc = this.scroller();
     const dy = e.clientY - g.y, dt = Math.max(1, e.timeStamp - g.t);
     if (sc) sc.scrollTop -= dy;

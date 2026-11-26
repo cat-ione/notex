@@ -20,6 +20,7 @@
     selBox = null,
     editing = null,
     scale = 1,
+    big = false,
   }: {
     shapes: Shape[];
     sel?: Id[];
@@ -31,6 +32,8 @@
     editing?: Id | null;
     /** Screen pixels per unit (handles and outlines keep their size on screen). */
     scale?: number;
+    /** Bigger handles, for a pen or a finger. */
+    big?: boolean;
   } = $props();
 
   const find = $derived(lookupIn(draft ? [...shapes, draft] : shapes));
@@ -143,7 +146,7 @@
 {#if selBox && !draft}
   <rect class="selbox" x={selBox.x - 4 / scale} y={selBox.y - 4 / scale} width={selBox.w + 8 / scale} height={selBox.h + 8 / scale} stroke-width={1 / scale} />
   {#each handles as h (h.h)}
-    <circle class="handle" cx={h.p.x} cy={h.p.y} r={4.5 / scale} stroke-width={1.2 / scale} />
+    <circle class="handle" cx={h.p.x} cy={h.p.y} r={(big ? 8 : 4.5) / scale} stroke-width={1.2 / scale} />
   {/each}
 {/if}
 {#if lasso && lasso.length > 1}

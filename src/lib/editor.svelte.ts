@@ -33,7 +33,8 @@ import * as M from './math/edit';
 import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
-import { Sketcher } from './sketch/sketcher.svelte';
+import { Sketcher, type Tool } from './sketch/sketcher.svelte';
+import { labelled } from './sketch/shapes';
 import type { Placed } from './sketch/shapes';
 import { allIds, block, BOX_KINDS, BOX_NAME, ch, chars, cloneRow, cmd, isFigure, isListKind, isRefItem, MAX_INDENT, math, NUMBERED_BOX, sym, uid, type BoxKind, type MSym, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
@@ -68,6 +69,9 @@ export type Pos = { b: number; o: number };
 
 /** `tags`: words it's found by too, as a group (draw, table, box…), besides its description's. */
 type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean; keep?: true; tags?: string };
+/** A choice on the ring menu: does `run`, or opens a ring of its own (`sub`). `color`: shown as a dot of it. */
+export type RadialItem = { label: string; icon: string; run?: () => void; sub?: () => RadialItem[]; on?: boolean; off?: boolean; color?: string };
+
 /** Which palette: text's commands, math's, drawing's, a drawing's actions, or what to refer to. */
 export type PaletteCtx = 'math' | 'text' | 'draw' | 'style' | 'ref';
 /** A step of a note's undo history. */
@@ -156,6 +160,88 @@ export class Editor {
   showNotes = $state(false);
   /** What was used last, keys or the mouse: hints show the way that fits (keys, or what to click). */
   input = $state<'keys' | 'mouse'>('keys');
+  /** What the last press was made with: a mouse, a pen, a finger (a pen or finger gets bigger handles, the ⋯ on a selection). */
+  pointer = $state<'mouse' | 'pen' | 'touch'>('mouse');
+
+  // ── the ring menu: round the pen or finger, what can be done there ──
+
+  radial = $state<{ x: number; y: number; title: string; items: RadialItem[]; pointer?: number } | null>(null);
+  /** Where the ring opened: a diagram there (for a tool chosen from it), else the note. */
+  private radialCanvas: Id | null = null;
+
+  /**
+   * The ring at (x, y) (client coordinates): on a selection, what can be done to it; else
+   * the tools (choosing one starts drawing there: in the diagram under it, or on the note),
+   * colours, undo and redo. `pointer`: the press that opened it (sliding it to an item and
+   * lifting chooses).
+   */
+  openRadial(x: number, y: number, pointer?: number) {
+    const sk = this.sketch;
+    if (this.palette) this.closePalette();
+    this.menu = null;
+    const el = document.elementFromPoint(x, y);
+    this.radialCanvas = (el?.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null;
+    const sel = sk.active ? sk.selected : [];
+    const colours = (): RadialItem[] =>
+      INKS.map((c) => ({ label: c || 'text colour', icon: '', color: c ? `var(--ink-${c})` : 'var(--fg)', on: sk.color === c, run: () => sk.restyle({ color: c }) }));
+    const common: RadialItem[] = [
+      { label: 'colour', icon: '●', sub: colours },
+      { label: 'undo', icon: '↶', run: () => this.undo() },
+      { label: 'redo', icon: '↷', run: () => this.redo() },
+    ];
+    let items: RadialItem[], title: string;
+    if (sel.length) {
+      const one = sel.length === 1 ? sel[0] : null;
+      title = sel.length === 1 ? 'this' : `these ${sel.length}`;
+      items = [
+        ...(one && labelled(one) ? [{ label: one.k === 'plot' ? 'what to plot' : one.k === 'text' ? 'edit text' : 'label', icon: 'Aa', run: () => sk.editLabel(one.id) }] : []),
+        { label: 'duplicate', icon: '⧉', run: () => void sk.key('C-d') },
+        { label: 'to front', icon: '⤒', run: () => sk.restack(1) },
+        { label: 'to back', icon: '⤓', run: () => sk.restack(-1) },
+        { label: 'dashed', icon: '┄', on: sel.every((s) => s.dash), run: () => sk.restyle({ dash: !sel.every((s) => s.dash) }) },
+        { label: 'delete', icon: '✕', run: () => sk.removeSelected() },
+        ...common,
+      ];
+    } else {
+      title = sk.active ? 'tools' : 'draw';
+      const tool = (t: Tool, label: string, icon: string): RadialItem => ({
+        label, icon, on: sk.active && sk.tool === t,
+        run: () => {
+          if (!sk.active) sk.enter(this.radialCanvas ? { kind: 'block', id: this.radialCanvas } : { kind: 'free' }, { tool: t });
+          else (sk.tool = t), (sk.sel = []);
+        },
+      });
+      items = [
+        tool('pen', 'pen', '✎'),
+        tool('marker', 'highlighter', '▬'),
+        tool('eraser', 'eraser', '⌫'),
+        tool('select', 'lasso', '◌'),
+        tool('arrow', 'arrow', '↗'),
+        tool('rect', 'box', '▭'),
+        tool('text', 'text', 'T'),
+        tool('plot', 'graph', '∿'),
+        ...common,
+        ...(sk.active ? [{ label: 'done', icon: '✓', run: () => sk.exit() }] : []),
+      ];
+    }
+    this.radial = { x, y, title, items, ...(pointer !== undefined ? { pointer } : {}) };
+  }
+
+  closeRadial() {
+    this.radial = null;
+  }
+
+  /** An item of the ring chosen: done (a ring of its own, for colours, opens in its place). */
+  pickRadial(it: RadialItem) {
+    const r = this.radial;
+    if (it.sub && r) {
+      this.radial = { ...r, title: it.label, items: it.sub(), pointer: undefined };
+      return;
+    }
+    this.radial = null;
+    it.run?.();
+    this.touch();
+  }
   /** Where the palette opens when it isn't at the caret (the toolbar's draw button); page coordinates. */
   private paletteAt = $state.raw<Rect | null>(null);
   dirty = $state(false);
@@ -6101,6 +6187,14 @@ export class Editor {
     e.preventDefault();
     // (the pen's side button selects: not a right-click)
     if (this.sketch.barrelClick()) return;
+    // a finger or pen held down (a long press is a right-click to the browser): the ring there
+    const type = (e as PointerEvent).pointerType ?? '';
+    if (type === 'touch' || type === 'pen' || (this.pointer !== 'mouse' && !e.button && !type)) {
+      this.sketch.cancelGesture();
+      this.openRadial(e.clientX, e.clientY);
+      this.touch();
+      return;
+    }
     // drawing, or on a diagram: what can be done to the shape there (or what can be drawn)
     const svg = (e.target as Element | null)?.closest?.('svg.canvas');
     const canvas = svg ? ((svg.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null) : null;

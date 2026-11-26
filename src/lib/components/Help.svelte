@@ -64,6 +64,10 @@
       ['ctrl+d  del', 'copy, delete'], [']  [', 'to the front / back'], ['ctrl+a', 'select all'], ['right-click', 'what can be done there'], ['esc', 'deselect, then back to the text'],
       ['pen', 'draws on the note any time (pressure: width; its eraser end erases); typing goes back'],
       ['finger', 'draws, until a pen has been used: then it scrolls, and a palm does nothing'],
+      ['pen’s side button', 'drag: a lasso round what to select (on a shape: moves it); tap: the ring menu there'],
+      ['finger held still, a long press', 'the ring menu: the tools, colours, undo; on a selection, what can be done to it'],
+      ['two / three fingers tapped', 'undo / redo'],
+      ['⋯ beside a selection', '(with a pen or finger) what can be done to it'],
     ]],
   ];
 </script>

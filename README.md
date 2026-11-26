@@ -36,6 +36,10 @@ and draw arrows and boxes *between parts of equations*.
   a finger draws too, until a pen has been used, then it scrolls and a resting palm does
   nothing. Diagrams export to LaTeX as TikZ.
 - **Graphs.** `\graph` plots what you type: `y = sin x`, a line each, `x: -pi..pi` for the range.
+- **On a tablet, from where the pen is.** Tap the pen's side button (or hold a finger still, or
+  long-press) for a ring of tools, colours and undo round the pen; on a selection, the ring
+  has what can be done to it. The side button dragged is a lasso. Two fingers tapped undo,
+  three redo; pinch to zoom.
 - **Zoom.** Ctrl+wheel, a pinch on a trackpad or touch screen, or Ctrl+= / Ctrl+- / Ctrl+0: the
   text, images, diagrams and what's drawn on the page grow together.
 - **Images.** Paste or drop them in; they're kept inside the note.

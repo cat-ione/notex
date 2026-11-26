@@ -22,6 +22,7 @@
   import NoteInk from './NoteInk.svelte';
   import SketchBar from './SketchBar.svelte';
   import LabelEditor from './LabelEditor.svelte';
+  import RadialMenu from './RadialMenu.svelte';
   import { isDesktop, setWindowTitle } from '$lib/files';
   import { base } from '$app/paths';
   import { BOX_NAME, isFigure, type Block, type Item } from '$lib/model';
@@ -41,6 +42,28 @@
       else out.push([ch, hit.has(i)]);
     });
     return out;
+  }
+
+  // Fingers tapped together, as in drawing apps: two undo, three redo (quick, and not moved:
+  // a pinch or a scroll isn't a tap).
+  const taps = new Map<number, { x: number; y: number }>();
+  let tapMost = 0, tapFrom = 0, tapMoved = false;
+  function fingerTaps(e: PointerEvent) {
+    if (e.pointerType !== 'touch') return;
+    if (e.type === 'pointerdown') {
+      if (!taps.size) (tapMost = 0), (tapFrom = e.timeStamp), (tapMoved = false);
+      taps.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      tapMost = Math.max(tapMost, taps.size);
+    } else if (e.type === 'pointermove') {
+      const t = taps.get(e.pointerId);
+      if (t && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 14) tapMoved = true;
+    } else if (taps.delete(e.pointerId) && !taps.size) {
+      if (e.type === 'pointerup' && tapMost >= 2 && !tapMoved && e.timeStamp - tapFrom < 400 && !ed.radial) {
+        if (tapMost === 2) ed.undo();
+        else ed.redo();
+        ed.touch();
+      }
+    }
   }
 
   // The palette lists every command; the highlighted one is kept in view as the arrows move it.
@@ -87,9 +110,16 @@
         if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) ed.input = 'keys';
         ed.key(e);
       }),
-      on('pointerdown', () => (ed.input = 'mouse')),
+      on('pointerdown', (e) => {
+        ed.input = 'mouse';
+        ed.pointer = e.pointerType === 'pen' || e.pointerType === 'touch' ? e.pointerType : 'mouse';
+        fingerTaps(e);
+      }),
+      on('pointerup', fingerTaps),
+      on('pointercancel', fingerTaps),
       // drawing: the pointer's way across the page, and a pen hovering near it
       on('pointermove', (e) => {
+        if (e.pointerType === 'touch') fingerTaps(e);
         if (e.pointerType === 'pen' && !e.buttons) ed.sketch.penHover(e, true);
         ed.sketch.pointerMove(e);
       }),
@@ -244,6 +274,8 @@
    */
   function pointerDown(e: PointerEvent) {
     const t = e.target as Element;
+    // (what it was made with: drawing may stop it before the window hears of it)
+    ed.pointer = e.pointerType === 'pen' || e.pointerType === 'touch' ? e.pointerType : 'mouse';
     // while drawing, a press outside an open menu just closes it
     if (ed.menu && ed.sketch.active && e.button !== 2) {
       e.preventDefault();
@@ -258,7 +290,7 @@
       ed.sketch.resizeDown(e, grip.dataset.dgrip!);
       return;
     }
-    if (t.closest?.('.dbar, .lbl-edit, .palette')) return;
+    if (t.closest?.('.dbar, .lbl-edit, .palette, .selmore')) return;
     const svg = t.closest?.('svg.canvas');
     const canvas = svg ? ((svg.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null) : null;
     if (ed.sketch.pointerDown(e, canvas)) {
@@ -360,7 +392,7 @@
       <!-- (its own coordinates, scaled down to fit a narrower page; a drawing on it is on the diagram) -->
       <svg class="canvas" class:tool-select={on && ed.sketch.tool === 'select'} viewBox="0 0 {blk.w ?? 720} {blk.h ?? 280}" style:width="min(100%, calc({blk.w ?? 720}px * var(--zoom, 1)))" data-nx={blk.id} role="img" aria-label="diagram">
         {#if on}
-          <SketchShapes shapes={blk.shapes ?? []} sel={ed.sketch.sel} draft={ed.sketch.draft} marquee={ed.sketch.marquee} lasso={ed.sketch.lasso} handles={ed.sketch.handles()} selBox={ed.sketch.selBox} editing={ed.sketch.editing} />
+          <SketchShapes shapes={blk.shapes ?? []} sel={ed.sketch.sel} draft={ed.sketch.draft} marquee={ed.sketch.marquee} lasso={ed.sketch.lasso} handles={ed.sketch.handles()} selBox={ed.sketch.selBox} editing={ed.sketch.editing} big={ed.pointer !== 'mouse'} />
         {:else}
           <SketchShapes shapes={blk.shapes ?? []} />
         {/if}
@@ -373,6 +405,9 @@
 <div class="shell">
   <DrawingMenu {ed} />
   <FindBar {ed} />
+  {#if ed.radial}
+    <RadialMenu {ed} />
+  {/if}
   {#if ed.showOutline}
     <Outline {ed} />
   {/if}
@@ -445,6 +480,21 @@
       <LabelLayer {ed} />
       <DrawingBar {ed} />
       <NoteInk {ed} />
+      {#if ed.sketch.active && ed.pointer !== 'mouse' && ed.sketch.sel.length && ed.sketch.selBox && !ed.sketch.editing && !ed.radial}
+        <!-- a pen's or finger's way to what can be done to the selection: the ring, from beside it -->
+        {@const b = ed.sketch.pageBox(ed.sketch.selBox)}
+        <button
+          class="selmore"
+          style="left: {b.x + b.w + 6}px; top: {b.y - 34}px"
+          aria-label="what to do with it"
+          onpointerdown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            ed.openRadial(r.left + r.width / 2, r.top + r.height / 2);
+            ed.touch();
+          }}>⋯</button>
+      {/if}
       {#if ed.sketch.editing}
         <!-- (one per shape: going on to the next box is a new editor) -->
         {#key ed.sketch.editing}
@@ -800,6 +850,23 @@
   /* what a folded heading hides */
   .block.folded {
     display: none;
+  }
+  /* beside a selection, for a pen or finger: the ring of what can be done to it */
+  .selmore {
+    position: absolute;
+    z-index: 8;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--accent);
+    background: var(--panel);
+    color: var(--accent);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: none;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
   }
   /* the text selection, drawn behind the text (see Editor.selectionRects) */
   .selrect {
