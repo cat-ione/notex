@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { docToLatex } from './export';
 import { structureTables } from './tables';
 import { block, chars, cmd, math, sym, type Doc, type Mark } from './model';
+import { boxShape, inkShape, lineShape } from './sketch/shapes';
 
 const mark = (kind: Mark['kind'], at: string[], extra: Partial<Mark> = {}): Mark => ({ id: 'k' + kind, kind, at, dash: false, label: '', ...extra });
 
@@ -128,5 +129,43 @@ describe('tables', () => {
   it('lines starting with | but no separator are not a table', () => {
     const tex = docToLatex({ blocks: [P('|x| is small')], arrows: [], marks: [] });
     expect(tex).not.toContain('tabular');
+  });
+});
+
+describe('diagrams', () => {
+  const diagram = () => {
+    const a = boxShape('rect', { x: 0, y: 0, w: 100, h: 50 }, { label: 'start $x^2$' });
+    const b = boxShape('ellipse', { x: 300, y: 0, w: 100, h: 50 }, { color: 'red', fill: true });
+    const l = lineShape({ x: 0, y: 0, to: a.id }, { x: 0, y: 0, to: b.id }, 'end', { dash: true });
+    const d = boxShape('diamond', { x: 0, y: 100, w: 80, h: 80 });
+    const t = boxShape('text', { x: 200, y: 150, w: 60, h: 20 }, { label: 'note & more' });
+    const ink = inkShape([0, 200, 0.5, 10, 210, 0.5, 20, 200, 0.5], true);
+    return Object.assign(block(chars('Fig'), 'diagram'), { w: 600, h: 300, shapes: [a, b, l, d, t, ink] });
+  };
+
+  it('become a tikzpicture as wide as the text, in a figure with its caption', () => {
+    const tex = docToLatex({ blocks: [diagram()], arrows: [], marks: [] });
+    expect(tex).toContain(String.raw`\begin{figure}[h]`);
+    expect(tex).toContain(String.raw`\begin{tikzpicture}[x=0.001667\linewidth, y=-0.001667\linewidth]`);
+    expect(tex).toContain(String.raw`\usepackage{tikz}`);
+    expect(tex).toContain(String.raw`\caption*{Fig}`);
+    expect(tex).toContain(String.raw`\end{tikzpicture}`);
+  });
+
+  it('every kind of shape, with its label, colour, fill and dashes', () => {
+    const tex = docToLatex({ blocks: [diagram()], arrows: [], marks: [] });
+    expect(tex).toContain(String.raw`\draw[semithick, rounded corners=1pt] (0,0) rectangle (100,50);`);
+    expect(tex).toContain(String.raw`\node[align=center] at (50,25) {start $x^{2}$};`);
+    expect(tex).toContain(String.raw`\draw[semithick, red!80!black, fill=red!80!black!12] (350,25) ellipse [x radius=50, y radius=25];`);
+    expect(tex).toContain(String.raw`\draw[semithick, dashed, ->] (103,25) -- (297,25);`);
+    expect(tex).toContain(String.raw`\draw[semithick] (40,100) -- (80,140) -- (40,180) -- (0,140) -- cycle;`);
+    expect(tex).toContain(String.raw`{note \& more}`);
+    expect(tex).toMatch(/plot\[smooth, tension=0.4\] coordinates \{\(0,200\)/);
+  });
+
+  it('what is drawn on the note is said not to be exported', () => {
+    const p = block(chars('text'));
+    const tex = docToLatex({ blocks: [p], arrows: [], marks: [], ink: [{ ...inkShape([0, 0, 0.5, 5, 5, 0.5], false), at: p.id }] });
+    expect(tex).toContain('% 1 drawing(s) on the note itself are not exported');
   });
 });

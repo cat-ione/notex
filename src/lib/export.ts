@@ -10,6 +10,7 @@ import { cellSpans, findTables } from './tables';
 import { toLatex, toLatexWrapped, type Wraps } from './math/latex';
 import { CMDS } from './math/defs';
 import { noteRuns, noteTex } from './labels';
+import { diagramTikz } from './sketch/tikz';
 
 const ESC: Record<string, string> = {
   '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '#': '\\#', $: '\\$', '%': '\\%', '&': '\\&',
@@ -252,6 +253,16 @@ export function docToLatex(doc: Doc): string {
       out.push('\\end{figure}\n');
       return;
     }
+    // a diagram: its shapes in a tikzpicture, as wide as the text
+    if (blk.kind === 'diagram') {
+      need.add('tikz');
+      if (blk.shapes?.some((x) => x.color)) need.add('xcolor');
+      const caption = inline(blk.items, b);
+      out.push('\\begin{figure}[h]', '  \\centering', ...diagramTikz(blk.shapes ?? [], blk.w ?? 720, (c) => INK_TEX[c] ?? c, escText).map((l) => '  ' + l));
+      if (caption) out.push(`  \\caption*{${caption}}`);
+      out.push('\\end{figure}\n');
+      return;
+    }
     // a code block: its lines as they are (its fences are what verbatim says)
     if (blk.kind === 'fence') return;
     if (blk.kind === 'code') {
@@ -285,6 +296,7 @@ export function docToLatex(doc: Doc): string {
   if (need.size) head.push('% preamble:', ...[...need].map((p) => `%   ${PKG[p]}`));
   if (names.size) head.push('% (drawings use tikzmark: compile twice)');
   if (images) head.push(`% ${images} image(s): save them from the note as image1, image2, …`);
+  if (doc.ink?.length) head.push(`% ${doc.ink.length} drawing(s) on the note itself are not exported (diagrams are)`);
   if (skipped) head.push(`% ${skipped} drawing(s) could not be exported (they span several paragraphs or overlap other drawings)`);
   return [...head, ...(head.length ? [''] : []), ...out].join('\n');
 }
