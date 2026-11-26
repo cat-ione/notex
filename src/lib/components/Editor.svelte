@@ -3,6 +3,7 @@
   import { fly, scale, fade } from 'svelte/transition';
   import { cubicOut, backOut } from 'svelte/easing';
   import { Editor } from '$lib/editor.svelte';
+  import { matchAt } from '$lib/match';
   import MathView from './MathView.svelte';
   import ArrowLayer from './ArrowLayer.svelte';
   import MarkLayer from './MarkLayer.svelte';
@@ -24,6 +25,18 @@
 
   const ed = new Editor();
   let page: HTMLElement;
+
+  /** A name in runs of matched and unmatched letters, for the palette to mark what was typed. */
+  function matched(name: string, q: string): [string, boolean][] {
+    const hit = new Set(matchAt(name, q) ?? []);
+    const out: [string, boolean][] = [];
+    [...name].forEach((ch, i) => {
+      const last = out.at(-1);
+      if (last && last[1] === hit.has(i)) last[0] += ch;
+      else out.push([ch, hit.has(i)]);
+    });
+    return out;
+  }
 
   // The palette lists every command; the highlighted one is kept in view as the arrows move it.
   let paletteList = $state<HTMLDivElement>();
@@ -358,7 +371,7 @@
           {#each ed.paletteItems as item, i (item.name)}
             {#if item.rule}<div class="rule"></div>{/if}
             <div class="opt" class:sel={i === ed.palette.sel} onmouseenter={() => ed.palette && (ed.palette.sel = i)} onclick={() => ed.pickPalette(i)}>
-              <span class="name">{#if item.draw && ed.palette.ctx !== 'draw'}<span class="pen">✎</span>{/if}{item.name}</span><span class="desc">{item.desc}</span>
+              <span class="name">{#if item.draw && ed.palette.ctx !== 'draw'}<span class="pen">✎</span>{/if}{#each matched(item.name, ed.palette.query) as [part, hit], k (k)}<span class:hit>{part}</span>{/each}</span><span class="desc">{item.desc}</span>
             </div>
           {:else}
             <div class="opt empty">{ed.palette.ctx === 'math' ? `insert \\${ed.palette.query}` : 'no match'}</div>
@@ -830,6 +843,11 @@
   }
   .opt.sel .name {
     color: var(--accent);
+  }
+  /* the letters typed */
+  .opt .name .hit {
+    color: var(--accent);
+    font-weight: 700;
   }
   .opt.sel .name::before {
     content: '› ';

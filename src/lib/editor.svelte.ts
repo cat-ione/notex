@@ -14,6 +14,7 @@
 import { flushSync, tick } from 'svelte';
 import { arrowGeo, attachAt, curveThrough, defaultBend, nextSide, sideName, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
+import { rank } from './match';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
@@ -5778,26 +5779,6 @@ function keyName(e: KeyboardEvent): string | null {
   if (e.altKey) mods += 'A-';
   if (e.shiftKey) mods += 'S-';
   return mods + (base.length === 1 ? base.toLowerCase() : base);
-}
-
-function rank(names: string[], q: string): string[] {
-  if (!q) return names;
-  const scored: { n: string; s: number }[] = [];
-  for (const n of names) {
-    let s: number;
-    if (n === q) s = 0;
-    else if (n.startsWith(q)) s = 1 + n.length / 100;
-    else if (n.toLowerCase().includes(q.toLowerCase())) s = 3 + n.length / 100;
-    else {
-      // subsequence
-      let i = 0;
-      for (const c of n) if (c === q[i]) i++;
-      if (i < q.length) continue;
-      s = 5 + n.length / 100;
-    }
-    scored.push({ n, s });
-  }
-  return scored.sort((a, b) => a.s - b.s).map((x) => x.n);
 }
 
 function describeInserter(name: string): string {

@@ -277,3 +277,11 @@ test('in math, every math command is there to scroll to', async ({ page }) => {
   for (let i = 0; i < 60; i++) await page.keyboard.press('ArrowDown');
   expect(await selInView(page)).toBe(true);
 });
+
+test('typing narrows the list as an autocomplete does, the letters typed marked', async ({ page }) => {
+  await type(page, '\\in');
+  expect(await names(page)).toEqual(['inlinecode']);
+  expect(await page.locator('.palette .opt .hit').allInnerTexts()).toEqual(['in']);
+  await type(page, 'c');
+  expect(await page.locator('.palette .opt .hit').allInnerTexts()).toEqual(['in', 'c']);
+});
