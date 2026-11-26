@@ -4,7 +4,7 @@ import type { MRow } from '../model';
 import * as M from './edit';
 import { toLatex, type MCursor } from './latex';
 import { cmd } from '../model';
-import { SUB_GROUPS } from './defs';
+import { MATH_PALETTE, SUB_GROUPS } from './defs';
 
 const allSubs = Object.fromEntries(SUB_GROUPS.map((g) => [g.id, true]));
 // most tests type names (alpha, sum, sqrt…): every substitution group on
@@ -89,6 +89,12 @@ describe('LaTeX-style scripts', () => {
     ['sum_(n=1)^oo a_n', '\\sum _{n=1}^{\\infty }a_{n}'],
     ['lim_(x->0)', '\\lim _{x\\to 0}'],
     ['int f', '\\int f'],
+    // or filled in as boxes: space goes from the lower limit to the upper one, then on
+    ['int0 1 f', '\\int _{0}^{1}f'],
+    ['int0^1 f', '\\int _{0}^{1}f'],
+    ['sumn=1 oo a_n', '\\sum _{n=1}^{\\infty }a_{n}'],
+    ['limx->0 f', '\\lim _{x\\to 0}f'],
+    ['prodk=1 n k', '\\prod _{k=1}^{n}k'],
     // spaces inside brackets don't leave them
     ['(a + b)/2', '\\frac{a+b}{2}'],
     ['(a_n^2 + b_n^2)', '\\left(a_{n}^{2}+b_{n}^{2}\\right)'],
@@ -110,6 +116,24 @@ describe('LaTeX-style scripts', () => {
     M.typeChar(root, cur, '^');
     M.typeChar(root, cur, '1');
     expect(toLatex(root).replace(/\s+/g, '')).toBe('{}_{0}^{1}');
+  });
+
+  it('\\int comes with empty limits, \\intop bare (limits from _ and ^)', () => {
+    for (const [name, keys, tex] of [
+      ['int', '0 1 f', '\\int_{0}^{1}f'],
+      ['sum', 'i=1 n a', '\\sum_{i=1}^{n}a'],
+      ['lim', 'n->oo a', '\\lim_{n\\to\\infty}a'],
+      ['intop', '_0^1 f', '\\int_{0}^{1}f'],
+      ['sumop', ' a', '\\sum a'],
+      ['prodop', '_k', '\\prod_{k}'],
+      ['limop', '_(n->oo)', '\\lim_{n\\to\\infty}'],
+    ]) {
+      const root: MRow = [];
+      const cur: MCursor = { path: [], off: 0 };
+      M.applyInserter(root, cur, MATH_PALETTE[name]);
+      for (const k of keys) k === ' ' ? M.space(root, cur) : M.typeChar(root, cur, k);
+      expect(toLatex(root).replace(/\s+/g, ' ').replace(/ ?([_^{}]) ?/g, '$1').replace(/(\\[a-z]+) (?=\\)/g, '$1').trim(), name).toBe(tex);
+    }
   });
 });
 

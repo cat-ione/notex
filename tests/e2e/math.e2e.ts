@@ -37,6 +37,18 @@ test('sums and integrals with limits', async ({ page }) => {
   expect(sum).toContain('\\frac{1}{n^{2}}');
 });
 
+test('\\int comes with empty limits to fill (space: lower, upper, on); \\intop is bare', async ({ page }) => {
+  await formula(page, '\\int 0 1 f(x) dx');
+  await type(page, ' and ');
+  await formula(page, '\\sum n=1 \\infty  a_n');
+  await type(page, ' and ');
+  await formula(page, '\\intop f');
+  const [int, sum, bare] = (await formulas(page)).map((f) => f.replace(/\s/g, ''));
+  expect(int).toMatch(/^\\int_\{0\}\^\{1\}f/);
+  expect(sum).toMatch(/^\\sum_\{n=1\}\^\{\\infty\}a_\{n\}/);
+  expect(bare).toBe('\\intf');
+});
+
 test('greek letters by name', async ({ page }) => {
   await formula(page, '\\alpha +\\beta ');
   expect((await formulas(page))[0].replace(/\s/g, '')).toBe('\\alpha+\\beta');

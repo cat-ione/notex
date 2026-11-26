@@ -29,7 +29,7 @@ import { cellSpans, emptyRow, findTables, isSeparator, isWall, markdownCells, ro
 import * as C from './config';
 import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
 import * as M from './math/edit';
-import { BARE_OPS, BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from './math/defs';
+import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from './math/defs';
 import { parseLatex } from './math/parse';
 import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { Sketcher } from './sketch/sketcher.svelte';
@@ -3984,8 +3984,6 @@ export class Editor {
       M.settleAuto(item.root, this.mc, '\\');
       this.learned('sub-names');
       if (key && user[key] !== undefined) M.insertParsed(item.root, this.mc, parseLatex(user[key]));
-      // a big operator as typing makes one: limits from _ / ^ (LaTeX-style scripts), or empty ones to fill
-      else if (key && this.config.typing.latexScripts && BARE_OPS[key]) M.insertNode(item.root, this.mc, sym(BARE_OPS[key]));
       else if (key && MATH_PALETTE[key]) M.applyInserter(item.root, this.mc, MATH_PALETTE[key]);
       else if (q) M.insertNode(item.root, this.mc, sym('\\' + q));
       return;

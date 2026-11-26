@@ -6,7 +6,7 @@
 // returning false at the root boundary lets the caller exit the math item.
 
 import { cmd, sym, type MCmd, type MNode, type MRow } from '../model';
-import { CMDS, MATH_PALETTE, OPENERS, SUB_DEFAULTS, SUB_GROUPS, TAKES_ARG, type Inserter } from './defs';
+import { BIG_OPS, CMDS, MATH_PALETTE, OPENERS, SUB_DEFAULTS, SUB_GROUPS, TAKES_ARG, type Inserter } from './defs';
 import type { MCursor, Step } from './latex';
 import { caretFor, parseLatex, type Parsed } from './parse';
 
@@ -376,6 +376,12 @@ export function script(root: MRow, cur: MCursor, kind: 'sup' | 'sub') {
     return;
   }
   if (here && !r.length && here.node.name === kind) return;
+  // in a big operator's lower limit, `^` goes to the upper one while it's empty (∫_0^1), and back
+  if (here && here.node.name === 'subsup' && bigOpLimits(here) && here.step.s === (kind === 'sup' ? 0 : 1) && !here.node.slots[kind === 'sup' ? 1 : 0].length) {
+    cur.path[cur.path.length - 1] = { ...here.step, s: kind === 'sub' ? 0 : 1 };
+    cur.off = 0;
+    return;
+  }
   // `x_1^2`: at the end of a subscript, `^` adds a superscript to the same base (and vice versa).
   const p = parentOf(root, cur);
   const other = kind === 'sup' ? 'sub' : 'sup';
@@ -414,7 +420,7 @@ export function setLatexScripts(on: boolean) {
   buildSubs();
 }
 
-/** The substitutions on now: the groups switched on (big operators as LaTeX-style scripts want them). */
+/** The substitutions on now: the groups switched on (big operators with empty limits to fill). */
 let subs: Record<string, string | Inserter | { template: string }> = {};
 let groupsOn: Record<string, boolean> = { ...SUB_DEFAULTS };
 function buildSubs() {
@@ -422,7 +428,7 @@ function buildSubs() {
   for (const g of SUB_GROUPS)
     if (groupsOn[g.id])
       for (const [k, v] of Object.entries(g.subs))
-        subs[k] = g.id === 'operators' && !latexScripts ? MATH_PALETTE[k] : g.template ? { template: v as string } : v;
+        subs[k] = g.id === 'operators' ? MATH_PALETTE[k] : g.template ? { template: v as string } : v;
 }
 buildSubs();
 export function setSubstitutions(on: Record<string, boolean>) {
@@ -513,10 +519,22 @@ export function space(root: MRow, cur: MCursor): boolean {
   // (an empty limit or script is: that's how one is skipped)
   if (p && !r.length && !def(p.node)?.script) return true;
   if (!p) return stay(), false;
+  // a big operator's lower limit filled in: on to the upper one (∫ 0 ␣ 1 ␣ f; empty: past both, ∫ ␣ f)
+  if (r.length && p.node.name === 'subsup' && p.step.s === 0 && bigOpLimits(p)) {
+    cur.path[cur.path.length - 1] = { ...p.step, s: 1 };
+    cur.off = rowAt(root, cur.path).length;
+    return true;
+  }
   // after a name that takes what follows (1/sin x, del f / del x): between words
   const prev = r[cur.off - 1];
   if (!def(p.node)?.script && takesArg(prev)) return stay();
   return exitAfter(root, cur);
+}
+
+/** Is this script the limits of a big operator (∑, ∫, lim)? */
+function bigOpLimits(p: { row: MRow; step: Step }): boolean {
+  const base = p.row[p.step.i - 1];
+  return base?.k === 'sym' && BIG_OPS.has(base.v);
 }
 
 /** Structures whose empty box takes `(…)` as a group, brackets not shown: sqrt(x+1), 1/(2pi). */

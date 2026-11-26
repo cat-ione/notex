@@ -157,6 +157,11 @@ export const MATH_PALETTE: Record<string, Inserter> = {
   int: withScript('\\int', 'subsup'),
   oint: withScript('\\oint', 'subsup'),
   lim: withScript('\\lim', 'sub'),
+  // (the bare symbols: limits from _ / ^, as typed in LaTeX; \intop is TeX's own)
+  sumop: s('\\sum'),
+  prodop: s('\\prod'),
+  intop: s('\\int'),
+  limop: s('\\lim'),
   bigcup: withScript('\\bigcup', 'subsup'),
   bigcap: withScript('\\bigcap', 'subsup'),
   R: { node: () => cmd('mathbb', [[sym('R')]]) },
@@ -264,8 +269,7 @@ export const SUB_GROUPS: SubGroup[] = [
       ...names('sgn rank span', (n) => `\\operatorname{${n}}`),
     },
   },
-  // (as the bare symbol with LaTeX-style scripts, with empty limits otherwise: see edit.ts)
-  { id: 'operators', label: 'big operators', desc: 'sum, int, prod and lim become ∑ ∫ ∏ lim. Add limits with _ and ^, as in sum_(n=1)^10. When off, type \\sum.', example: 'sum  int  prod  lim', on: false, subs: names('sum prod int lim') },
+  { id: 'operators', label: 'big operators', desc: 'sum, int, prod and lim become ∑ ∫ ∏ lim with empty limits to fill (space or ^ goes from the lower to the upper one). When off, type \\sum.', example: 'sum  int  prod  lim', on: false, subs: names('sum prod int lim') },
   {
     id: 'structures',
     label: 'roots & accents',
@@ -320,8 +324,6 @@ for (const g of SUB_GROUPS)
 /** Names that take what follows (sin x, del f): a space after one separates words, not a box's end. */
 export const TAKES_ARG = new Set('sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh log ln exp det dim ker deg arg gcd max min sup inf Pr sgn rank span del grad nabla partial neg'.split(' '));
 
-/** Big operators that, with LaTeX-style scripts, become the bare symbol (limits come from `_` / `^`). */
-export const BARE_OPS: Record<string, string> = { sum: '\\sum', prod: '\\prod', int: '\\int', lim: '\\lim' };
 
 /** `;` + letter → greek (cdlatex-style). */
 export const GREEK_LEADER: Record<string, string> = {

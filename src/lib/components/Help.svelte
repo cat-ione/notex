@@ -16,7 +16,8 @@
     ['math', [
       ['/', 'fraction'], ['^  _', 'superscript / subscript: x^2, x^10, e^-x'], ['^(…)  _(…)', 'longer scripts: e^(-x^2/2), \\int_0^(2\\pi)'],
       ['( [ {', 'brackets'], ['"', 'text inside math'], ['\\alpha  ;a', 'greek letters'],
-      ['\\name', 'LaTeX command: \\sqrt, \\in, \\sin, \\int_0^1'], ['-> => <= != +-', '→ ⇒ ≤ ≠ ±'],
+      ['\\name', 'LaTeX command: \\sqrt, \\in, \\sin, \\int_0^1'],
+      ['\\int  \\sum  \\lim', 'with empty limits: space goes from the lower to the upper one, then on (\\intop, \\sumop…: bare)'], ['-> => <= != +-', '→ ⇒ ≤ ≠ ±'],
       ['space / tab', 'exit box / next box'],
       ['ctrl+← →', 'move by word (shift: select)'], ['& enter', 'matrix: new column / row'], ['shift+← → / ctrl+a', 'select'], ['/  (  \\cmd', 'wrap the selection'], ['$  →  esc', 'exit math'],
     ]],
