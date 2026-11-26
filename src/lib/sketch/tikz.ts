@@ -24,6 +24,10 @@ export function diagramTikz(shapes: Shape[], w: number, color: (c: string) => st
       case 'ink': {
         // (fewer points: TikZ smooths between them)
         const ps = inkPoints({ ...s, pts: simplify(s.pts, 1.2) });
+        if (s.hl) {
+          out.push(`  \\draw[line width=6pt, line cap=round, opacity=0.35, ${s.color ? color(s.color) : 'yellow'}] plot[smooth, tension=0.4] coordinates {${ps.map((p) => pt(p.x, p.y)).join(' ')}};`);
+          break;
+        }
         if (ps.length === 1) out.push(`  \\fill${s.color ? `[${color(s.color)}]` : ''} ${pt(ps[0].x, ps[0].y)} circle[radius=1pt];`);
         else out.push(`  \\draw${opt(['line cap=round', 'line join=round'])} plot[smooth, tension=0.4] coordinates {${ps.map((p) => pt(p.x, p.y)).join(' ')}};`);
         break;

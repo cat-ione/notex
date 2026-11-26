@@ -28,7 +28,7 @@
     f();
     ed.touch();
   };
-  const NAMES: Record<Tool, string> = { select: 'select', pen: 'pen', line: 'line', arrow: 'arrow', rect: 'box', ellipse: 'ellipse', diamond: 'diamond', text: 'text', eraser: 'eraser' };
+  const NAMES: Record<Tool, string> = { select: 'select', pen: 'pen', marker: 'highlighter', line: 'line', arrow: 'arrow', rect: 'box', ellipse: 'ellipse', diamond: 'diamond', text: 'text', eraser: 'eraser' };
   const where = $derived(sk.on?.kind === 'block' ? 'diagram' : 'on the note');
   const fingers = $derived(ed.config.sketch.touch);
 </script>
@@ -37,6 +37,7 @@
   <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
     {#if t === 'select'}<path d="M4,2 L4,13 L7,10 L9.5,14.5 L11,13.7 L8.6,9.3 L12.5,9 Z" />
     {:else if t === 'pen'}<path d="M2.5,13.5 C5,9 7,12 9,8 S12,4 13.5,2.5" />
+    {:else if t === 'marker'}<path class="fill" d="M3,13 L5,9 L11,3 L13,5 L7,11 Z" /><line x1="2" y1="14.5" x2="9" y2="14.5" />
     {:else if t === 'line'}<line x1="2.5" y1="13.5" x2="13.5" y2="2.5" />
     {:else if t === 'arrow'}<line x1="2.5" y1="13.5" x2="13" y2="3" /><path d="M7.5,3 L13,3 L13,8.5" />
     {:else if t === 'rect'}<rect x="2" y="4" width="12" height="8" rx="1.5" />

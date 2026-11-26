@@ -649,3 +649,62 @@ test('] and [ bring the selection to the front and send it to the back', async (
   await page.keyboard.press(']');
   expect((await shapes(page)).map((s) => s.id)).toEqual([a.id, b.id]);
 });
+
+// ── the pen's extras ──
+
+/** A pen along points, held still at the end for a moment before it lifts. */
+async function held(page: Page, pts: P[], ms = 800) {
+  await stroke(page, 'pen', pts, { up: false });
+  await page.waitForTimeout(ms);
+  const [x, y] = pts[pts.length - 1];
+  await page.evaluate(([x, y]) => document.elementFromPoint(x, y)!.dispatchEvent(new PointerEvent('pointerup', { pointerType: 'pen', pointerId: 7, clientX: x, clientY: y, bubbles: true })), [x, y]);
+}
+const circle = (cx: number, cy: number, rx: number, ry: number, n = 40): P[] =>
+  Array.from({ length: n + 1 }, (_, i) => [cx + rx * Math.cos((i / n) * 2 * Math.PI) + Math.sin(i * 5) * 1.5, cy + ry * Math.sin((i / n) * 2 * Math.PI), 0.5]);
+
+test('a rough circle held still at its end becomes an ellipse; lifted at once, it stays a stroke', async ({ page }) => {
+  const c = await diagram(page);
+  await page.keyboard.press('p');
+  await held(page, circle(c.x + 200, c.y + 120, 70, 40));
+  let list = await shapes(page);
+  expect(list.map((s) => s.k)).toEqual(['ellipse']);
+  expect(list[0].w).toBeGreaterThan(120);
+  await stroke(page, 'pen', circle(c.x + 450, c.y + 120, 60, 40));
+  list = await shapes(page);
+  expect(list.map((s) => s.k)).toEqual(['ellipse', 'ink']);
+});
+
+test('a rough line held still becomes a line; between two boxes it joins them', async ({ page }) => {
+  const c = await diagram(page);
+  await page.mouse.click(...c.at(100, 60));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('r');
+  await page.mouse.click(...c.at(420, 60));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('p');
+  await held(page, line(c.x + 110, c.y + 62, c.x + 410, c.y + 58, 20));
+  const list = await shapes(page);
+  const ln = list.find((s) => s.k === 'line');
+  expect([ln.a.to, ln.b.to]).toEqual([list[0].id, list[1].id]);
+});
+
+test('on the note too: a box drawn by pen and held', async ({ page }) => {
+  await type(page, 'notes');
+  const t = (await page.locator('.block').first().boundingBox())!;
+  const x = t.x + 40, y = t.y + 60;
+  const sq: P[] = [...line(x, y, x + 120, y, 10), ...line(x + 120, y, x + 120, y + 70, 6).slice(1), ...line(x + 120, y + 70, x, y + 70, 10).slice(1), ...line(x, y + 70, x, y + 2, 6).slice(1)];
+  await held(page, sq);
+  expect((await ink(page)).map((s) => s.k)).toEqual(['rect']);
+});
+
+test('the highlighter: wide, see-through strokes', async ({ page }) => {
+  await type(page, 'highlight these words');
+  await page.keyboard.press('Control+Shift+d');
+  await page.keyboard.press('h');
+  const t = (await page.locator('.block').first().boundingBox())!;
+  await drag(page, [t.x + 5, t.y + t.height / 2], [t.x + 150, t.y + t.height / 2]);
+  const [s] = await ink(page);
+  expect(s).toMatchObject({ k: 'ink', hl: true });
+  await expect(page.locator('.note-ink path.hl')).toHaveCount(1);
+  expect(Number(await page.locator('.note-ink path.hl').getAttribute('stroke-width'))).toBeGreaterThan(10);
+});

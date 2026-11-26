@@ -5,7 +5,7 @@
   import type { Id } from '$lib/model';
   import { renderLabel } from '$lib/labels';
   import {
-    diamondPath, inkPoints, isBox, lineEnds, lineLabelBox, lookupIn, penOutline, smoothPath, strokePx,
+    diamondPath, HL_PX, inkPoints, isBox, lineEnds, lineLabelBox, lookupIn, penOutline, smoothPath, strokePx,
     type Box, type Pt, type Shape,
   } from '$lib/sketch/shapes';
 
@@ -51,9 +51,11 @@
 {#snippet one(s: Shape, isDraft: boolean)}
   {@const w = strokePx(s.width)}
   {@const c = ink(s.color)}
-  <g class="shape k-{s.k}" class:sel={selected.has(s.id)} class:draft={isDraft} data-sid={s.id} style="--c: {c}">
+  <g class="shape k-{s.k}" class:sel={selected.has(s.id)} class:draft={isDraft} class:plain={!s.color} data-sid={s.id} style="--c: {c}">
     {#if s.k === 'ink'}
-      {#if s.pen}
+      {#if s.hl}
+        <path class="stroke hl" d={smoothPath(inkPoints(s))} stroke-width={HL_PX} />
+      {:else if s.pen}
         <path class="fillink" d={penOutline(s.pts, w * 1.6)} />
       {:else}
         <path class="stroke" class:dash={s.dash} d={smoothPath(inkPoints(s))} stroke-width={w} />
@@ -125,6 +127,15 @@
     stroke: var(--c);
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+  /* a highlighter: wide and see-through, the text showing under it */
+  .stroke.hl {
+    stroke-opacity: 0.32;
+    stroke-linecap: round;
+  }
+  /* (in no colour of its own: the highlighter's warm one, not the text's) */
+  .plain .stroke.hl {
+    stroke: var(--arrow);
   }
   .fillink {
     fill: var(--c);

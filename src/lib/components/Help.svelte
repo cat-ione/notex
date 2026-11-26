@@ -41,7 +41,8 @@
     ]],
     ['diagrams and the pen  (\\diagram  \\sketch)', [
       ['ctrl+shift+d', 'draw in the diagram at the caret, or on the note; again to stop'],
-      ['v p l a r o d t e', 'select, pen, line, arrow, box, ellipse, diamond, text, eraser (or 1–8, 0)'],
+      ['v p h l a r o d t e', 'select, pen, highlighter, line, arrow, box, ellipse, diamond, text, eraser'],
+      ['hold the pen still', 'at the end of a rough line, box, circle or diamond: it straightens'],
       ['drag  /  tap', 'draw the shape  /  a box of the usual size (on the grid; alt: off it)'], ['enter', 'label the selected box or arrow, or a new box'],
       ['ctrl+← → ↑ ↓', 'a box beside this one, joined by an arrow (while typing a label too)'],
       ['arrow from box to box', 'stays attached when they move'], ['$…$ in a label', 'math'],

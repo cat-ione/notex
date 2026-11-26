@@ -22,8 +22,13 @@ type Base = {
   width?: Width;
   dash?: boolean;
 };
-/** A stroke of the pen: x, y and pressure (0–1) for each point. `pen`: drawn with a pen (its width follows the pressure). */
-export type InkShape = Base & { k: 'ink'; pts: number[]; pen?: true };
+/**
+ * A stroke of the pen: x, y and pressure (0–1) for each point. `pen`: drawn with a pen (its
+ * width follows the pressure); `hl`: a highlighter's (wide, see-through).
+ */
+export type InkShape = Base & { k: 'ink'; pts: number[]; pen?: true; hl?: true };
+/** A highlighter's width. */
+export const HL_PX = 16;
 /** A line's end: where it is, and the shape it's attached to (if any). */
 export type End = Pt & { to?: Id };
 export type Head = 'none' | 'end' | 'both';
@@ -164,7 +169,7 @@ function inside(s: BoxShape, p: Pt): boolean {
  * diamond or text anywhere inside (easier to pick up than its outline alone).
  */
 export function hits(s: Shape, p: Pt, tol: number, find: Lookup = () => undefined): boolean {
-  const w = strokePx(s.width) / 2;
+  const w = s.k === 'ink' && s.hl ? HL_PX / 2 : strokePx(s.width) / 2;
   if (s.k === 'ink') return polyDist(p, inkPoints(s)) <= tol + w;
   if (s.k === 'line') {
     const [a, b] = lineEnds(s, find);

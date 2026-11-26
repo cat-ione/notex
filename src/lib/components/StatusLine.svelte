@@ -14,7 +14,7 @@
     hint: 'type a label to jump · esc cancel',
     palette: 'enter accept · ↑↓ choose · esc cancel',
     label: 'enter save · esc cancel',
-    sketch: 'v select · p pen · a arrow · r box · o ellipse · d diamond · t text · e eraser · enter new box · esc done',
+    sketch: 'v select · p pen · h highlighter · a arrow · r box · o ellipse · d diamond · t text · e eraser · enter new box · esc done',
   };
   // drawing, with something selected
   const SKETCH_SEL = 'enter label · ctrl+→ add a box joined to it · ←→↑↓ move · del delete · c colour · w width · - dashes · f fill · ] [ front / back · ctrl+d copy · esc done';

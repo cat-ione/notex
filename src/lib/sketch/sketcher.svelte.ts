@@ -9,20 +9,22 @@
 import type { DrawingAction, Editor } from '../editor.svelte';
 import { block, type Block, type Id } from '../model';
 import { INKS } from '../marks';
+import { recognize } from './recognize';
 import {
   attachTarget, boundsOf, boxOf, boxShape, centre, cloneShapes, detach, erased, inkShape, isBox, labelled, lineShape, lookupIn,
   lineEnds, moved, scaled, shapeAt, shapesIn, simplify, WIDTHS, bounds,
   type Box, type BoxKind, type BoxShape, type End, type LineShape, type Placed, type Pt, type Shape, type Width,
 } from './shapes';
 
-export type Tool = 'select' | 'pen' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'diamond' | 'text' | 'eraser';
+export type Tool = 'select' | 'pen' | 'marker' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'diamond' | 'text' | 'eraser';
 /** What's drawn on: the note itself, or a diagram block. */
 export type Target = { kind: 'free' } | { kind: 'block'; id: Id };
 
 /** The tools, their keys (as in Excalidraw: a letter, or a number) and what they do. */
 export const TOOLS: { tool: Tool; key: string; num: string; desc: string }[] = [
   { tool: 'select', key: 'v', num: '1', desc: 'select and move' },
-  { tool: 'pen', key: 'p', num: '7', desc: 'pen' },
+  { tool: 'pen', key: 'p', num: '7', desc: 'pen (hold it still at the end of a line, box, circle or diamond: it straightens)' },
+  { tool: 'marker', key: 'h', num: '9', desc: 'highlighter' },
   { tool: 'line', key: 'l', num: '6', desc: 'line' },
   { tool: 'arrow', key: 'a', num: '5', desc: 'arrow (from box to box, it stays attached)' },
   { tool: 'rect', key: 'r', num: '2', desc: 'box' },
@@ -39,12 +41,14 @@ const TOL = { mouse: 5, pen: 6, touch: 12 } as Record<string, number>;
 /** A diagram's canvas: its height when made, and its least. */
 export const DIAGRAM_H = 280;
 const MIN_H = 80;
+/** How long the pen is held still at a stroke's end for it to straighten. */
+const HOLD_MS = 550;
 /** A diagram's grid: shapes drawn and moved in it keep to it (the dots on its canvas are twice as far apart). */
 const GRID = 8;
 
 type Handle = 'nw' | 'ne' | 'sw' | 'se' | 'a' | 'b';
 type Gesture =
-  | { k: 'draw'; id: number; pen: boolean; pts: number[] }
+  | { k: 'draw'; id: number; pen: boolean; pts: number[]; hl?: boolean; snapped?: Shape; still?: ReturnType<typeof setTimeout> }
   | { k: 'shape'; id: number; from: Pt; raw: Pt; tool: Tool; attach?: Id; moved: boolean }
   | { k: 'erase'; id: number; last: Pt; hit: boolean }
   | { k: 'move'; id: number; from: Pt; orig: Shape[]; done: boolean }
@@ -397,9 +401,10 @@ export class Sketcher {
     if (tool === 'eraser') {
       this.g = { k: 'erase', id, last: p, hit: false };
       this.eraseTo(p, type);
-    } else if (tool === 'pen') {
-      this.g = { k: 'draw', id, pen: type === 'pen', pts: [p.x, p.y, this.pressure(e)] };
-      this.draft = inkShape(this.g.pts.slice(), type === 'pen', this.style());
+    } else if (tool === 'pen' || tool === 'marker') {
+      const hl = tool === 'marker';
+      this.g = { k: 'draw', id, pen: type === 'pen' && !hl, pts: [p.x, p.y, this.pressure(e)], hl };
+      this.draft = { ...inkShape(this.g.pts.slice(), type === 'pen' && !hl, this.style()), ...(hl ? { hl: true as const } : {}) };
     } else if (tool === 'select' && type === 'pen' && !this.handleAt(p, type) && !shapeAt(this.shapes(), p, this.tol(type))) {
       // a pen with the select tool: on a shape, it selects; anywhere else it draws
       this.sel = [];
@@ -430,15 +435,24 @@ export class Sketcher {
     const evs = g.k === 'draw' && typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
     const p = this.toSurface(e);
     switch (g.k) {
-      case 'draw':
+      case 'draw': {
+        let went = false;
         for (const c of evs.length ? evs : [e]) {
           const q = this.toSurface(c);
           const n = g.pts.length;
           if (Math.hypot(q.x - g.pts[n - 3], q.y - g.pts[n - 2]) < 0.6) continue;
           g.pts.push(q.x, q.y, this.pressure(c));
+          went = true;
         }
+        if (!went) break;
+        // held still a moment: the shape it was meant to be (moving on: a stroke again)
+        if (g.snapped && Math.hypot(p.x - g.pts[g.pts.length - 3], p.y - g.pts[g.pts.length - 2]) < 6) break;
+        g.snapped = undefined;
+        clearTimeout(g.still);
+        if (!g.hl) g.still = setTimeout(() => this.straighten(g), HOLD_MS);
         this.draft = { ...(this.draft as Shape), pts: g.pts.slice() } as Shape;
         break;
+      }
       case 'shape': {
         g.moved ||= Math.hypot(p.x - g.raw.x, p.y - g.raw.y) > 3;
         const to = g.tool === 'line' || g.tool === 'arrow' ? attachTarget(this.shapes(), p, this.tol(e.pointerType), g.attach)?.id : undefined;
@@ -475,9 +489,10 @@ export class Sketcher {
     this.g = null;
     switch (g.k) {
       case 'draw': {
+        clearTimeout(g.still);
         this.ed.checkpoint();
-        const pts = simplify(g.pts, g.pen ? 0.25 : 0.4);
-        const s = inkShape(pts, g.pen, this.style());
+        const pts = simplify(g.pts, g.pen ? 0.25 : g.hl ? 1 : 0.4);
+        const s: Shape = g.snapped ?? { ...inkShape(pts, g.pen, this.style()), ...(g.hl ? { hl: true as const } : {}) };
         this.write([...this.shapes(), s], new Set([s.id]));
         this.draft = null;
         break;
@@ -516,6 +531,21 @@ export class Sketcher {
     this.draft = null;
     this.marquee = null;
     this.ed.touch();
+  }
+
+  /** A stroke held still at its end: the line, box, ellipse or diamond it looks like, in its place. */
+  private straighten(g: Extract<Gesture, { k: 'draw' }>) {
+    if (this.g !== g) return;
+    const r = recognize(g.pts);
+    if (!r) return;
+    const st = this.style();
+    if (r.k === 'line') {
+      // (in a diagram, an end on a box attaches to it)
+      const list = this.shapes(), tol = this.tol('pen');
+      const ta = attachTarget(list, r.a, tol)?.id, tb = attachTarget(list, r.b, tol, ta)?.id;
+      g.snapped = lineShape({ ...roundPt(r.a), ...(ta ? { to: ta } : {}) }, { ...roundPt(r.b), ...(tb ? { to: tb } : {}) }, 'none', st);
+    } else g.snapped = boxShape(r.k, roundBox(r.box), st);
+    this.draft = g.snapped;
   }
 
   private pressure(e: PointerEvent): number {
