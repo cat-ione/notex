@@ -90,8 +90,9 @@ test('dragging with the box tool makes a box, and what is typed next is its labe
   await page.keyboard.type('Start $x^2$');
   await page.keyboard.press('Enter');
   const [s] = await shapes(page);
-  // (on the diagram's grid: every 8)
-  expect(s).toMatchObject({ k: 'rect', x: 40, y: 40, w: 160, h: 72, label: 'Start $x^2$' });
+  // (where it was drawn: no grid unless snapping is on)
+  expect(s).toMatchObject({ k: 'rect', label: 'Start $x^2$' });
+  for (const [k, v] of Object.entries({ x: 40, y: 40, w: 160, h: 70 })) expect(Math.abs(s[k] - v)).toBeLessThanOrEqual(1);
   await expect(page.locator('svg.canvas .label .katex')).toHaveCount(1);
   // the tool went back to select, with the box selected
   expect(await sk(page, (s) => [s.tool, s.sel.length])).toEqual(['select', 1]);
@@ -103,7 +104,9 @@ test('a tap with a box tool makes a box of the usual size there', async ({ page 
   await page.mouse.click(...c.at(200, 100));
   await page.keyboard.press('Escape');
   const [s] = await shapes(page);
-  expect(s).toMatchObject({ k: 'ellipse', x: 144, y: 72, w: 120, h: 56 });
+  expect(s).toMatchObject({ k: 'ellipse', w: 120, h: 56 });
+  expect(Math.abs(s.x - 140)).toBeLessThanOrEqual(1);
+  expect(Math.abs(s.y - 72)).toBeLessThanOrEqual(1);
   expect(s.label).toBeUndefined();
 });
 
@@ -621,7 +624,8 @@ test('printing: what is drawn on the note stays with its line', async ({ page })
   await page.evaluate(() => (window as any).__nx.ed.endPrint());
 });
 
-test('in a diagram, shapes keep to its grid; alt held, they go where they are put', async ({ page }) => {
+test('snapping on, shapes keep to the diagram’s grid; alt held, they go where they are put', async ({ page }) => {
+  await ed(page, (e) => e.updateConfig({ sketch: { ...e.config.sketch, snap: true } }));
   const c = await diagram(page);
   await drag(page, c.at(43, 37), c.at(203, 109));
   await page.keyboard.press('Escape');
@@ -804,4 +808,49 @@ test('a box grows to hold its label; with no room to the right, the next box goe
   const w = await ed(page, (e) => e.blk.w);
   for (const b of boxes) expect(b.x + b.w).toBeLessThanOrEqual(w);
   expect(Math.max(...boxes.map((b) => b.y))).toBeGreaterThan(s.y);
+});
+
+test('no snapping by default: an arrow ends where it’s put on a box, and moves with the box', async ({ page }) => {
+  const c = await diagram(page);
+  await drag(page, c.at(40, 40), c.at(200, 120));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  // an arrow from the open space to a spot inside the box, off its middle
+  await page.keyboard.press('a');
+  await drag(page, c.at(400, 200), c.at(80, 60));
+  const box = (await shapes(page))[0];
+  const arrow = (await shapes(page))[1];
+  expect(arrow.b.to).toBe(box.id);
+  expect(Math.abs(arrow.b.x - 80)).toBeLessThanOrEqual(1);
+  expect(Math.abs(arrow.b.y - 60)).toBeLessThanOrEqual(1);
+  // the tip drawn there, not on the box's edge
+  const tip = await page.evaluate(() => {
+    const l = document.querySelector('svg.canvas .k-line line')!;
+    return [+l.getAttribute('x2')!, +l.getAttribute('y2')!];
+  });
+  expect(Math.hypot(tip[0] - 80, tip[1] - 60)).toBeLessThan(6);
+  // the box moved: the tip with it, at the same spot on it
+  await page.keyboard.press('v');
+  await drag(page, c.at(150, 100), c.at(250, 130));
+  const moved = (await shapes(page))[0];
+  const tip2 = await page.evaluate(() => {
+    const l = document.querySelector('svg.canvas .k-line line')!;
+    return [+l.getAttribute('x2')!, +l.getAttribute('y2')!];
+  });
+  expect(Math.hypot(tip2[0] - (80 + moved.x - box.x), tip2[1] - (60 + moved.y - box.y))).toBeLessThan(6);
+});
+
+test('a box just drawn with the pen is resized by its handle, with the pen, the tool still the box', async ({ page }) => {
+  const c = await diagram(page);
+  await stroke(page, 'pen', line(c.x + 40, c.y + 40, c.x + 160, c.y + 100));
+  const [b0] = await shapes(page);
+  expect(await sk(page, (s) => [s.tool, s.sel.length])).toEqual(['rect', 1]);
+  // its bottom-right handle, dragged out by the pen
+  const r = await page.locator('svg.canvas circle.handle').evaluateAll((hs) => hs.map((h) => h.getBoundingClientRect()).map((b) => [b.x + b.width / 2, b.y + b.height / 2]));
+  const se = r.reduce((a, b) => (b[0] + b[1] > a[0] + a[1] ? b : a));
+  await stroke(page, 'pen', line(se[0], se[1], se[0] + 60, se[1] + 30));
+  const all = await shapes(page);
+  expect(all).toHaveLength(1);
+  expect(all[0].w).toBeGreaterThan(b0.w + 40);
+  expect(await sk(page, (s) => s.tool)).toBe('rect');
 });

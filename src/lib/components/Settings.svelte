@@ -99,6 +99,12 @@
       },
     },
     {
+      label: 'snap in diagrams',
+      tip: 'On: shapes go to a grid, and a line ending on a box meets its edge. Off: everything goes where you put it (a line ending on a box still moves with it). Alt while drawing: the other way.',
+      value: () => (ed.config.sketch.snap ? 'on' : 'off'),
+      change: () => ed.updateConfig({ sketch: { ...ed.config.sketch, snap: !ed.config.sketch.snap } }),
+    },
+    {
       label: 'remember commands',
       tip: 'The \\ palette puts the commands you pick most, and lately, first. \\forget clears what it remembers.',
       value: () => (ed.config.rememberCommands ? 'on' : 'off'),

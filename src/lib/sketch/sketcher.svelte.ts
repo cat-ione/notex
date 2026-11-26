@@ -12,7 +12,7 @@ import { INKS } from '../marks';
 import { recognize } from './recognize';
 import {
   attachTarget, boundsOf, boxOf, boxShape, centre, cloneShapes, detach, erased, inkShape, isBox, labelled, lineShape, lookupIn,
-  lineEnds, moved, scaled, shapeAt, shapesIn, shapesInLasso, simplify, WIDTHS, bounds,
+  endOn, lineEnds, moved, scaled, shapeAt, shapesIn, shapesInLasso, simplify, WIDTHS, bounds,
   type Box, type BoxKind, type BoxShape, type End, type LineShape, type Placed, type Pt, type Shape, type Width,
 } from './shapes';
 
@@ -272,12 +272,28 @@ export class Sketcher {
   }
 
   /** In a diagram, a point on its grid (alt held: where it is). */
+  /** Snapping (to the grid, a line's end to a box's edge): in a diagram, as set, alt the other way. */
+  private snapping(e: { altKey?: boolean }): boolean {
+    return this.on?.kind === 'block' && this.ed.config.sketch.snap !== !!e.altKey;
+  }
   private snap(p: Pt, e: { altKey?: boolean }): Pt {
-    if (this.on?.kind !== 'block' || e.altKey) return p;
+    if (!this.snapping(e)) return p;
     return { x: Math.round(p.x / GRID) * GRID, y: Math.round(p.y / GRID) * GRID };
   }
   private snapBy(d: number, e: { altKey?: boolean }): number {
-    return this.on?.kind !== 'block' || e.altKey ? d : Math.round(d / GRID) * GRID;
+    return this.snapping(e) ? Math.round(d / GRID) * GRID : d;
+  }
+  /**
+   * The box a line's end at p goes on: snapping, one it's on or near (it meets the edge);
+   * else only one it's inside (it stays where it is on it).
+   */
+  private endTarget(p: Pt, type: string, e: { altKey?: boolean }, not?: Id): BoxShape | null {
+    return attachTarget(this.shapes(), p, this.snapping(e) ? this.tol(type) : 0, not);
+  }
+  /** A line's end at p: on a box there (see endTarget), or free. */
+  private endAt(p: Pt, box: BoxShape | null | undefined, e: { altKey?: boolean }): End {
+    if (!box) return roundPt(p);
+    return this.snapping(e) ? { ...roundPt(p), to: box.id } : endOn(p, box);
   }
 
   /** How far (in the target's units) a pointer may be from something to pick it. */
@@ -432,7 +448,10 @@ export class Sketcher {
     const now = e.timeStamp, last = this.lastDown;
     this.double = !!last && now - last.t < 450 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 8;
     this.lastDown = this.double ? null : { t: now, x: e.clientX, y: e.clientY };
-    if (tool === 'eraser') {
+    if (tool !== 'select' && tool !== 'eraser' && this.sel.length && this.handleAt(p, type)) {
+      // (a handle of what's selected, whatever the tool: it resizes, as the box just drawn by pen)
+      this.selectDown(e, p);
+    } else if (tool === 'eraser') {
       this.g = { k: 'erase', id, last: p, hit: false };
       this.eraseTo(p, type);
     } else if (tool === 'pen' || tool === 'marker') {
@@ -446,10 +465,10 @@ export class Sketcher {
       const q = this.snap(p, e);
       this.addBox('text', { x: q.x, y: q.y - 12, w: 40, h: 24 });
     } else {
-      const attach = tool === 'line' || tool === 'arrow' ? attachTarget(this.shapes(), p, this.tol(type))?.id : undefined;
+      const attach = tool === 'line' || tool === 'arrow' ? this.endTarget(p, type, e)?.id : undefined;
       const from = this.snap(p, e);
       this.g = { k: 'shape', id, from, raw: p, tool, attach, moved: false };
-      this.draft = this.shapeFor(tool, from, from, attach, undefined, e.shiftKey);
+      this.draft = this.shapeFor(tool, from, from, attach, undefined, e.shiftKey, e);
     }
     this.ed.touch();
     return true;
@@ -496,8 +515,8 @@ export class Sketcher {
       }
       case 'shape': {
         g.moved ||= Math.hypot(p.x - g.raw.x, p.y - g.raw.y) > 3;
-        const to = g.tool === 'line' || g.tool === 'arrow' ? attachTarget(this.shapes(), p, this.tol(e.pointerType), g.attach)?.id : undefined;
-        this.draft = this.shapeFor(g.tool, g.from, this.snap(p, e), g.attach, to, e.shiftKey);
+        const to = g.tool === 'line' || g.tool === 'arrow' ? this.endTarget(p, e.pointerType, e, g.attach)?.id : undefined;
+        this.draft = this.shapeFor(g.tool, g.from, this.snap(p, e), g.attach, to, e.shiftKey, e);
         break;
       }
       case 'erase':
@@ -661,9 +680,8 @@ export class Sketcher {
     const st = this.style();
     if (r.k === 'line') {
       // (in a diagram, an end on a box attaches to it)
-      const list = this.shapes(), tol = this.tol('pen');
-      const ta = attachTarget(list, r.a, tol)?.id, tb = attachTarget(list, r.b, tol, ta)?.id;
-      g.snapped = lineShape({ ...roundPt(r.a), ...(ta ? { to: ta } : {}) }, { ...roundPt(r.b), ...(tb ? { to: tb } : {}) }, 'none', st);
+      const ta = this.endTarget(r.a, 'pen', {}), tb = this.endTarget(r.b, 'pen', {}, ta?.id);
+      g.snapped = lineShape(this.endAt(r.a, ta, {}), this.endAt(r.b, tb, {}), 'none', st);
     } else g.snapped = boxShape(r.k, roundBox(r.box), st);
     this.draft = g.snapped;
   }
@@ -677,13 +695,14 @@ export class Sketcher {
   }
 
   /** The shape a tool makes from a to b (shift: square, or a line at a multiple of 15°). */
-  private shapeFor(tool: Tool, a: Pt, b: Pt, from?: Id, to?: Id, shift = false): Shape {
+  private shapeFor(tool: Tool, a: Pt, b: Pt, from?: Id, to?: Id, shift = false, e: { altKey?: boolean } = {}): Shape {
     if (tool === 'line' || tool === 'arrow') {
       if (shift) {
         const ang = Math.round(Math.atan2(b.y - a.y, b.x - a.x) / (Math.PI / 12)) * (Math.PI / 12), len = Math.hypot(b.x - a.x, b.y - a.y);
         b = { x: a.x + Math.cos(ang) * len, y: a.y + Math.sin(ang) * len };
       }
-      const ea: End = { ...roundPt(a), ...(from ? { to: from } : {}) }, eb: End = { ...roundPt(b), ...(to ? { to } : {}) };
+      const box = (id?: Id) => (id ? (this.shapes().find((s) => s.id === id && isBox(s)) as BoxShape | undefined) : undefined);
+      const ea = this.endAt(a, box(from), e), eb = this.endAt(b, box(to), e);
       return lineShape(ea, eb, tool === 'arrow' ? 'end' : 'none', this.style());
     }
     if (shift) {
@@ -800,8 +819,7 @@ export class Sketcher {
     const list = this.shapes();
     if (g.h === 'a' || g.h === 'b') {
       const l = g.orig[0] as LineShape;
-      const to = attachTarget(list, p, this.tol(e.pointerType), l[g.h === 'a' ? 'b' : 'a'].to)?.id;
-      const end: End = { x: p.x, y: p.y, ...(to ? { to } : {}) };
+      const end = this.endAt(p, this.endTarget(p, e.pointerType, e, l[g.h === 'a' ? 'b' : 'a'].to), e);
       const nl = { ...l, [g.h]: end } as LineShape;
       this.write(list.map((s) => (s.id === l.id ? nl : s)), new Set([l.id]));
       return;

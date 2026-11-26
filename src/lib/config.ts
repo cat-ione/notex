@@ -50,7 +50,8 @@ export type Config = {
    * Drawing: a pen put on the note draws on it (else only while drawing, ctrl+shift+d);
    * a finger draws (`draw`), scrolls (`scroll`), or draws until a pen has been used (`auto`).
    */
-  sketch: { penDraws: boolean; touch: 'auto' | 'draw' | 'scroll' };
+  /** `snap`: in diagrams, to the grid, and a line's end to a box's edge (alt: the other way). */
+  sketch: { penDraws: boolean; touch: 'auto' | 'draw' | 'scroll'; snap: boolean };
 };
 
 export type Paper = 'A4' | 'Letter';
@@ -86,7 +87,7 @@ export const DEFAULT_CONFIG: Config = {
   ui: { toolbar: true, fadeToolbar: true, statusBar: true },
   highlightCode: true,
   rememberCommands: true,
-  sketch: { penDraws: true, touch: 'auto' },
+  sketch: { penDraws: true, touch: 'auto', snap: false },
 };
 
 const LOCAL_KEY = 'notex.config';

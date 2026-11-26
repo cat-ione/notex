@@ -30,7 +30,12 @@ export type InkShape = Base & { k: 'ink'; pts: number[]; pen?: true; hl?: true }
 /** A highlighter's width. */
 export const HL_PX = 16;
 /** A line's end: where it is, and the shape it's attached to (if any). */
-export type End = Pt & { to?: Id };
+/**
+ * A line's end: where it is, or on a box (`to`) — at its spot on the box (`at`, as fractions
+ * of its width and height: it goes where the box goes), or with no spot, where the line
+ * meets the box's edge.
+ */
+export type End = Pt & { to?: Id; at?: Pt };
 export type Head = 'none' | 'end' | 'both';
 /** A line, with an optional label at its middle. */
 export type LineShape = Base & { k: 'line'; a: End; b: End; head: Head; label?: string };
@@ -115,12 +120,20 @@ export function outlinePoint(s: BoxShape, to: Pt, gap = GAP): Pt {
 export function lineEnds(s: LineShape, find: Lookup): [Pt, Pt] {
   const ta = s.a.to ? find(s.a.to) : undefined, tb = s.b.to ? find(s.b.to) : undefined;
   const A = ta && isBox(ta) ? ta : undefined, B = tb && isBox(tb) ? tb : undefined;
-  const aim = (box: BoxShape | undefined, e: End) => (box ? centre(box) : { x: e.x, y: e.y });
-  const pa = A ? outlinePoint(A, aim(B, s.b)) : { x: s.a.x, y: s.a.y };
-  const pb = B ? outlinePoint(B, A ? centre(A) : pa) : { x: s.b.x, y: s.b.y };
+  // (an end at its spot on a box: there, wherever the box is now)
+  const spot = (box: BoxShape | undefined, e: End) => (box && e.at ? { x: box.x + e.at.x * box.w, y: box.y + e.at.y * box.h } : null);
+  const xa = spot(A, s.a), xb = spot(B, s.b);
+  const pa = xa ?? (A ? outlinePoint(A, xb ?? (B ? centre(B) : { x: s.b.x, y: s.b.y })) : { x: s.a.x, y: s.a.y });
+  const pb = xb ?? (B ? outlinePoint(B, xa ?? (A ? centre(A) : pa)) : { x: s.b.x, y: s.b.y });
   // (re-aim the first end at where the second really is)
-  return [A && !B ? outlinePoint(A, pb) : pa, pb];
+  return [A && !B && !xa ? outlinePoint(A, pb) : pa, pb];
 }
+
+/** An end at p on box `b`: at its spot there (as fractions of the box). */
+export const endOn = (p: Pt, b: Box & { id: Id }): End => ({
+  x: Math.round(p.x), y: Math.round(p.y), to: b.id,
+  at: { x: Math.round(((p.x - b.x) / (b.w || 1)) * 1000) / 1000, y: Math.round(((p.y - b.y) / (b.h || 1)) * 1000) / 1000 },
+});
 
 /** Where a line's label goes: a box round its middle. */
 export function lineLabelBox(s: LineShape, find: Lookup, w = 160, h = 26): Box {
