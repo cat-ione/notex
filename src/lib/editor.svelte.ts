@@ -1697,10 +1697,15 @@ export class Editor {
       const last = this.doc.blocks.length - 1;
       return select({ b: 0, o: 0 }, { b: last, o: this.doc.blocks[last].items.length }), true;
     }
-    if (n === 3) return paragraph(), true;
-    // the word (or the run of spaces) clicked; just past a word's end, that word
+    if (n === 3) {
+      // (in a table: the cell's text, not the whole row)
+      const cell = this.cellSpans(b)?.find(([s, e]) => h.pos.o >= s && h.pos.o <= e);
+      return cell ? select({ b, o: cell[0] }, { b, o: cell[1] }) : paragraph(), true;
+    }
+    // the word (or the run of spaces) clicked; just past a word's end, that word (in a
+    // table, within its cell: the walls are no part of it)
     const items = blk.items;
-    const word = (it?: Item) => it?.t === 'c' && !isSpace(it);
+    const word = (it?: Item) => it?.t === 'c' && !isSpace(it) && !isWall(it);
     const space = (it?: Item) => !!it && isSpace(it);
     let a = h.pos.o;
     if (!word(items[a]) && word(items[a - 1])) a--;
@@ -3081,7 +3086,10 @@ export class Editor {
     // an edit over a selection touching a table: the selection goes first (see clearCells), then
     // the key acts where the caret is, in a cell as in a cell
     const sel = this.selection;
-    if (inText() && sel && (k.length === 1 || /^(C-)?(Backspace|Delete)$|^(S-|C-)?Enter$/.test(k))) {
+    // (but \: the palette, for what's selected; and a bracket or marker that wraps text in a cell)
+    const t = this.config.typing;
+    const wraps = k === '\\' || (!!sel && sel.s.b === sel.e.b && !this.cellSelection && ((t.pairBrackets && !!PAIRS[k]) || (t.pairMarkdown && MD_PAIRS.includes(k))));
+    if (inText() && sel && !wraps && (k.length === 1 || /^(C-)?(Backspace|Delete)$|^(S-|C-)?Enter$/.test(k))) {
       let touches = false;
       for (let b = sel.s.b; b <= sel.e.b; b++) if (this.tableRow(b)) touches = true;
       if (touches) {
@@ -3107,16 +3115,17 @@ export class Editor {
   private wordPos(dir: 1 | -1): Pos {
     let { b, o } = this;
     const items = this.blockAt(b).items;
-    const word = (it: Item | undefined) => !!it && it.t === 'c' && !isSpace(it);
+    // (a table cell's wall is no part of a word)
+    const word = (it: Item | undefined) => !!it && it.t === 'c' && !isSpace(it) && !isWall(it);
     if (dir === 1) {
       if (o >= items.length) return b !== NOTE_B && b < this.doc.blocks.length - 1 ? { b: b + 1, o: 0 } : { b, o };
-      if (items[o].t === 'm') o++;
+      if (items[o].t === 'm' || isWall(items[o])) o++;
       else while (o < items.length && word(items[o])) o++;
       while (o < items.length && isSpace(items[o])) o++;
     } else {
       if (o === 0) return b > 0 ? { b: b - 1, o: this.doc.blocks[b - 1].items.length } : { b, o };
       while (o > 0 && isSpace(items[o - 1])) o--;
-      if (o > 0 && items[o - 1].t === 'm') o--;
+      if (o > 0 && (items[o - 1].t === 'm' || isWall(items[o - 1]))) o--;
       else while (o > 0 && word(items[o - 1])) o--;
     }
     return { b, o };
@@ -5670,6 +5679,22 @@ export class Editor {
         else this.anchor = null;
         this.o = k.endsWith('Home') ? s : e;
         this.goalX = null;
+        return true;
+      }
+      // a word at a time, within the cell: at its end (or start), on to the next cell (or
+      // the one before); selecting, it stops there, rather than taking the cells after it
+      case 'C-Right': case 'C-S-Right': case 'C-Left': case 'C-S-Left': {
+        const dir = k.endsWith('Right') ? 1 : -1, shift = k.includes('S-');
+        const edge = dir > 0 ? e : s;
+        if (this.o === edge) {
+          if (shift) return true;
+          const next = spans[c + dir];
+          if (!next) return false;
+          this.moveTo({ b: this.b, o: dir > 0 ? next[0] : next[1] }, false);
+          return true;
+        }
+        const p = this.wordPos(dir);
+        this.moveTo({ b: this.b, o: p.b !== this.b ? edge : dir > 0 ? Math.min(e, p.o) : Math.max(s, p.o) }, shift);
         return true;
       }
       // the walls stay: at a cell's start backspace does nothing (an empty last row goes)

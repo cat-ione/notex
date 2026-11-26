@@ -415,3 +415,63 @@ test('tab outside a table still nests list items', async ({ page }) => {
   await page.keyboard.press('Tab');
   expect(await ed(page, (e) => e.doc.blocks[1].indent)).toBe(1);
 });
+
+// ── words in a cell ──
+
+test('ctrl+shift+right in a cell selects up to its last word and stops there (not the next row)', async ({ page }) => {
+  await table(page);
+  await page.keyboard.press('Tab');
+  await type(page, 'two words');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Control+Shift+ArrowRight');
+  expect(await selected(page)).toBe('two ');
+  await page.keyboard.press('Control+Shift+ArrowRight');
+  expect(await selected(page)).toBe('two words');
+  // at the cell's end: it stays (the last cell of the row: no next row taken)
+  await page.keyboard.press('Control+Shift+ArrowRight');
+  expect(await selected(page)).toBe('two words');
+  expect(await ed(page, (e) => [e.b, e.cellSelection])).toEqual([1, null]);
+});
+
+test('ctrl+right goes a word at a time in a cell, then on to the next cell', async ({ page }) => {
+  await table(page);
+  // (the cell: "x ya")
+  await type(page, 'x y');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Control+ArrowRight');
+  expect(await caret(page)).toEqual([1, 3]);
+  await page.keyboard.press('Control+ArrowRight');
+  expect(await caret(page)).toEqual([1, 5]);
+  // the cell's end: on to the next cell's start
+  await page.keyboard.press('Control+ArrowRight');
+  expect(await ed(page, (e) => [e.b, e.cellAt(e.b, e.o)])).toEqual([1, 1]);
+  await page.keyboard.press('Control+ArrowLeft');
+  expect(await caret(page)).toEqual([1, 5]);
+});
+
+test('a double click on a cell’s only word selects the word, not the row; a triple click the cell', async ({ page }) => {
+  await table(page);
+  const word = page.locator('.block.tr').nth(1).locator(':scope > .td').nth(1).locator('.ch:not(.wall)').first();
+  await word.dblclick();
+  expect(await selected(page)).toBe('2');
+  expect(await ed(page, (e) => e.cellSelection)).toBeNull();
+  await page.keyboard.press('Tab');
+  await type(page, 'more words');
+  // (tab: the next cell, the next row's first, its text replaced)
+  const c = page.locator('.block.tr').nth(2).locator(':scope > .td').nth(0).locator('.ch:not(.wall)').nth(6);
+  await c.click({ clickCount: 3 });
+  expect(await selected(page)).toBe('more words');
+});
+
+test('\\ over text selected in a cell keeps it (the palette acts on it); a bracket wraps it', async ({ page }) => {
+  await table(page);
+  await page.locator('.block.tr').nth(1).locator(':scope > .td').nth(0).locator('.ch:not(.wall)').first().dblclick();
+  expect(await selected(page)).toBe('1');
+  await page.keyboard.press('Backslash');
+  expect(await ed(page, (e) => e.mode)).toBe('palette');
+  expect(await view(page)).toEqual(['Above', 'H a | b', '  1 | 2', '  3 | 4', 'Below']);
+  await page.keyboard.press('Escape');
+  expect(await selected(page)).toBe('1');
+  await page.keyboard.type('(');
+  expect(await view(page)).toEqual(['Above', 'H a | b', '  (1) | 2', '  3 | 4', 'Below']);
+});
