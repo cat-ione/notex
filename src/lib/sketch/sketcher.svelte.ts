@@ -597,7 +597,7 @@ export class Sketcher {
     if (!gone.length) return;
     if (!g.hit) this.ed.checkpoint(), (g.hit = true);
     const ids = new Set(gone.map((s) => s.id));
-    this.write(detach(list, ids).filter((s) => !ids.has(s.id)), new Set());
+    this.write(...without(list, ids));
     this.sel = this.sel.filter((id) => !ids.has(id));
   }
 
@@ -915,7 +915,7 @@ export class Sketcher {
     if (!ids.size) return;
     this.ed.checkpoint();
     const list = this.shapes();
-    this.write(detach(list, ids).filter((s) => !ids.has(s.id)), new Set());
+    this.write(...without(list, ids));
     this.sel = [];
   }
 
@@ -1039,6 +1039,13 @@ export class Sketcher {
 const r10 = (v: number) => Math.round(v * 10) / 10;
 const roundPt = (p: Pt): Pt => ({ x: r10(p.x), y: r10(p.y) });
 const roundBox = (b: Box): Box => ({ x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h) });
+
+/** A list less some shapes (lines joined to them let go), and which of the rest changed. */
+function without(list: Shape[], ids: Set<Id>): [Shape[], Set<Id>] {
+  const kept = detach(list, ids);
+  const changed = new Set(kept.filter((s, i) => s !== list[i]).map((s) => s.id));
+  return [kept.filter((s) => !ids.has(s.id)), changed];
+}
 
 /** The next of a list after `cur` (or before, d = -1), round. */
 function next<T>(list: readonly T[], cur: T, d: number): T {

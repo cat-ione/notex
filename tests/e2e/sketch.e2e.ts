@@ -708,3 +708,31 @@ test('the highlighter: wide, see-through strokes', async ({ page }) => {
   await expect(page.locator('.note-ink path.hl')).toHaveCount(1);
   expect(Number(await page.locator('.note-ink path.hl').getAttribute('stroke-width'))).toBeGreaterThan(10);
 });
+
+test('on the note, a line joined to a deleted box lets go too', async ({ page }) => {
+  await type(page, 'notes');
+  await page.keyboard.press('Control+Shift+d');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Control+ArrowRight');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Delete');
+  const list = await ink(page);
+  expect(list.map((s) => s.k)).toEqual(['rect', 'line']);
+  expect(list[1].b.to).toBeUndefined();
+});
+
+test('backspace in the empty caption of a diagram takes it away; undo brings it back', async ({ page }) => {
+  await type(page, 'above');
+  await page.keyboard.press('Enter');
+  const c = await diagram(page);
+  await page.mouse.click(...c.at(100, 60));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  expect(await ed(page, (e) => [e.mode, e.blk.kind])).toEqual(['text', 'diagram']);
+  await page.keyboard.press('Backspace');
+  expect(await ed(page, (e) => e.doc.blocks.map((b: any) => b.kind))).toEqual(['p', 'p']);
+  await page.keyboard.press('Control+z');
+  expect(await ed(page, (e) => e.doc.blocks.map((b: any) => b.kind))).toEqual(['p', 'diagram', 'p']);
+  expect(await shapes(page)).toHaveLength(1);
+});
