@@ -53,7 +53,12 @@
 
   onMount(() => {
     opener = m.pointer ?? null;
-    const move = (e: PointerEvent) => (hover = itemAt(e.clientX, e.clientY));
+    const move = (e: PointerEvent) => {
+      hover = itemAt(e.clientX, e.clientY);
+      // (a press already down when the ring came, its own down unseen (a long press, the
+      // browser's right-click): it's the one that opened it, its lift on an item chooses)
+      if (e.buttons && opener === null && !pressed && hover !== null) opener = e.pointerId;
+    };
     const down = (e: PointerEvent) => {
       const i = itemAt(e.clientX, e.clientY);
       e.preventDefault();

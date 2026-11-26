@@ -6192,7 +6192,9 @@ export class Editor {
     const type = (e as PointerEvent).pointerType ?? '';
     if (type === 'touch' || type === 'pen' || (this.pointer !== 'mouse' && !e.button && !type)) {
       this.sketch.cancelGesture();
-      this.openRadial(e.clientX, e.clientY);
+      // (the press still down: sliding it to an item and lifting chooses)
+      const id = (e as PointerEvent).pointerId;
+      this.openRadial(e.clientX, e.clientY, typeof id === 'number' && id >= 0 ? id : undefined);
       this.touch();
       return;
     }

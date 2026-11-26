@@ -139,3 +139,28 @@ test('a selection made with a pen has a ⋯ beside it, which opens what can be d
   await pointer(page, 'touch', [[b.x + b.width / 2, b.y + b.height / 2]]);
   await expect(page.locator('.radial .item[aria-label="duplicate"]')).toBeVisible();
 });
+
+test('a long press’s ring (its press’s own down unseen): sliding to an item and lifting takes it', async ({ page }) => {
+  await type(page, 'some text');
+  // the browser's right-click from a finger held down, then the same finger slid and lifted
+  await page.evaluate(() =>
+    document.querySelector('.page')!.dispatchEvent(new PointerEvent('contextmenu', { pointerType: 'touch', pointerId: 44, clientX: 500, clientY: 400, bubbles: true, cancelable: true })),
+  );
+  await expect(page.locator('.radial .middle')).toBeVisible();
+  const [x, y] = await ringItem(page, 'pen');
+  await page.evaluate(([x, y]) => {
+    const fire = (type: string, b: number) =>
+      (document.elementFromPoint(x, y) ?? document.body).dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: 44, isPrimary: true, clientX: x, clientY: y, buttons: b, bubbles: true, cancelable: true }));
+    fire('pointermove', 1);
+    fire('pointerup', 0);
+  }, [x, y]);
+  await expect(page.locator('.radial')).toHaveCount(0);
+  expect(await ed(page, (e) => [e.mode, e.sketch.tool])).toEqual(['sketch', 'pen']);
+});
+
+test('a mouse’s long press stays a menu (only a still mouse is not a slide)', async ({ page }) => {
+  await type(page, 'some text');
+  await page.mouse.click(400, 120, { button: 'right' });
+  await expect(page.locator('.dmenu')).toBeVisible();
+  await expect(page.locator('.radial')).toHaveCount(0);
+});
