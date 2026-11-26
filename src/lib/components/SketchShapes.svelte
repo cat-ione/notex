@@ -71,9 +71,10 @@
       {#if ha}<path class="head" d={head(b, a, w)} stroke-width={w} />{/if}
       {#if s.label && editing !== s.id}
         {@const lb = lineLabelBox(s, find, 240, 40)}
-        <!-- (on the line, over it: the line stops either side of the words) -->
-        <foreignObject x={lb.x} y={lb.y} width={lb.w} height={lb.h}>
-          <div class="label on-line"><span>{@html renderLabel(s.label)}</span></div>
+        <!-- (on the line, over it: the line stops either side of the words; a short line: above it) -->
+        {@const short = Math.hypot(b.x - a.x, b.y - a.y) < 32 + s.label.length * 7}
+        <foreignObject x={lb.x} y={short ? lb.y - 22 : lb.y} width={lb.w} height={lb.h}>
+          <div class="label on-line" class:above={short}><span>{@html renderLabel(s.label)}</span></div>
         </foreignObject>
       {/if}
     {:else}
@@ -170,6 +171,13 @@
     padding: 0 4px;
     background: var(--bg);
     border-radius: 3px;
+  }
+  .label.on-line.above {
+    align-items: flex-end;
+  }
+  .label.on-line.above span {
+    background: none;
+    font-size: 13px;
   }
   .label.free {
     justify-content: flex-start;

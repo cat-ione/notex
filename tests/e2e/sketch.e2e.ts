@@ -739,3 +739,22 @@ test('backspace in the empty caption of a diagram takes it away; undo brings it 
   expect(await ed(page, (e) => e.doc.blocks.map((b: any) => b.kind))).toEqual(['p', 'diagram', 'p']);
   expect(await shapes(page)).toHaveLength(1);
 });
+
+test('a box grows to hold its label; with no room to the right, the next box goes below', async ({ page }) => {
+  const c = await diagram(page);
+  await page.keyboard.press('Enter'); // a first box, at the left
+  await page.keyboard.type('a rather long label for a box');
+  await page.keyboard.press('Enter');
+  let [s] = await shapes(page);
+  expect(s.x).toBeLessThan(60);
+  expect(s.w).toBeGreaterThan(160);
+  // right, right, right…: until there's no room, then down
+  for (let i = 0; i < 5; i++) {
+    await page.keyboard.press('Control+ArrowRight');
+    await page.keyboard.press('Escape');
+  }
+  const boxes = (await shapes(page)).filter((x) => x.k === 'rect');
+  const w = await ed(page, (e) => e.blk.w);
+  for (const b of boxes) expect(b.x + b.w).toBeLessThanOrEqual(w);
+  expect(Math.max(...boxes.map((b) => b.y))).toBeGreaterThan(s.y);
+});

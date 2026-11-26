@@ -30,7 +30,8 @@
 
   async function save() {
     if (!shape) return;
-    ed.sketch.setLabel(id, value, isText ? await size() : undefined);
+    // (a box grows to hold what it says; a line's label sits on it as it is)
+    ed.sketch.setLabel(id, value, shape.k === 'line' ? undefined : await size());
     ed.touch();
   }
 
@@ -123,6 +124,7 @@
     position: absolute;
     left: -9999px;
     top: 0;
+    max-width: 420px;
     padding: 0 2px;
     font-family: var(--prose);
     font-size: 15px;

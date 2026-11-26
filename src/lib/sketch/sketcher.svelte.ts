@@ -754,13 +754,20 @@ export class Sketcher {
       this.sel = this.sel.filter((x) => x !== id);
       return;
     }
-    if ((s.label ?? '') === text && (!size || s.k !== 'text' || (s.w === Math.ceil(size.w) && s.h === Math.ceil(size.h)))) return;
+    const fits = s.k === 'line' || s.k === 'text' || !size || (size.w + 14 <= s.w && size.h + 8 <= s.h);
+    if ((s.label ?? '') === text && (!size || (s.k === 'text' ? s.w === Math.ceil(size.w) && s.h === Math.ceil(size.h) : fits))) return;
     // (typing a label is one undo step, as typing text is)
     this.ed.checkpoint('type');
     const next = { ...s, label: text || undefined } as BoxShape | LineShape;
     if (!text) delete next.label;
-    // a text is as big as what it says
+    // a text is as big as what it says; a box grows to hold its label (round its middle)
     if (next.k === 'text' && size) (next.w = Math.ceil(size.w)), (next.h = Math.ceil(size.h));
+    else if (next.k !== 'line' && size && !fits) {
+      // (a diamond's or an ellipse's inside is smaller than its box)
+      const k = next.k === 'rect' ? 1 : 1.42;
+      const w = Math.max(next.w, Math.ceil((size.w + 14) * k)), h = Math.max(next.h, Math.ceil((size.h + 8) * k));
+      Object.assign(next, { x: Math.round(next.x - (w - next.w) / 2), y: Math.round(next.y - (h - next.h) / 2), w, h });
+    }
     this.write(list.map((x) => (x.id === id ? next : x)), new Set([id]));
   }
 
@@ -944,6 +951,9 @@ export class Sketcher {
     const from = sel.length === 1 && isBox(sel[0]) ? sel[0] : null;
     if (!from) return this.placeNew();
     const gap = 64;
+    // (in a diagram with no room that way: below instead)
+    const w = this.on?.kind === 'block' ? (this.blockOf(this.on.id)?.w ?? Infinity) : Infinity;
+    if ((dir === 'Right' && from.x + 2 * from.w + gap > w - 4) || (dir === 'Left' && from.x - from.w - gap < 0) || (dir === 'Up' && from.y - from.h - gap < 0)) dir = 'Down';
     const dx = dir === 'Left' ? -(from.w + gap) : dir === 'Right' ? from.w + gap : 0;
     const dy = dir === 'Up' ? -(from.h + gap) : dir === 'Down' ? from.h + gap : 0;
     this.ed.checkpoint();
@@ -965,7 +975,7 @@ export class Sketcher {
     if (t?.kind === 'block') {
       const blk = this.blockOf(t.id)!;
       const b = boundsOf(list);
-      at = b ? { x: b.x, y: b.y + b.h + 32 } : { x: ((blk.w ?? 600) - NEW_BOX.w) / 2, y: 40 };
+      at = b ? { x: b.x, y: b.y + b.h + 32 } : { x: 32, y: 40 };
     } else {
       const sc = this.scroller(), o = this.page?.getBoundingClientRect(), r = sc?.getBoundingClientRect();
       at = { x: (this.page?.clientWidth ?? 600) / 2 - NEW_BOX.w / 2, y: (r && o ? r.top + r.height / 2 - o.top : 100) - NEW_BOX.h / 2 };
