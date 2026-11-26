@@ -1,7 +1,7 @@
 // Tables under random editing: seeded random sequences of keys, clicks, drags, pastes and
-// undo in and around a table. After every step the table must still be whole: its header
-// and separator there, every row it has tidy (but the one being edited), the caret in a
-// cell's text. A failure prints the seed, the steps and the note before and after.
+// undo in and around a table. After every step every table must still be whole: each row
+// between walls, with its header's cells, no wall anywhere but in a row, the caret in a
+// cell. A failure prints the seed, the steps and the note before and after.
 import { test, expect, open, fresh, type } from './helpers';
 import type { Page } from '@playwright/test';
 
@@ -17,45 +17,49 @@ function rng(seed: number) {
   };
 }
 
-type State = { text: string[]; rows: [number, string, number][]; b: number; o: number; mode: string; spans: [number, number][] | null; anchor: { b: number; o: number } | null };
+type Row = { b: number; head: boolean; walls: number[]; len: number; table: number };
+type State = { text: string[]; rows: Row[]; b: number; o: number; mode: string; anchor: { b: number; o: number } | null; leaks: number[] };
 
 const state = (page: Page): Promise<State> =>
   page.evaluate(() => {
     const nx = (window as any).__nx;
     const e = nx.ed;
+    const blocks = e.doc.blocks;
+    const rows: Row[] = [];
+    let table = -1;
+    blocks.forEach((blk: any, b: number) => {
+      if (blk.kind !== 'tr') return;
+      if (blk.head || blocks[b - 1]?.kind !== 'tr') table = b;
+      rows.push({ b, head: !!blk.head, walls: blk.items.flatMap((i: any, o: number) => (i.cell ? [o] : [])), len: blk.items.length, table });
+    });
     return {
-      text: e.doc.blocks.map((b: any) => b.items.map((i: any) => (i.t === 'c' ? i.ch : '§')).join('')),
-      rows: nx.tables(),
+      text: blocks.map((blk: any) => (blk.kind === 'tr' ? '▦ ' : '') + blk.items.map((i: any) => (i.t === 'c' ? (i.cell ? '‖' : i.ch) : '§')).join('')),
+      rows,
       b: e.b,
       o: e.o,
       mode: e.mode,
-      spans: e.mode === 'text' ? e.cellSpans(e.b) : null,
       anchor: e.anchor,
+      // cell walls anywhere but a table row
+      leaks: blocks.flatMap((blk: any, b: number) => (blk.kind !== 'tr' && blk.items.some((i: any) => i.cell) ? [b] : [])),
     };
   });
 
-/** What's wrong with the table now ([] when nothing). */
-function problems(s: State, tableGone: boolean): string[] {
+/** What's wrong with the tables now ([] when nothing). */
+function problems(s: State): string[] {
   const out: string[] = [];
-  if (tableGone) return out;
-  // every table has its separator (a table can be added: by pasting one)
-  for (const [b, role, t] of s.rows) if (role === 'head' && !s.rows.some((r) => r[1] === 'sep' && r[2] === t)) out.push(`table at ${b} has no separator`);
-  for (const [b, role] of s.rows) {
-    const t = s.text[b];
-    if (role === 'sep' && !/^(\| :?-+:? )+\|$/.test(t) && b !== s.b) out.push(`separator untidy: ${JSON.stringify(t)}`);
-    if (b === s.b) continue;
-    // | cell | cell |: one space either side of each cell's text (none in an empty cell's)
-    if (!/^(\| (?:[^ |](?:[^|]*[^ |])?)? )+\|$/.test(t)) out.push(`row ${b} untidy: ${JSON.stringify(t)}`);
+  for (const b of s.leaks) out.push(`a cell wall outside a table, in line ${b}: ${JSON.stringify(s.text[b])}`);
+  const heads = new Map<number, number>();
+  for (const r of s.rows) {
+    if (r.walls[0] !== 0 || r.walls[r.walls.length - 1] !== r.len - 1 || r.walls.length < 2) out.push(`row ${r.b} not between walls: ${JSON.stringify(s.text[r.b])}`);
+    if (r.b === r.table && !r.head) out.push(`table at ${r.b} has no header`);
+    if (r.head) heads.set(r.table, r.walls.length);
   }
-  // every row has its header's columns
-  const cols = (t: string) => (t.match(/\|/g) ?? []).length - 1;
-  for (const [b, , t] of s.rows) {
-    if (b === s.b || t === s.b) continue;
-    // (a row can have more: the cells of a table made from lines of text are all kept)
-    const n = cols(s.text[t]), role = s.rows.find((r) => r[0] === b)![1];
-    if (role === 'sep' ? cols(s.text[b]) !== n : cols(s.text[b]) < n) out.push(`row ${b} has ${cols(s.text[b])} columns, its header ${n}: ${JSON.stringify(s.text[b])}`);
+  for (const r of s.rows) {
+    const n = heads.get(r.table);
+    if (n !== undefined && r.walls.length !== n) out.push(`row ${r.b} has ${r.walls.length - 1} cells, its header ${n - 1}: ${JSON.stringify(s.text[r.b])}`);
   }
-  if (s.mode === 'text' && s.spans && !s.spans.some(([a, z]) => s.o >= a && s.o <= z)) out.push(`caret off the cells: row ${s.b} at ${s.o} in ${JSON.stringify(s.text[s.b])}`);
+  const here = s.rows.find((r) => r.b === s.b);
+  if (s.mode === 'text' && here && (s.o <= here.walls[0] || s.o >= here.len)) out.push(`caret off the cells: row ${s.b} at ${s.o} in ${JSON.stringify(s.text[s.b])}`);
   return out;
 }
 
@@ -134,10 +138,13 @@ for (const seed of Array.from({ length: SEEDS }, (_, i) => i + FROM)) {
     await page.keyboard.press('Enter');
     await type(page, '| --- | --- |');
     await page.keyboard.press('Enter');
-    await type(page, '| alpha | 1 |');
+    await type(page, 'alpha');
+    await page.keyboard.press('Tab');
+    await type(page, '1');
     await page.keyboard.press('Enter');
-    await type(page, '| beta | 2 |');
-    await page.keyboard.press('Control+End');
+    await type(page, 'beta');
+    await page.keyboard.press('Tab');
+    await type(page, '2');
     await page.keyboard.press('Enter');
     await page.keyboard.press('Enter');
     await type(page, 'Below the table.');
@@ -145,7 +152,8 @@ for (const seed of Array.from({ length: SEEDS }, (_, i) => i + FROM)) {
     const r = rng(seed);
     const log: string[] = [];
     let prev = await state(page);
-    expect(problems(prev, false)).toEqual([]);
+    expect(prev.rows).toHaveLength(3);
+    expect(problems(prev)).toEqual([]);
     for (let i = 0; i < STEPS; i++) {
       const what = await step(page, r);
       log.push(what);
@@ -156,7 +164,7 @@ for (const seed of Array.from({ length: SEEDS }, (_, i) => i + FROM)) {
       const s = await state(page);
       // (the whole table selected and deleted, or undone out of existence, is fine)
       const gone = !s.rows.length;
-      const bad = [...problems(s, gone), ...errors.map((m) => `error: ${m}`), ...stacks];
+      const bad = [...problems(s), ...errors.map((m) => `error: ${m}`), ...stacks];
       if (bad.length) {
         throw new Error(
           [`seed ${seed}, step ${i}: ${what}`, ...bad, '', `(caret before: ${prev.b}:${prev.o}${prev.anchor ? `, anchor ${prev.anchor.b}:${prev.anchor.o}` : ''}, ${prev.mode})`, 'before:', ...prev.text.map((t, k) => `  ${k}${k === prev.b ? '*' : ' '} ${t}`), 'after:', ...s.text.map((t, k) => `  ${k}${k === s.b ? '*' : ' '} ${t}`), '', 'steps:', ...log.slice(-15).map((l) => '  ' + l)].join('\n'),
