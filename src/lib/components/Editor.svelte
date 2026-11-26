@@ -501,7 +501,7 @@
           {#each ed.paletteItems as item, i (item.name)}
             {#if item.rule}<div class="rule"></div>{/if}
             <div class="opt" class:sel={i === ed.palette.sel} onmouseenter={() => ed.palette && (ed.palette.sel = i)} onclick={() => ed.pickPalette(i)}>
-              <span class="name">{#if item.draw && ed.palette.ctx !== 'draw'}<span class="pen">✎</span>{/if}{#each matched(item.name, ed.palette.query) as [part, hit], k (k)}<span class:hit>{part}</span>{/each}</span><span class="desc">{item.desc}</span>
+              <span class="name">{#if item.draw && ed.palette.ctx !== 'draw'}<span class="pen">✎</span>{/if}{#each matched(item.name, ed.palette.query) as [part, hit], k (k)}<span class:hit>{part}</span>{/each}</span><span class="desc" title={item.desc}>{item.desc}</span>
             </div>
           {:else}
             <div class="opt empty">{ed.palette.ctx === 'math' ? `insert \\${ed.palette.query}` : 'no match'}</div>
@@ -1156,9 +1156,8 @@
   .palette {
     position: absolute;
     z-index: 6;
-    min-width: 260px;
-    width: max-content;
-    max-width: min(560px, calc(100vw - 24px));
+    /* (one width, whatever's listed: it doesn't jump about as you type) */
+    width: min(380px, calc(100vw - 24px));
     font-family: var(--mono);
     font-size: 12.5px;
     line-height: 1.5;
@@ -1221,7 +1220,16 @@
     color: var(--muted);
   }
   .opt .name {
+    flex: none;
+    white-space: nowrap;
     color: var(--fg);
+  }
+  /* what it does: on the one line, cut short (all of it on hover) */
+  .opt .desc {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .opt.sel {
     background: var(--sel-bg);

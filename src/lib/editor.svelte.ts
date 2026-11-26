@@ -4630,7 +4630,7 @@ export class Editor {
       { name: 'unfoldall', desc: 'unfold every section', run: () => this.foldAll(false) },
       { name: 'outline', desc: `${this.showOutline ? 'hide' : 'show'} the outline: headings and theorems  ctrl+shift+o`, run: () => this.toggleOutline() },
       { name: 'replace', desc: 'find and replace  ctrl+h', run: () => this.openFind(true) },
-      { name: 'zoom', desc: `zoom back to 100% (now ${Math.round(this.zoom * 100)}%): ctrl+wheel, a pinch, ctrl+= and ctrl+- zoom  ctrl+0`, run: () => this.setZoom(1) },
+      { name: 'zoom', desc: `back to 100% (now ${Math.round(this.zoom * 100)}%)  ctrl+0`, run: () => this.setZoom(1) },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
       { name: 'toolbar', desc: `${this.config.ui.toolbar ? 'hide' : 'show'} the toolbar`, run: () => this.toggleBar('toolbar') },
