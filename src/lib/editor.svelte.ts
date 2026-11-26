@@ -73,7 +73,7 @@ export type FindMatch = { b: number; s: number; e: number; math?: true; note?: I
  * way to do it (for tooltips); `off`: not possible right now; `sep`: a menu rule before it.
  */
 export type DrawingAction = { name: string; desc: string; keys: string[]; run: (key?: string) => void; menu?: false; keyOnly?: true; more?: string; off?: boolean; sep?: true };
-export type PaletteItem = { name: string; desc: string; draw?: boolean; group?: string };
+export type PaletteItem = { name: string; desc: string; draw?: boolean; rule?: true };
 export type Spacer = { above?: number; below?: number };
 type Hint = { label: string; rect: Rect; act: () => void };
 type Snap = { doc: Doc; b: number; o: number };
@@ -3753,8 +3753,8 @@ export class Editor {
     return order.slice(0, 10).map((n, i) => {
       const c = cmds.find((c) => c.name === n)!;
       const item: PaletteItem = { name: c.name, desc: c.desc, draw: c.draw };
-      if (near && !q && i === 0) item.group = near.label;
-      else if (near && !q && i === near.names.length) item.group = 'everything else';
+      // (a line under what fits)
+      if (near && !q && i === near.names.length) item.rule = true;
       return item;
     });
   }
@@ -3763,12 +3763,12 @@ export class Editor {
    * The commands that fit where the caret is, to offer first: a table's, a selection's
    * (styles, drawing on it), a list's, a heading's. (In math, the math palette does instead.)
    */
-  nearCommands(): { label: string; names: string[] } | null {
-    if (this.tableRow()) return { label: 'this table', names: TABLE_ACTIONS.map((a) => a[1]) };
-    if (this.cmdSel ?? this.selection) return { label: 'the selection', names: ['bold', 'italic', 'inlinecode', 'arrow', 'box', 'circle', 'highlight'] };
+  nearCommands(): { names: string[] } | null {
+    if (this.tableRow()) return { names: TABLE_ACTIONS.map((a) => a[1]) };
+    if (this.cmdSel ?? this.selection) return { names: ['bold', 'italic', 'inlinecode', 'arrow', 'box', 'circle', 'highlight'] };
     const kind = this.blk.kind;
-    if (kind === 'li' || kind === 'ol') return { label: 'this list', names: kind === 'li' ? ['ol', 'p'] : ['li', 'p'] };
-    if (kind === 'h1' || kind === 'h2' || kind === 'h3') return { label: 'this heading', names: ['h1', 'h2', 'h3', 'p'].filter((k) => k !== kind) };
+    if (kind === 'li' || kind === 'ol') return { names: kind === 'li' ? ['ol', 'p'] : ['li', 'p'] };
+    if (kind === 'h1' || kind === 'h2' || kind === 'h3') return { names: ['h1', 'h2', 'h3', 'p'].filter((k) => k !== kind) };
     return null;
   }
 

@@ -9,9 +9,9 @@ test.beforeEach(async ({ page }) => {
   await fresh(page);
 });
 
-/** The palette's entries (names), and its group labels. */
+/** The palette's entries (names), and how many lines divide them. */
 const names = (page: Page) => page.locator('.palette .opt .name').allInnerTexts();
-const groups = (page: Page) => page.locator('.palette .group').allInnerTexts();
+const rules = (page: Page) => page.locator('.palette .rule').count();
 const menu = (page: Page) => page.locator('.dmenu .opt .name').allInnerTexts();
 const rows = (page: Page) => page.locator('.block.tr').count();
 
@@ -39,7 +39,7 @@ test('in a table, the palette starts with the table’s commands', async ({ page
   await table(page);
   await type(page, '\\');
   expect((await names(page)).slice(0, 7)).toEqual(['addrow', 'deleterow', 'addcolumn', 'deletecolumn', 'alignleft', 'aligncenter', 'alignright']);
-  expect(await groups(page)).toEqual(['this table', 'everything else']);
+  expect(await rules(page)).toBe(1);
   await page.keyboard.press('Enter');
   expect(await rows(page)).toBe(3);
 });
@@ -51,15 +51,15 @@ test('in a table, what is typed still finds every command, the table’s first',
   await page.keyboard.press('Escape');
   await type(page, '\\h2');
   expect((await names(page))[0]).toBe('h2');
-  expect(await groups(page)).toEqual([]);
+  expect(await rules(page)).toBe(0);
 });
 
-test('outside a table there are no table commands, and on a plain line no groups', async ({ page }) => {
+test('outside a table there are no table commands, and on a plain line no divider', async ({ page }) => {
   await type(page, 'plain');
   await type(page, '\\');
   const shown = await names(page);
   expect(shown).not.toContain('addrow');
-  expect(await groups(page)).toEqual([]);
+  expect(await rules(page)).toBe(0);
   await type(page, 'addrow');
   expect(await names(page)).not.toContain('addrow');
 });
@@ -68,7 +68,7 @@ test('with text selected, the palette offers its styles first, and they apply to
   await type(page, 'say hello');
   for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowLeft');
   await type(page, '\\');
-  expect(await groups(page)).toEqual(['the selection', 'everything else']);
+  expect(await rules(page)).toBe(1);
   expect((await names(page)).slice(0, 3)).toEqual(['bold', 'italic', 'inlinecode']);
   await page.keyboard.press('Enter');
   expect(await text(page)).toBe('say **hello**');
@@ -93,7 +93,7 @@ test('a selection across lines: a kind from the palette applies to every line', 
 test('in a list, the other kinds of list come first', async ({ page }) => {
   await type(page, '- item');
   await type(page, '\\');
-  expect(await groups(page)).toEqual(['this list', 'everything else']);
+  expect(await rules(page)).toBe(1);
   expect((await names(page)).slice(0, 2)).toEqual(['ol', 'p']);
   await page.keyboard.press('Enter');
   expect(await kinds(page)).toEqual(['ol']);
@@ -102,7 +102,7 @@ test('in a list, the other kinds of list come first', async ({ page }) => {
 test('in a heading, the other headings come first', async ({ page }) => {
   await type(page, '# Title');
   await type(page, '\\');
-  expect(await groups(page)).toEqual(['this heading', 'everything else']);
+  expect(await rules(page)).toBe(1);
   expect((await names(page)).slice(0, 3)).toEqual(['h2', 'h3', 'p']);
 });
 

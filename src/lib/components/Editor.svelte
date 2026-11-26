@@ -348,7 +348,7 @@
           <!-- (typing filters it; opened by a click, it says what it is until something is typed) -->
           <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {#if ed.input === 'mouse' && !ed.palette.query}<span class="what">{ed.palette.ctx === 'draw' ? 'draw' : 'commands'}</span>{:else}{ed.palette.ctx === 'draw' ? '' : '\\'}{ed.palette.query}<span class="blink">▏</span>{/if}</div>
           {#each ed.paletteItems as item, i (item.name)}
-            {#if item.group}<div class="group" class:later={i > 0}>{item.group}</div>{/if}
+            {#if item.rule}<div class="rule"></div>{/if}
             <div class="opt" class:sel={i === ed.palette.sel} onmouseenter={() => ed.palette && (ed.palette.sel = i)} onclick={() => ed.pickPalette(i)}>
               <span class="name">{#if item.draw && ed.palette.ctx !== 'draw'}<span class="pen">✎</span>{/if}{item.name}</span><span class="desc">{item.desc}</span>
             </div>
@@ -827,16 +827,11 @@
   .opt.empty {
     font-style: italic;
   }
-  /* (what fits where the caret is, then everything else) */
-  .group {
-    padding: 4px 10px 1px;
-    font-size: 10.5px;
-    color: var(--muted);
-    opacity: 0.75;
-  }
-  .group.later {
-    margin-top: 3px;
-    border-top: 1px solid var(--border);
+  /* (between what fits where the caret is and the rest) */
+  .palette .rule {
+    height: 1px;
+    margin: 3px 0;
+    background: var(--border);
   }
   .help-wrap {
     position: fixed;
