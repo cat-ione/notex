@@ -77,7 +77,12 @@
       {#if s.hl}
         <path class="stroke hl" d={smoothPath(inkPoints(s))} stroke-width={HL_PX} />
       {:else if s.pen}
-        <path class="fillink" d={penOutline(s.pts, w * 1.6)} />
+        {#if s.dash}
+          <!-- (dashed: an even line, as a pen's outline can't be dashed) -->
+          <path class="stroke dash" d={smoothPath(inkPoints(s))} stroke-width={w * 1.2} />
+        {:else}
+          <path class="fillink" d={penOutline(s.pts, w * 1.6)} />
+        {/if}
       {:else}
         <path class="stroke" class:dash={s.dash} d={smoothPath(inkPoints(s))} stroke-width={w} />
       {/if}
@@ -226,9 +231,10 @@
     stroke-linejoin: round;
   }
   /* a highlighter: wide and see-through, the text showing under it */
+  /* (a highlighter's flat tip: square ends, not round blobs) */
   .stroke.hl {
     stroke-opacity: 0.32;
-    stroke-linecap: round;
+    stroke-linecap: butt;
   }
   /* (in no colour of its own: the highlighter's warm one, not the text's) */
   .plain .stroke.hl {

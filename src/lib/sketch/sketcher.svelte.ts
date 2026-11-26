@@ -509,7 +509,7 @@ export class Sketcher {
         if (g.snapped && Math.hypot(p.x - g.pts[g.pts.length - 3], p.y - g.pts[g.pts.length - 2]) < 6) break;
         g.snapped = undefined;
         clearTimeout(g.still);
-        if (!g.hl) g.still = setTimeout(() => this.straighten(g), HOLD_MS);
+        g.still = setTimeout(() => this.straighten(g), HOLD_MS);
         this.draft = { ...(this.draft as Shape), pts: g.pts.slice() } as Shape;
         break;
       }
@@ -678,7 +678,11 @@ export class Sketcher {
     const r = recognize(g.pts);
     if (!r) return;
     const st = this.style();
-    if (r.k === 'line') {
+    if (g.hl) {
+      // (a highlighter's stroke held still: straight, if it was near enough a line)
+      if (r.k === 'line') g.snapped = { ...inkShape([r.a.x, r.a.y, 0.5, r.b.x, r.b.y, 0.5].map((v) => Math.round(v * 10) / 10), false, st), hl: true };
+      else return;
+    } else if (r.k === 'line') {
       // (in a diagram, an end on a box attaches to it)
       const ta = this.endTarget(r.a, 'pen', {}), tb = this.endTarget(r.b, 'pen', {}, ta?.id);
       g.snapped = lineShape(this.endAt(r.a, ta, {}), this.endAt(r.b, tb, {}), 'none', st);
