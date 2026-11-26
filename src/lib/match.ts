@@ -21,16 +21,19 @@ export function matchAt(n: string, q: string): number[] | null {
   return hit;
 }
 
-/** The names `q` matches, best first: exactly, as a beginning (its case first), whole inside, in order. */
-export function rank(names: string[], q: string): string[] {
+/**
+ * The names `q` matches, best first: exactly, as a beginning (its case first), whole inside,
+ * in order. Within each, the more `use` says a name is used, the earlier; then the shorter.
+ */
+export function rank(names: string[], q: string, use: (n: string) => number = () => 0): string[] {
   if (!q) return names;
-  const scored: { n: string; s: number }[] = [];
+  const scored: { n: string; tier: number; u: number }[] = [];
   for (const n of names) {
     const hit = matchAt(n, q);
     if (!hit) continue;
     const contiguous = hit.at(-1)! - hit[0] === hit.length - 1;
-    const s = n === q ? 0 : n.startsWith(q) ? 1 : hit[0] === 0 && contiguous ? 2 : contiguous ? 3 : 5;
-    scored.push({ n, s: s + n.length / 100 });
+    const tier = n === q ? 0 : n.startsWith(q) ? 1 : hit[0] === 0 && contiguous ? 2 : contiguous ? 3 : 5;
+    scored.push({ n, tier, u: use(n) });
   }
-  return scored.sort((a, b) => a.s - b.s).map((x) => x.n);
+  return scored.sort((a, b) => a.tier - b.tier || b.u - a.u || a.n.length - b.n.length).map((x) => x.n);
 }

@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 /** The palette's entries (names), and how many lines divide them. */
-const names = (page: Page) => page.locator('.palette .opt .name').allInnerTexts();
+const names = async (page: Page) => (await page.locator('.palette .opt .name').allInnerTexts()).map((n) => n.replace('✎', ''));
 const rules = (page: Page) => page.locator('.palette .rule').count();
 const menu = (page: Page) => page.locator('.dmenu .opt .name').allInnerTexts();
 const rows = (page: Page) => page.locator('.block.tr').count();
@@ -306,4 +306,75 @@ test('in a short window the palette shrinks to fit, below the caret or above it'
   // and the arrows still keep the highlighted one in view
   for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowDown');
   expect(await selInView(page)).toBe(true);
+});
+
+// ── remembering what's used ──
+
+/** Run a palette command by name. */
+async function run(page: Page, name: string) {
+  await type(page, '\\' + name);
+  await page.keyboard.press('Enter');
+}
+
+test('the palette remembers what you pick: it comes first, and first among matches', async ({ page }) => {
+  await type(page, 'plain');
+  await type(page, '\\');
+  expect((await names(page))[0]).toBe('arrow');
+  await page.keyboard.press('Escape');
+  await run(page, 'theme');
+  await run(page, 'theme');
+  await type(page, '\\');
+  expect((await names(page))[0]).toBe('theme');
+  await type(page, 't');
+  // (table and theme both begin with t: the one used first)
+  expect((await names(page))[0]).toBe('theme');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  // still remembered after a reload
+  await page.reload();
+  await page.waitForFunction(() => (window as any).__nx);
+  await type(page, '\\');
+  expect((await names(page))[0]).toBe('theme');
+});
+
+test('in a table, the table’s commands stay first, the most used of them on top', async ({ page }) => {
+  await run(page, 'theme');
+  await table(page);
+  await run(page, 'alignright');
+  await type(page, '\\');
+  const shown = await names(page);
+  expect(shown.slice(0, 2)).toEqual(['alignright', 'addrow']);
+  expect(shown[7]).toBe('theme');
+  expect(await rules(page)).toBe(1);
+});
+
+test('math remembers its own', async ({ page }) => {
+  await type(page, '$');
+  await run(page, 'alpha');
+  await type(page, '\\');
+  expect((await names(page))[0]).toBe('alpha');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await type(page, ' text ');
+  await type(page, '\\');
+  expect(await names(page)).not.toContain('alpha');
+});
+
+test('remembering can be switched off, and forget clears it', async ({ page }) => {
+  await run(page, 'theme');
+  await page.evaluate(() => { const e = (window as any).__nx.ed; e.updateConfig({ rememberCommands: false }); });
+  await type(page, '\\');
+  expect((await names(page))[0]).toBe('arrow');
+  await page.keyboard.press('Escape');
+  // off: nothing new is remembered either
+  await run(page, 'statusbar');
+  await run(page, 'statusbar');
+  await page.evaluate(() => { const e = (window as any).__nx.ed; e.updateConfig({ rememberCommands: true }); });
+  await type(page, '\\');
+  expect((await names(page)).slice(0, 2)).toEqual(['theme', 'arrow']);
+  await page.keyboard.press('Escape');
+  await run(page, 'forget');
+  await type(page, '\\');
+  expect((await names(page))[0]).toBe('arrow');
 });

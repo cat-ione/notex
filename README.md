@@ -61,7 +61,9 @@ Notes are `.ntx` files: compact JSON (see `src/lib/format.ts`).
 The toolbar along the top has notes, saving, math, drawing, images, find and PDF, each
 showing its keys when hovered; it fades while you type. The palette (`\`) and the right-click
 menu start with what fits where the caret is: a table's rows and columns in a table, styles on
-selected text, math in a formula; in a table, the toolbar's table button opens the table's menu. It and the status bar can be hidden
+selected text, math in a formula; in a table, the toolbar's table button opens the table's menu.
+It also remembers what you pick most (and lately) and puts that first; `orget` clears it,
+and the setting `remember commands` turns it off. It and the status bar can be hidden
 (settings, `\toolbar`, `\statusbar`), and everything stays on its keys.
 
 Ctrl+, opens settings and an editor for the config file. On desktop the file is `config.json`

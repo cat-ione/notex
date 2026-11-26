@@ -82,6 +82,12 @@
       value: () => (ed.config.highlightCode ? 'on' : 'off'),
       change: () => ed.updateConfig({ highlightCode: !ed.config.highlightCode }),
     },
+    {
+      label: 'remember commands',
+      tip: 'The \\ palette puts the commands you pick most, and lately, first. \\forget clears what it remembers.',
+      value: () => (ed.config.rememberCommands ? 'on' : 'off'),
+      change: () => ed.updateConfig({ rememberCommands: !ed.config.rememberCommands }),
+    },
     { label: 'show tips', tip: 'Now and then, a short tip in the status bar about a faster way to do what you just did. Each tip shows at most twice.', value: () => (ed.config.tips ? 'on' : 'off'), change: () => ed.updateConfig({ tips: !ed.config.tips }) },
     { label: 'substitutions…', tip: 'Text replaced as you type, like -> with →. Turn groups of built-in substitutions on or off, and add your own.', act: () => openSubs(), hint: () => `${onCount()} on, ${mineCount()} custom` },
     { label: 'edit config file…', tip: 'All settings as JSON, including custom themes and extra CSS.', act: () => openEditor(), hint: 'themes, css' },

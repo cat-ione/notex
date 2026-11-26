@@ -42,6 +42,8 @@ export type Config = {
   pdf: { theme: string; paper: Paper };
   /** Colour code blocks by their language (```py, ```cpp …); the colours are --code-* in a theme. */
   highlightCode: boolean;
+  /** The palette puts the commands you pick most (and lately) first. */
+  rememberCommands: boolean;
   /** The bars around the page: the toolbar (and whether it fades while you type) and the status bar. */
   ui: { toolbar: boolean; fadeToolbar: boolean; statusBar: boolean };
 };
@@ -78,6 +80,7 @@ export const DEFAULT_CONFIG: Config = {
   pdf: { theme: 'paper', paper: 'A4' },
   ui: { toolbar: true, fadeToolbar: true, statusBar: true },
   highlightCode: true,
+  rememberCommands: true,
 };
 
 const LOCAL_KEY = 'notex.config';

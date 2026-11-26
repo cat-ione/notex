@@ -15,6 +15,7 @@ import { flushSync, tick } from 'svelte';
 import { arrowGeo, attachAt, curveThrough, defaultBend, nextSide, sideName, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { rank } from './match';
+import * as U from './usage';
 import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
 import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
@@ -3720,12 +3721,17 @@ export class Editor {
     const p = this.palette;
     if (!p) return [];
     const q = p.query;
+    // what's been picked most (and lately) in this palette first, unless that's switched off
+    const remember = this.config.rememberCommands;
+    const use = (n: string) => (remember ? U.score(p.ctx, n) : 0);
+    const order = (names: string[]) => (remember ? U.byUse(p.ctx, names) : names);
+    const find = (names: string[]) => (q ? rank(names, q, use) : order(names));
     const draws = this.drawCommands();
-    const rankDraws = (n: number) => rank(draws.map((c) => c.name), q).slice(0, n).map((n) => draws.find((c) => c.name === n)!);
-    if (p.ctx === 'draw') return rankDraws(Infinity);
+    const rankDraws = () => find(draws.map((c) => c.name)).map((n) => draws.find((c) => c.name === n)!);
+    if (p.ctx === 'draw') return rankDraws();
     if (p.ctx === 'style') {
       const acts = this.styling ? this.drawingActions(this.styling).filter((a) => !a.keyOnly) : [];
-      return rank(acts.map((c) => c.name), q).map((n) => {
+      return find(acts.map((c) => c.name)).map((n) => {
         const c = acts.find((c) => c.name === n)!;
         return { name: c.name, desc: `${c.desc}  ${keyLabel(c.keys[0])}` };
       });
@@ -3734,23 +3740,23 @@ export class Editor {
       const user = this.config.snippets.math;
       const names = [...new Set([...Object.keys(user), ...Object.keys(MATH_PALETTE)])];
       // Drawing commands join in once something is typed, after the math ones (a math command of the same name wins).
-      const extra = q ? rankDraws(Infinity).filter((d) => !names.includes(d.name)) : [];
+      const extra = q ? rankDraws().filter((d) => !names.includes(d.name)) : [];
       // nothing typed yet: the likeliest first (what wraps a selection, with one)
       const first = this.mathSelRange ? MATH_WRAP : MATH_COMMON;
-      const math = rank(q ? names : [...first.filter((n) => names.includes(n)), ...names.filter((n) => !first.includes(n))], q)
+      const math = find(q ? names : [...first.filter((n) => names.includes(n)), ...names.filter((n) => !first.includes(n))])
         .map((n) => ({ name: n, desc: user[n] !== undefined ? user[n] : describeInserter(n) }));
       return [...math, ...extra];
     }
     const cmds = this.textCommands();
     // what fits where the caret is comes first (as typed, an exact name still wins)
     const near = this.nearCommands();
-    const found = rank(cmds.map((c) => c.name), q);
-    const order = !near
+    const found = find(cmds.map((c) => c.name));
+    const listed = !near
       ? found
       : q
         ? [...found.filter((n) => n === q), ...found.filter((n) => n !== q && near.names.includes(n)), ...found.filter((n) => n !== q && !near.names.includes(n))]
-        : [...near.names, ...found.filter((n) => !near.names.includes(n))];
-    return order.map((n, i) => {
+        : [...order(near.names), ...found.filter((n) => !near.names.includes(n))];
+    return listed.map((n, i) => {
       const c = cmds.find((c) => c.name === n)!;
       const item: PaletteItem = { name: c.name, desc: c.desc, draw: c.draw };
       // (a line under what fits)
@@ -3840,10 +3846,12 @@ export class Editor {
     const q = p.query;
     const name = picked?.name;
     this.closePalette();
+    // (remembered, to come first next time)
+    const picks = (n: string) => this.config.rememberCommands && U.used(p.ctx, n);
     if (p.ctx === 'style') {
       const acts = this.styling ? this.drawingActions(this.styling) : [];
       const c = acts.find((c) => c.name === q) ?? acts.find((c) => c.name === name);
-      if (c) c.run();
+      if (c) picks(c.name), c.run();
       else if (q) this.flash(`unknown action: ${q}`);
       return;
     }
@@ -3851,6 +3859,7 @@ export class Editor {
       const draws = this.drawCommands();
       const c = (p.ctx === 'draw' && draws.find((c) => c.name === q)) || draws.find((c) => c.name === name);
       if (!c) return void (q && this.flash(`unknown drawing: ${q}`));
+      picks(c.name);
       this.cmdSel = this.selection;
       this.anchor = null;
       c.run();
@@ -3863,6 +3872,7 @@ export class Editor {
       // Exact names win over the highlighted suggestion; user snippets win over built-ins.
       const user = this.config.snippets.math;
       const key = user[q] !== undefined || MATH_PALETTE[q] ? q : name;
+      if (key && (user[key] !== undefined || MATH_PALETTE[key])) picks(key);
       const range = this.mathSelRange;
       this.msel = null;
       if (range) {
@@ -3888,7 +3898,7 @@ export class Editor {
     // Drawing commands act on the selection, if any, and styles and kinds on it; everything else drops it.
     this.cmdSel = this.selection;
     if (!c?.keep) this.anchor = null;
-    if (c) c.run();
+    if (c) picks(c.name), c.run();
     else if (q) this.flash(`unknown command: ${q}`);
     this.cmdSel = null;
   }
@@ -3965,6 +3975,7 @@ export class Editor {
       { name: 'save', desc: 'save  ctrl+s', run: () => this.saveNote() },
       { name: 'saveas', desc: 'save as…  ctrl+shift+s', run: () => this.saveNoteAs() },
       { name: 'welcome', desc: 'open the welcome note', run: () => this.openWelcome() },
+      { name: 'forget', desc: 'forget which commands you use most', run: () => (U.forget(), this.flash('the palette is back to its first order')) },
       { name: 'help', desc: 'keyboard shortcuts  F1', run: () => (this.showHelp = !this.showHelp) },
     ];
   }
