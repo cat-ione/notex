@@ -61,7 +61,7 @@ export type Loc =
 
 export type Pos = { b: number; o: number };
 
-type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean };
+type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean; keep?: true };
 /** A step of a note's undo history. */
 type NoteSnap = { items: Item[]; o: number; mode: 'text' | 'math'; mc: MCursor; anchor: Pos | null };
 /** The block index that stands for the note being typed (see Editor.blockAt). */
@@ -73,13 +73,17 @@ export type FindMatch = { b: number; s: number; e: number; math?: true; note?: I
  * way to do it (for tooltips); `off`: not possible right now; `sep`: a menu rule before it.
  */
 export type DrawingAction = { name: string; desc: string; keys: string[]; run: (key?: string) => void; menu?: false; keyOnly?: true; more?: string; off?: boolean; sep?: true };
-export type PaletteItem = { name: string; desc: string; draw?: boolean };
+export type PaletteItem = { name: string; desc: string; draw?: boolean; group?: string };
 export type Spacer = { above?: number; below?: number };
 type Hint = { label: string; rect: Rect; act: () => void };
 type Snap = { doc: Doc; b: number; o: number };
 
 
 const STORAGE_KEY = 'notex.doc.v1';
+
+/** The math palette with nothing typed: the commonest first, and what wraps a selection with one. */
+const MATH_COMMON = ['frac', 'sqrt', 'sum', 'int', 'lim', 'pmatrix', 'cases', 'infty'];
+const MATH_WRAP = ['frac', 'sqrt', 'hat', 'bar', 'vec', 'boxed', 'cancel', 'abs'];
 
 /** What can be done to a table (the palette, and the right-click menu in a table). */
 const TABLE_ACTIONS = [
@@ -2904,7 +2908,7 @@ export class Editor {
       case 'C-a': this.selectAll(); return true;
       case 'C-z': this.undo(); return true;
       case 'C-y': case 'C-S-z': this.redo(); return true;
-      case 'C-k': this.anchor = null; this.openPalette('text'); return true;
+      case 'C-k': this.openPalette('text'); return true;
       case 'C-m': this.deleteSelection(); this.insertMath(false); return true;
       case 'C-b': this.toggleStyle('b'); return true;
       case 'C-i': this.toggleStyle('i'); return true;
@@ -3730,15 +3734,42 @@ export class Editor {
       const names = [...new Set([...Object.keys(user), ...Object.keys(MATH_PALETTE)])];
       // Drawing commands join in once something is typed, after the math ones.
       const extra = q ? rankDraws(3) : [];
-      const math = rank(names, q)
+      // nothing typed yet: the likeliest first (what wraps a selection, with one)
+      const first = this.mathSelRange ? MATH_WRAP : MATH_COMMON;
+      const math = rank(q ? names : [...first.filter((n) => names.includes(n)), ...names.filter((n) => !first.includes(n))], q)
         .slice(0, 8 - extra.length)
         .map((n) => ({ name: n, desc: user[n] !== undefined ? user[n] : describeInserter(n) }));
       return [...math, ...extra];
     }
     const cmds = this.textCommands();
-    return rank(cmds.map((c) => c.name), q)
-      .slice(0, 10)
-      .map((n) => cmds.find((c) => c.name === n)!);
+    // what fits where the caret is comes first (as typed, an exact name still wins)
+    const near = this.nearCommands();
+    const found = rank(cmds.map((c) => c.name), q);
+    const order = !near
+      ? found
+      : q
+        ? [...found.filter((n) => n === q), ...found.filter((n) => n !== q && near.names.includes(n)), ...found.filter((n) => n !== q && !near.names.includes(n))]
+        : [...near.names, ...found.filter((n) => !near.names.includes(n))];
+    return order.slice(0, 10).map((n, i) => {
+      const c = cmds.find((c) => c.name === n)!;
+      const item: PaletteItem = { name: c.name, desc: c.desc, draw: c.draw };
+      if (near && !q && i === 0) item.group = near.label;
+      else if (near && !q && i === near.names.length) item.group = 'everything else';
+      return item;
+    });
+  }
+
+  /**
+   * The commands that fit where the caret is, to offer first: a table's, a selection's
+   * (styles, drawing on it), a list's, a heading's. (In math, the math palette does instead.)
+   */
+  nearCommands(): { label: string; names: string[] } | null {
+    if (this.tableRow()) return { label: 'this table', names: TABLE_ACTIONS.map((a) => a[1]) };
+    if (this.cmdSel ?? this.selection) return { label: 'the selection', names: ['bold', 'italic', 'inlinecode', 'arrow', 'box', 'circle', 'highlight'] };
+    const kind = this.blk.kind;
+    if (kind === 'li' || kind === 'ol') return { label: 'this list', names: kind === 'li' ? ['ol', 'p'] : ['li', 'p'] };
+    if (kind === 'h1' || kind === 'h2' || kind === 'h3') return { label: 'this heading', names: ['h1', 'h2', 'h3', 'p'].filter((k) => k !== kind) };
+    return null;
   }
 
   private openPalette(ctx: 'math' | 'text' | 'draw' | 'style') {
@@ -3852,9 +3883,9 @@ export class Editor {
       return;
     }
     const c = this.textCommands().find((c) => c.name === (this.textCommands().some((c) => c.name === q) ? q : name));
-    // Drawing commands act on the selection, if any; everything else just drops it.
+    // Drawing commands act on the selection, if any, and styles and kinds on it; everything else drops it.
     this.cmdSel = this.selection;
-    this.anchor = null;
+    if (!c?.keep) this.anchor = null;
     if (c) c.run();
     else if (q) this.flash(`unknown command: ${q}`);
     this.cmdSel = null;
@@ -3902,19 +3933,19 @@ export class Editor {
       ...this.drawCommands(),
       { name: 'math', desc: 'inline math', run: () => this.insertMath(false) },
       { name: 'display', desc: 'display math block', run: () => this.insertMath(true) },
-      { name: 'h1', desc: 'heading 1', run: setKind('h1') },
-      { name: 'h2', desc: 'heading 2', run: setKind('h2') },
-      { name: 'h3', desc: 'heading 3', run: setKind('h3') },
-      { name: 'p', desc: 'paragraph', run: setKind('p') },
-      { name: 'li', desc: 'list item', run: setKind('li') },
-      { name: 'ol', desc: 'numbered list item', run: setKind('ol') },
-      { name: 'bold', desc: 'bold  ctrl+b', run: () => this.toggleStyle('b') },
-      { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i') },
-      { name: 'code', desc: 'code block  ```', run: setKind('code') },
+      { name: 'h1', desc: 'heading 1', run: setKind('h1'), keep: true },
+      { name: 'h2', desc: 'heading 2', run: setKind('h2'), keep: true },
+      { name: 'h3', desc: 'heading 3', run: setKind('h3'), keep: true },
+      { name: 'p', desc: 'paragraph', run: setKind('p'), keep: true },
+      { name: 'li', desc: 'list item', run: setKind('li'), keep: true },
+      { name: 'ol', desc: 'numbered list item', run: setKind('ol'), keep: true },
+      { name: 'bold', desc: 'bold  ctrl+b', run: () => this.toggleStyle('b'), keep: true },
+      { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i'), keep: true },
+      { name: 'code', desc: 'code block  ```', run: setKind('code'), keep: true },
       { name: 'table', desc: 'insert a table (tab: next cell, enter: new row)', run: () => this.insertTable() },
       ...(this.tableRow() ? TABLE_ACTIONS.map(([what, name, desc]) => ({ name, desc, run: () => this.tableCommand(what) })) : []),
       { name: 'image', desc: 'insert an image (or paste / drop one)', run: () => void this.chooseImages() },
-      { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c') },
+      { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c'), keep: true },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
       { name: 'toolbar', desc: `${this.config.ui.toolbar ? 'hide' : 'show'} the toolbar`, run: () => this.toggleBar('toolbar') },
@@ -5126,8 +5157,9 @@ export class Editor {
   }
 
   /** What's open over the page, by the toolbar button that opens it (null: nothing, or something else). */
-  get openByToolbar(): 'draw' | 'settings' | 'help' | 'notes' | null {
+  get openByToolbar(): 'draw' | 'table' | 'settings' | 'help' | 'notes' | null {
     if (this.palette?.ctx === 'draw' && this.paletteAt) return 'draw';
+    if (this.menu?.table) return 'table';
     return this.showSettings ? 'settings' : this.showHelp ? 'help' : this.showNotes ? 'notes' : null;
   }
 
@@ -5250,10 +5282,11 @@ export class Editor {
   // ── right-click menu ──
 
   /** The open right-click menu, at a window position: a drawing's (`id`), or the page's. */
-  menu = $state<{ id: Id | null; x: number; y: number; sel: number } | null>(null);
+  menu = $state<{ id: Id | null; x: number; y: number; sel: number; table?: true } | null>(null);
 
   get menuItems(): DrawingAction[] {
     if (!this.menu) return [];
+    if (this.menu.table) return this.tableActions();
     return this.menu.id ? this.drawingActions(this.menu.id).filter((a) => a.menu !== false && !a.keyOnly) : this.pageActions();
   }
 
@@ -5267,16 +5300,51 @@ export class Editor {
       { name: 'copy', desc: 'copy', keys: ['C-c'], run: clip('copy'), off: !sel },
       { name: 'paste', desc: 'paste', keys: ['C-v'], run: () => void this.pasteFromClipboard() },
       { name: 'all', desc: this.mode === 'math' ? 'select the formula' : 'select everything', keys: ['C-a'], run: () => this.runKey('C-a') },
-      ...(this.mode === 'text' ? [{ name: 'formula', desc: 'insert math', keys: ['$'], run: () => this.runKey('$'), more: '$$ for display math', sep: true } as DrawingAction] : []),
-      // in a table: its rows, columns and alignment
-      ...(this.mode === 'text' && this.tableRow()
-        ? TABLE_ACTIONS.map(([what, name, desc], i): DrawingAction => ({ name, desc, keys: [`\\${name}`], run: () => this.tableCommand(what), ...(i === 0 ? { sep: true as const } : {}) }))
+      // what fits where the caret is: in math, math; in a table, its rows, columns and alignment; on selected text, styles
+      ...(this.mode === 'math' ? this.mathActions() : []),
+      ...(this.mode === 'text' && this.tableRow() ? this.tableActions() : []),
+      ...(this.mode === 'text' && !this.tableRow() && this.selection
+        ? ([['bold', 'bold', 'C-b'], ['italic', 'italic', 'C-i'], ['inlinecode', 'code', 'C-e']] as const).map(([name, desc, key], i): DrawingAction => ({ name, desc, keys: [key], run: () => this.runKey(key), ...(i === 0 ? { sep: true as const } : {}) }))
         : []),
+      ...(this.mode === 'text' ? [{ name: 'formula', desc: 'insert math', keys: ['$'], run: () => this.runKey('$'), more: '$$ for display math', sep: true } as DrawingAction] : []),
       { name: 'arrow', desc: sel ? 'arrow from the selection' : 'draw an arrow', keys: ['\\arrow'], run: () => this.startArrow(), more: 'or alt+drag', sep: true },
       ...MARK_KINDS.map((k): DrawingAction => ({ name: k, desc: `${MARK_VERB[k]} ${what}`, keys: [`\\${k}`], run: () => this.startMark(k), more: k === this.lastMarkKind ? 'or alt+shift+drag' : undefined })),
       { name: 'undo', desc: 'undo', keys: ['C-z'], run: () => this.runKey('C-z'), sep: true },
       { name: 'redo', desc: 'redo', keys: ['C-y'], run: () => this.runKey('C-y') },
     ];
+  }
+
+  /** A table's rows, columns and alignment, as menu entries. */
+  tableActions(): DrawingAction[] {
+    return TABLE_ACTIONS.map(([what, name, desc], i): DrawingAction => ({ name, desc, keys: [`\\${name}`], run: () => this.tableCommand(what), ...(i === 0 ? { sep: true as const } : {}) }));
+  }
+
+  /** In a formula: the commonest structures (wrapping the selection, if any), and the rest of math's commands. */
+  private mathActions(): DrawingAction[] {
+    const put = (name: string) => () => {
+      this.openPalette('math');
+      this.palette!.query = name;
+      this.acceptPalette(undefined);
+    };
+    const acts: [string, string][] = this.mathSelRange
+      ? [['frac', 'a fraction over it'], ['sqrt', 'a square root of it'], ['hat', 'a hat on it'], ['bar', 'a bar over it'], ['boxed', 'a box round it']]
+      : [['frac', 'fraction'], ['sqrt', 'square root'], ['sum', 'sum'], ['int', 'integral'], ['pmatrix', 'matrix']];
+    return [
+      ...acts.map(([name, desc], i): DrawingAction => ({ name, desc, keys: [`\\${name}`], run: put(name), ...(i === 0 ? { sep: true as const } : {}) })),
+      { name: 'mathcommands', desc: 'every math command', keys: ['\\'], run: () => this.openPalette('math') },
+    ];
+  }
+
+  /** In a table, the toolbar's table button: the table's menu, under it. */
+  openTableMenu(under: DOMRect): boolean {
+    if (!this.inTable) return false;
+    this.menu = { id: null, x: under.left, y: under.bottom + 2, sel: 0, table: true };
+    return true;
+  }
+
+  /** Whether the caret is in a table's cell (as text, not in a formula). */
+  get inTable(): boolean {
+    return this.mode === 'text' && !!this.tableRow();
   }
 
   /**

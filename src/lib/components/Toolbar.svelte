@@ -20,7 +20,8 @@
   const insert: Button[] = [
     { id: 'math', glyph: '$', label: 'math', tip: 'a formula ($$ for a centred one)', keys: '$', run: () => ed.mode === 'text' && ed.insertMath(false) },
     { id: 'draw', glyph: '✎', label: 'draw', tip: 'draw: arrows, boxes, circles… (alt+drag draws an arrow)', keys: 'ctrl+d', run: (at) => ed.openDrawMenu(at) },
-    { id: 'table', glyph: '▦', label: 'table', tip: 'a table (tab: next cell, enter: new row)', run: () => ed.insertTable() },
+    // (in a table: that table's rows, columns and alignment)
+    { id: 'table', glyph: '▦', label: 'table', tip: 'a table (tab: next cell, enter: new row)', run: (at) => ed.openTableMenu(at) || ed.insertTable() },
     { id: 'image', glyph: '▣', label: 'image', tip: 'an image (or paste / drop one)', run: () => ed.chooseImages() },
   ];
   const right: Button[] = [
@@ -58,8 +59,9 @@
 </script>
 
 {#snippet button(b: Button)}
-  <button class="b b-{b.id}" class:glyph={!b.label} onmousedown={(e) => press(e, b)} onclick={(e) => e.preventDefault()} data-tip={b.tip} data-tip-key={b.keys} aria-label={b.tip}>
-    <span class="g">{b.glyph}</span>{#if b.label}<span class="l">{b.label}</span>{/if}
+  {@const here = b.id === 'table' && ed.inTable}
+  <button class="b b-{b.id}" class:glyph={!b.label} class:here onmousedown={(e) => press(e, b)} onclick={(e) => e.preventDefault()} data-tip={here ? 'this table: rows, columns, alignment' : b.tip} data-tip-key={here ? 'right-click a cell' : b.keys} aria-label={here ? 'this table' : b.tip}>
+    <span class="g">{b.glyph}</span>{#if b.label}<span class="l">{b.label}</span>{/if}{#if here}<span class="caret">▾</span>{/if}
   </button>
 {/snippet}
 
@@ -118,6 +120,10 @@
   .b:hover .g { color: var(--accent); }
   .g { color: var(--muted); }
   .b.glyph { padding: 0 7px; }
+  /* a button that acts on where the caret is (the table button, in a table) */
+  .b.here { color: var(--fg); }
+  .b.here .g { color: var(--accent); }
+  .caret { font-size: 9px; margin-left: -2px; }
   .note { color: var(--fg); max-width: 28ch; }
   .note .name { overflow: hidden; text-overflow: ellipsis; }
   /* (its place is kept when saved: the buttons after it don't move) */
