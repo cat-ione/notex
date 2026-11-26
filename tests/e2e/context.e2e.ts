@@ -415,3 +415,25 @@ test('without arrowing, an exact name still wins as typed', async ({ page }) => 
   await type(page, '0 1 f');
   expect((await formulas(page))[0].replace(/\s/g, '')).toBe('\\int_{0}^{1}f');
 });
+
+test('a group’s word finds the whole group: draw, every drawing command; style, the styles', async ({ page }) => {
+  await type(page, '\\draw');
+  const draws = await names(page);
+  for (const n of ['drawings', 'arrow', 'box', 'circle', 'underline', 'highlight', 'brace', 'strike']) expect(draws).toContain(n);
+  await page.keyboard.press('Escape');
+  await type(page, '\\style');
+  const styles = await names(page);
+  for (const n of ['bold', 'italic', 'inlinecode', 'strikethrough', 'texthighlight']) expect(styles).toContain(n);
+});
+
+test('near the page’s right edge the palette moves left, keeping its width (not squeezed)', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 700 });
+  await type(page, 'x'.repeat(70));
+  await type(page, '\\');
+  const box = (await page.locator('.palette').boundingBox())!;
+  const pg = (await page.locator('.page').boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(pg.x + pg.width);
+  // each option on one line: names and what they do side by side
+  const heights = await page.locator('.palette .opt').evaluateAll((els) => els.slice(0, 12).map((e) => e.getBoundingClientRect().height));
+  expect(Math.max(...heights)).toBeLessThan(26);
+});

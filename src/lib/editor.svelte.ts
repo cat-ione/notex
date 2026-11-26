@@ -66,7 +66,8 @@ export type Loc =
 
 export type Pos = { b: number; o: number };
 
-type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean; keep?: true };
+/** `tags`: words it's found by too, as a group (draw, table, box…), besides its description's. */
+type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean; keep?: true; tags?: string };
 /** Which palette: text's commands, math's, drawing's, a drawing's actions, or what to refer to. */
 export type PaletteCtx = 'math' | 'text' | 'draw' | 'style' | 'ref';
 /** A step of a note's undo history. */
@@ -4365,7 +4366,7 @@ export class Editor {
     // (as typed: by name, forgiving a typo, or by a word of what it does)
     const find = (names: string[], desc?: (n: string) => string) => (q ? rank(names, q, use, desc) : order(names));
     const draws = this.drawCommands();
-    const rankDraws = () => find(draws.map((c) => c.name), (n) => draws.find((c) => c.name === n)!.desc).map((n) => draws.find((c) => c.name === n)!);
+    const rankDraws = () => find(draws.map((c) => c.name), (n) => `${draws.find((c) => c.name === n)!.desc} draw drawing shape`).map((n) => draws.find((c) => c.name === n)!);
     if (p.ctx === 'draw') return rankDraws();
     if (p.ctx === 'ref') {
       const ts = this.refTargets();
@@ -4393,7 +4394,11 @@ export class Editor {
     const cmds = this.textCommands();
     // what fits where the caret is comes first (as typed, an exact name still wins)
     const near = this.nearCommands();
-    const found = find(cmds.map((c) => c.name), (n) => cmds.find((c) => c.name === n)!.desc);
+    // (by its description, and the words of its group: draw finds every drawing command)
+    const found = find(cmds.map((c) => c.name), (n) => {
+      const c = cmds.find((c) => c.name === n)!;
+      return `${c.desc} ${c.tags ?? ''} ${TAGS[c.name] ?? ''} ${c.draw ? 'draw drawing shape' : ''}`;
+    });
     const listed = !near
       ? found
       : q
@@ -4610,13 +4615,13 @@ export class Editor {
       { name: 'diagram', desc: 'insert a diagram: boxes, arrows, pen  ctrl+shift+d in one', run: () => this.sketch.insertDiagram() },
       { name: 'graph', desc: 'insert a graph of functions: y = sin x, a line each (g in a diagram)', run: () => this.sketch.insertGraph() },
       { name: 'sketch', desc: `${this.sketch.on?.kind === 'free' ? 'stop drawing' : 'draw'} on the note (a pen draws on it anyway)  ctrl+shift+d`, run: () => this.sketch.toggleFree() },
-      ...(this.tableRow() ? TABLE_ACTIONS.map(([what, name, desc]) => ({ name, desc, run: () => this.tableCommand(what) })) : []),
+      ...(this.tableRow() ? TABLE_ACTIONS.map(([what, name, desc]) => ({ name, desc, run: () => this.tableCommand(what), tags: 'table' })) : []),
       { name: 'image', desc: 'insert an image (or paste / drop one)', run: () => void this.chooseImages() },
       { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c'), keep: true },
       { name: 'strikethrough', desc: 'strike text out ~~…~~  ctrl+shift+x', run: () => this.toggleStyle('s'), keep: true },
       { name: 'texthighlight', desc: 'highlight text ==…==  ctrl+shift+h', run: () => this.toggleStyle('h'), keep: true },
       { name: 'todo', desc: 'a box to tick: [ ] at a line’s start  ctrl+enter ticks it', run: () => this.toggleTasks(), keep: true },
-      ...BOX_KINDS.map((k): PaletteEntry => ({ name: k, desc: BOX_DESC[k], run: () => this.setBox(k), keep: true })),
+      ...BOX_KINDS.map((k): PaletteEntry => ({ name: k, desc: BOX_DESC[k], run: () => this.setBox(k), keep: true, tags: 'box environment structure' })),
       { name: 'number', desc: 'number the display formula here: (1), (2)…', run: () => this.toggleEqNumber() },
       { name: 'ref', desc: 'refer to a numbered formula or theorem: (3), Theorem 2', run: () => this.openPalette('ref') },
       { name: 'link', desc: 'link to a note: [[its name]]; a web address links by itself', run: () => this.typeText('[[]]', 2) },
@@ -6563,6 +6568,16 @@ export function hintLabels(n: number): string[] {
   }
   return out.slice(off, off + n).sort();
 }
+
+/** The groups commands are found by, besides their names and descriptions (style finds bold…). */
+const TAGS: Record<string, string> = Object.fromEntries([
+  ...['bold', 'italic', 'inlinecode', 'strikethrough', 'texthighlight'].map((n) => [n, 'style format text']),
+  ...['h1', 'h2', 'h3', 'p', 'li', 'ol', 'code', 'todo'].map((n) => [n, 'kind block line format']),
+  ...['fold', 'foldall', 'unfoldall', 'outline'].map((n) => [n, 'fold section outline']),
+  ...['save', 'saveas', 'open', 'new', 'notes', 'markdown', 'copymarkdown', 'export', 'pdf', 'print', 'json', 'import'].map((n) => [n, 'file export']),
+  ...['number', 'ref', 'math', 'display'].map((n) => [n, 'math equation formula']),
+  ...['diagram', 'graph', 'sketch', 'image', 'table'].map((n) => [n, 'insert']),
+]);
 
 const BOX_DESC: Record<BoxKind, string> = {
   theorem: 'a theorem: a numbered box (again: out of it)',

@@ -45,6 +45,15 @@
 
   // The palette lists every command; the highlighted one is kept in view as the arrows move it.
   let paletteList = $state<HTMLDivElement>();
+  // (as wide as it needs; near the page's right edge it moves left rather than being squeezed)
+  let paletteBox = $state<HTMLDivElement>();
+  let paletteShift = $state(0);
+  $effect(() => {
+    void ed.paletteAnchor?.x, void ed.paletteItems.length, void ed.palette?.query;
+    if (!paletteBox || !page) return;
+    const w = paletteBox.offsetWidth, x = ed.paletteAnchor?.x ?? 0;
+    paletteShift = Math.max(0, Math.min(x, page.clientWidth - 8 - w)) - x;
+  });
   $effect(() => {
     void ed.palette?.sel, void ed.palette?.query;
     paletteList?.querySelector('.opt.sel')?.scrollIntoView({ block: 'nearest' });
@@ -481,7 +490,8 @@
         <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
         <div
           class="palette"
-          style="left: {at.x}px; top: {up ? at.y - 6 : at.y + at.h + 6}px; {up ? 'transform: translateY(-100%);' : ''}"
+          bind:this={paletteBox}
+          style="left: {at.x + paletteShift}px; top: {up ? at.y - 6 : at.y + at.h + 6}px; {up ? 'transform: translateY(-100%);' : ''}"
           transition:fly={{ y: up ? 6 : -6, duration: 140, easing: cubicOut }}
           onmousedown={(e) => (e.stopPropagation(), e.preventDefault())}
         >
@@ -1147,6 +1157,8 @@
     position: absolute;
     z-index: 6;
     min-width: 260px;
+    width: max-content;
+    max-width: min(560px, calc(100vw - 24px));
     font-family: var(--mono);
     font-size: 12.5px;
     line-height: 1.5;
