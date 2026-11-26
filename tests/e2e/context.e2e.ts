@@ -400,3 +400,22 @@ test('in math, a typo finds the command too', async ({ page }) => {
   await page.keyboard.press('Enter');
   expect((await formulas(page))[0]).toContain('\\frac');
 });
+
+test('an item arrowed down to is the one inserted, even when what is typed is a name too', async ({ page }) => {
+  await type(page, '$');
+  await type(page, '\\int');
+  const list = await names(page);
+  expect(list[0]).toBe('int');
+  for (let i = 0; i < list.indexOf('intop'); i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await type(page, 'f');
+  expect((await formulas(page))[0].replace(/\s/g, '')).toBe('\\intf');
+});
+
+test('without arrowing, an exact name still wins as typed', async ({ page }) => {
+  await type(page, '$');
+  await type(page, '\\int');
+  await page.keyboard.press('Enter');
+  await type(page, '0 1 f');
+  expect((await formulas(page))[0].replace(/\s/g, '')).toBe('\\int_{0}^{1}f');
+});

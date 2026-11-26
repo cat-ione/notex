@@ -3939,8 +3939,9 @@ export class Editor {
 
   private acceptPalette(picked: PaletteItem | undefined) {
     const p = this.palette!;
-    const q = p.query;
     const name = picked?.name;
+    // an exact name as typed wins, unless another item was chosen (arrowed to, clicked)
+    const q = picked && picked.name !== this.paletteItems[0]?.name ? picked.name : p.query;
     this.closePalette();
     // (remembered, to come first next time)
     const picks = (n: string) => this.config.rememberCommands && U.used(p.ctx, n);
