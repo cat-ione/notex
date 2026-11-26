@@ -13,12 +13,15 @@
 </script>
 
 {#if shapes.length || on}
+  <!-- (drawn at no zoom, shown at the page's: see Sketcher, free surface) -->
   <svg class="note-ink" aria-hidden="true">
-    {#if on}
-      <SketchShapes {shapes} sel={sk.sel} draft={sk.draft} marquee={sk.marquee} handles={sk.handles()} selBox={sk.selBox} editing={sk.editing} />
-    {:else}
-      <SketchShapes {shapes} />
-    {/if}
+    <g transform={ed.zoom === 1 ? undefined : `scale(${ed.zoom})`}>
+      {#if on}
+        <SketchShapes {shapes} sel={sk.sel} draft={sk.draft} marquee={sk.marquee} handles={sk.handles()} selBox={sk.selBox} editing={sk.editing} />
+      {:else}
+        <SketchShapes {shapes} />
+      {/if}
+    </g>
   </svg>
 {/if}
 {#if on}

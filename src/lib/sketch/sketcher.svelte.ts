@@ -55,6 +55,8 @@ type Gesture =
   | { k: 'handle'; id: number; h: Handle; from: Pt; orig: Shape[]; box: Box; done: boolean }
   | { k: 'marquee'; id: number; from: Pt; add: Id[] }
   | { k: 'pan'; id: number; y: number; x: number; t: number; v: number; sx: number; sy: number }
+  /** Two fingers: the page zooms (how far apart they were, and their middle, at the start). */
+  | { k: 'pinch'; id: number; other: number; d0: number; c0: Pt; k1: number }
   | { k: 'resize'; id: number; y: number; h: number };
 
 export class Sketcher {
@@ -87,7 +89,7 @@ export class Sketcher {
   private lastType = 'mouse';
   private double = false;
   private penTimer: ReturnType<typeof setTimeout> | undefined;
-  private lastPen = 0;
+  private lastPen = -Infinity;
   private clip: Shape[] | null = null;
 
   constructor(private ed: Editor) {
@@ -111,13 +113,17 @@ export class Sketcher {
     return this.ed.page;
   }
 
-  /** The shapes of a target, in its coordinates (on the note: the page's). */
+  /**
+   * The shapes of a target, in its coordinates (on the note: the page's, at no zoom, so a
+   * drawing grows with the text it's on).
+   */
   shapes(t: Target | null = this.on): Shape[] {
     if (!t) return [];
     if (t.kind === 'block') return this.blockOf(t.id)?.shapes ?? [];
+    const z = this.ed.zoom;
     return (this.ed.doc.ink ?? []).map((s) => {
       const o = this.inkAt[s.at] ?? this.offsetOf(s.at);
-      return o ? (moved(s, o.x, o.y) as Placed) : s;
+      return o ? (moved(s, o.x / z, o.y / z) as Placed) : s;
     });
   }
 
@@ -205,15 +211,17 @@ export class Sketcher {
     const old = new Map((this.ed.doc.ink ?? []).map((s) => [s.id, s]));
     const out: Placed[] = [];
     const at = { ...this.inkAt };
+    // (anchors are measured on the page as it's shown; shapes are kept at no zoom)
+    const z = this.ed.zoom;
     for (const s of list) {
       if (!changed.has(s.id) && old.has(s.id)) {
         out.push(old.get(s.id)!);
         continue;
       }
-      const a = this.anchorAt(bounds(s, lookupIn(list)).y);
+      const a = this.anchorAt(bounds(s, lookupIn(list)).y * z);
       if (!a) continue;
       at[a.id] = a.off;
-      out.push({ ...(moved(s, -a.off.x, -a.off.y) as Shape), at: a.id } as Placed);
+      out.push({ ...(moved(s, -a.off.x / z, -a.off.y / z) as Shape), at: a.id } as Placed);
     }
     this.inkAt = at;
     this.ed.doc.ink = out;
@@ -234,8 +242,8 @@ export class Sketcher {
         return { x: Math.max(0, Math.min(blk?.w ?? 1e6, p.x)), y: Math.max(0, p.y) };
       }
     }
-    const o = this.page?.getBoundingClientRect();
-    return { x: e.clientX - (o?.left ?? 0), y: e.clientY - (o?.top ?? 0) };
+    const o = this.page?.getBoundingClientRect(), z = this.ed.zoom;
+    return { x: (e.clientX - (o?.left ?? 0)) / z, y: (e.clientY - (o?.top ?? 0)) / z };
   }
 
   /** A diagram's canvas (its svg). */
@@ -245,7 +253,10 @@ export class Sketcher {
 
   /** A box in a target's coordinates, as a box on the page (for the label editor over it). */
   pageBox(b: Box, t: Target | null = this.on): Box {
-    if (t?.kind !== 'block') return b;
+    if (t?.kind !== 'block') {
+      const z = this.ed.zoom;
+      return { x: b.x * z, y: b.y * z, w: b.w * z, h: b.h * z };
+    }
     const svg = this.canvas(t.id), page = this.page;
     const m = svg?.getScreenCTM();
     if (!svg || !m || !page) return b;
@@ -267,7 +278,7 @@ export class Sketcher {
   private tol(type: string): number {
     const t = TOL[type] ?? 5;
     const svg = this.on?.kind === 'block' ? this.canvas(this.on.id) : null;
-    const scale = svg?.getScreenCTM()?.a ?? 1;
+    const scale = svg ? (svg.getScreenCTM()?.a ?? 1) : this.ed.zoom;
     return t / (scale || 1);
   }
 
@@ -359,11 +370,17 @@ export class Sketcher {
     // a palm while the pen is near or drawing
     if (type === 'touch' && (this.penNear || performance.now() - this.lastPen < 600 || this.g?.k === 'draw' && this.g.pen)) return !!this.on || this.penSeen;
     if (this.g && e.pointerId !== this.g.id) {
-      // a second finger: whatever the first was doing becomes a scroll
+      // a second finger: whatever the first was doing stops; the two of them zoom the page
       if (type === 'touch' && this.g.k === 'draw' && !this.g.pen) this.draft = null;
-      if (type === 'touch') this.g = { k: 'pan', id: e.pointerId, y: e.clientY, x: e.clientX, t: e.timeStamp, v: 0, sx: e.clientX, sy: e.clientY };
+      const first = this.fingers.get(this.g.id);
+      if (type === 'touch' && first && this.g.k !== 'pinch') {
+        this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const d0 = Math.max(10, Math.hypot(e.clientX - first.x, e.clientY - first.y));
+        this.g = { k: 'pinch', id: this.g.id, other: e.pointerId, d0, c0: { x: (e.clientX + first.x) / 2, y: (e.clientY + first.y) / 2 }, k1: 1 };
+      } else if (type === 'touch' && this.g.k !== 'pinch') this.g = { k: 'pan', id: e.pointerId, y: e.clientY, x: e.clientX, t: e.timeStamp, v: 0, sx: e.clientX, sy: e.clientY };
       return true;
     }
+    if (type === 'touch') this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const eraserEnd = type === 'pen' && (e.button === 5 || (e.buttons & 32) !== 0);
     if (!this.on) {
       const penDraws = type === 'pen' && ed.config.sketch.penDraws && (ed.mode === 'text' || ed.mode === 'math' || ed.mode === 'style');
@@ -426,6 +443,15 @@ export class Sketcher {
 
   pointerMove(e: PointerEvent) {
     const g = this.g;
+    if (this.fingers.has(e.pointerId)) this.fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (g?.k === 'pinch' && (e.pointerId === g.id || e.pointerId === g.other)) {
+      const a = this.fingers.get(g.id), b = this.fingers.get(g.other);
+      if (a && b) {
+        g.k1 = Math.hypot(a.x - b.x, a.y - b.y) / g.d0;
+        this.ed.pinchPreview(g.k1, g.c0);
+      }
+      return;
+    }
     if (!g || e.pointerId !== g.id) return;
     if (g.k === 'pan') return this.panTo(e);
     if (g.k === 'resize') return this.resizeTo(e);
@@ -481,7 +507,18 @@ export class Sketcher {
     // (no touch: what's drawn shows by itself; the note is laid out again once the pointer is up)
   }
 
+  /** The fingers on the page that drawing has (for a pinch: where each is). */
+  private fingers = new Map<number, Pt>();
+
   pointerUp(e: PointerEvent) {
+    this.fingers.delete(e.pointerId);
+    const pg = this.g;
+    // a finger of a pinch lifted: the zoom it came to (the other finger does nothing more)
+    if (pg?.k === 'pinch' && (e.pointerId === pg.id || e.pointerId === pg.other)) {
+      this.g = null;
+      this.ed.pinchEnd(pg.k1, pg.c0);
+      return;
+    }
     const g = this.g;
     if (!g || e.pointerId !== g.id) return;
     this.g = null;
@@ -524,6 +561,13 @@ export class Sketcher {
 
   /** A pointer was taken away (the browser scrolled, the pen left): drop what it was drawing. */
   pointerCancel(e: PointerEvent) {
+    this.fingers.delete(e.pointerId);
+    if (this.g?.k === 'pinch' && (e.pointerId === this.g.id || e.pointerId === this.g.other)) {
+      const g = this.g;
+      this.g = null;
+      this.ed.pinchEnd(g.k1, g.c0);
+      return;
+    }
     if (!this.g || e.pointerId !== this.g.id) return;
     this.g = null;
     this.draft = null;
@@ -977,8 +1021,8 @@ export class Sketcher {
       const b = boundsOf(list);
       at = b ? { x: b.x, y: b.y + b.h + 32 } : { x: 32, y: 40 };
     } else {
-      const sc = this.scroller(), o = this.page?.getBoundingClientRect(), r = sc?.getBoundingClientRect();
-      at = { x: (this.page?.clientWidth ?? 600) / 2 - NEW_BOX.w / 2, y: (r && o ? r.top + r.height / 2 - o.top : 100) - NEW_BOX.h / 2 };
+      const sc = this.scroller(), o = this.page?.getBoundingClientRect(), r = sc?.getBoundingClientRect(), z = this.ed.zoom;
+      at = { x: (this.page?.clientWidth ?? 600) / z / 2 - NEW_BOX.w / 2, y: (r && o ? r.top + r.height / 2 - o.top : 100) / z - NEW_BOX.h / 2 };
     }
     this.addBox(k, { ...at, ...(k === 'text' ? { w: 40, h: 24 } : NEW_BOX) });
   }

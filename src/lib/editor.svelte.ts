@@ -627,6 +627,58 @@ export class Editor {
 
   /** Laid out for paper (see beginPrint); the screen shows a veil meanwhile. */
   printing = $state(false);
+
+  // ── zoom: the page bigger or smaller (ctrl+wheel, a pinch, ctrl+= / ctrl+- / ctrl+0) ──
+
+  /** How much bigger the page is shown, on this device (text, page, images, diagrams, drawings). */
+  private zoomLevel = $state(readZoom());
+  /** The zoom as shown (printing: none). */
+  get zoom(): number {
+    return this.printing ? 1 : this.zoomLevel;
+  }
+
+  /**
+   * Zoom to `z`, keeping the point at `at` (a pointer, the middle of a pinch) where it is on
+   * the screen; without one, the caret's line.
+   */
+  setZoom(z: number, at?: { clientX: number; clientY: number }) {
+    z = Math.round(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)) * 100) / 100;
+    const old = this.zoomLevel;
+    if (z === old) return;
+    const sc = this.page?.parentElement;
+    const view = sc?.getBoundingClientRect();
+    // the point's place in the page, as a share of the page's height (which scales with the zoom)
+    const y = at?.clientY ?? (this.caret ? (this.page?.getBoundingClientRect().top ?? 0) + this.caret.r.y : (view?.top ?? 0));
+    const before = sc && view ? { off: y - view.top, at: sc.scrollTop + y - view.top, h: sc.scrollHeight } : null;
+    this.zoomLevel = z;
+    try {
+      localStorage.setItem('notex.zoom', String(z));
+    } catch {}
+    this.flash(`zoom ${Math.round(z * 100)}%`);
+    // once laid out at the new size: the same place under the point
+    requestAnimationFrame(() => {
+      if (sc && before) sc.scrollTop = (before.at * sc.scrollHeight) / Math.max(1, before.h) - before.off;
+    });
+  }
+
+  /** A pinch going on: the page shown `k` times as big round where it started (not laid out again till it ends). */
+  pinchPreview(k: number, at: { x: number; y: number }) {
+    const page = this.page;
+    if (!page) return;
+    const z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.zoomLevel * k)) / this.zoomLevel;
+    if (!page.style.transform) {
+      const o = page.getBoundingClientRect();
+      page.style.transformOrigin = `${at.x - o.left}px ${at.y - o.top}px`;
+    }
+    page.style.transform = `scale(${z})`;
+  }
+
+  /** A pinch done: the zoom it came to. */
+  pinchEnd(k: number, at: { x: number; y: number }) {
+    const page = this.page;
+    if (page) (page.style.transform = ''), (page.style.transformOrigin = '');
+    if (Math.abs(k - 1) > 0.02) this.setZoom(this.zoomLevel * k, { clientX: at.x, clientY: at.y });
+  }
   private endPrinting: (() => void) | null = null;
 
   /**
@@ -1277,7 +1329,8 @@ export class Editor {
   setImageWidth(b: number, w: number, step = false) {
     const blk = this.doc.blocks[b];
     if (blk?.kind !== 'img') return;
-    const max = this.page?.clientWidth ?? 2000;
+    // (its width at no zoom: the page's too)
+    const max = (this.page?.clientWidth ?? 2000) / this.zoom;
     this.withFrame(() => {
       if (step) this.checkpoint('style');
       blk.w = Math.round(Math.max(40, Math.min(max, w)));
@@ -1812,6 +1865,12 @@ export class Editor {
   /** Where a wheel gesture on a drawing started (it holds while the mouse stays there). */
   private wheelLock: { id: Id; x: number; y: number } | null = null;
   wheel(e: WheelEvent) {
+    // ctrl+wheel (a trackpad's pinch, too): zoom, round the pointer
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      this.setZoom(this.zoom * Math.exp(-Math.max(-60, Math.min(60, e.deltaY)) * 0.006), e);
+      return;
+    }
     if (this.mode !== 'style' || !this.styling) return;
     const id = this.styling, lk = this.wheelLock;
     const held = !!lk && lk.id === id && Math.hypot(e.clientX - lk.x, e.clientY - lk.y) < 4;
@@ -2921,6 +2980,12 @@ export class Editor {
       e.preventDefault();
       this.toggleOutline();
       this.touch();
+      return;
+    }
+    // zoom (as a browser's, but the page's: the toolbar and panels stay as they are)
+    if (k === 'C-=' || k === 'C-+' || k === 'C-S-+' || k === 'C--' || k === 'C-0') {
+      e.preventDefault();
+      this.setZoom(k === 'C-0' ? 1 : this.zoom * (k === 'C--' ? 1 / 1.1 : 1.1));
       return;
     }
     const was = this.b;
@@ -4559,6 +4624,7 @@ export class Editor {
       { name: 'unfoldall', desc: 'unfold every section', run: () => this.foldAll(false) },
       { name: 'outline', desc: `${this.showOutline ? 'hide' : 'show'} the outline: headings and theorems  ctrl+shift+o`, run: () => this.toggleOutline() },
       { name: 'replace', desc: 'find and replace  ctrl+h', run: () => this.openFind(true) },
+      { name: 'zoom', desc: `zoom back to 100% (now ${Math.round(this.zoom * 100)}%): ctrl+wheel, a pinch, ctrl+= and ctrl+- zoom  ctrl+0`, run: () => this.setZoom(1) },
       { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
       { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
       { name: 'toolbar', desc: `${this.config.ui.toolbar ? 'hide' : 'show'} the toolbar`, run: () => this.toggleBar('toolbar') },
@@ -6471,6 +6537,18 @@ function describeInserter(name: string): string {
   const nodes = 'node' in ins ? [ins.node()] : ins.nodes();
   const n = nodes[0];
   return n.k === 'sym' ? n.v : `\\${n.name}`;
+}
+
+const ZOOM_MIN = 0.5, ZOOM_MAX = 3;
+
+/** The zoom kept on this device. */
+function readZoom(): number {
+  try {
+    const z = parseFloat(localStorage.getItem('notex.zoom') ?? '');
+    return z >= ZOOM_MIN && z <= ZOOM_MAX ? z : 1;
+  } catch {
+    return 1;
+  }
 }
 
 /** Prefix-free labels that stay short (vimium-style): single letters first, then pairs. */

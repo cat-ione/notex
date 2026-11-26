@@ -128,6 +128,19 @@
     };
   });
 
+  // The zoom: the page's sizes times it (see .page), laid out again once it's in.
+  let zoomed = 1, relayout = false;
+  $effect(() => {
+    const z = ed.zoom;
+    document.documentElement.style.setProperty('--zoom', String(z));
+    if (z === zoomed) return;
+    zoomed = z;
+    // (once a frame, however many steps a pinch on a trackpad takes)
+    if (relayout) return;
+    relayout = true;
+    requestAnimationFrame(() => ((relayout = false), ed.relayoutAll()));
+  });
+
   // Re-measure overlays after every state change has hit the DOM.
   $effect(() => {
     ed.version;
@@ -253,7 +266,8 @@
     const img = (e.currentTarget as HTMLElement).parentElement!.querySelector('img')!;
     const x0 = e.clientX, w0 = img.getBoundingClientRect().width;
     ed.beginImageResize(b);
-    const move = (m: MouseEvent) => ed.setImageWidth(b, w0 + (m.clientX - x0) * 2);
+    // (its width kept as at no zoom)
+    const move = (m: MouseEvent) => ed.setImageWidth(b, (w0 + (m.clientX - x0) * 2) / ed.zoom);
     const up = () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
@@ -330,12 +344,12 @@
 <!-- What comes before a block's text: an image, a box to tick, a box's name, a heading's fold. -->
 {#snippet blockHead(blk: Block, b: number)}{#if blk.kind === 'li' && blk.check !== undefined}<span class="tick" class:on={blk.check} data-tick={b} role="checkbox" aria-checked={blk.check} tabindex="-1" onmousedown={(e) => tick(e, b)}></span>{/if}{#if level(blk) && (blk.fold || ed.sectionEnd(b) > b + 1)}<span class="foldbtn" class:folded={blk.fold} data-fold={b} role="button" tabindex="-1" data-tip={blk.fold ? 'unfold' : 'fold'} data-tip-key="ctrl+." onmousedown={(e) => fold(e, b)}></span>{/if}{#if blk.box && blk.box.k !== 'quote' && ed.boxStarts(b)}<span class="boxhead">{ed.labels.get(blk.box.id) ?? BOX_NAME[blk.box.k]}.</span>{/if}{#if blk.kind === 'img'}<div class="figure">
       <!-- (an image's id is on the picture: drawings on it are on the picture, not its caption) -->
-      <img src={blk.src} alt="" draggable="false" data-nx={blk.id} style:width={blk.w ? `${blk.w}px` : undefined} />
+      <img src={blk.src} alt="" draggable="false" data-nx={blk.id} style:width={blk.w ? `calc(${blk.w}px * var(--zoom, 1))` : undefined} />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="grip" onmousedown={(e) => resizeImage(e, b)} data-tip="drag to resize" data-tip-key="alt+← →"></span>
     </div>{:else if blk.kind === 'diagram'}{@const on = ed.sketch.isOn(blk.id)}<div class="figure diagram" class:on data-diagram={blk.id}>
       <!-- (its own coordinates, scaled down to fit a narrower page; a drawing on it is on the diagram) -->
-      <svg class="canvas" class:tool-select={on && ed.sketch.tool === 'select'} viewBox="0 0 {blk.w ?? 720} {blk.h ?? 280}" style:width="min(100%, {blk.w ?? 720}px)" data-nx={blk.id} role="img" aria-label="diagram">
+      <svg class="canvas" class:tool-select={on && ed.sketch.tool === 'select'} viewBox="0 0 {blk.w ?? 720} {blk.h ?? 280}" style:width="min(100%, calc({blk.w ?? 720}px * var(--zoom, 1)))" data-nx={blk.id} role="img" aria-label="diagram">
         {#if on}
           <SketchShapes shapes={blk.shapes ?? []} sel={ed.sketch.sel} draft={ed.sketch.draft} marquee={ed.sketch.marquee} handles={ed.sketch.handles()} selBox={ed.sketch.selBox} editing={ed.sketch.editing} />
         {:else}
@@ -537,11 +551,11 @@
   }
   .page {
     position: relative;
-    max-width: var(--page-width, 820px);
+    max-width: calc(var(--page-width, 820px) * var(--zoom, 1));
     margin: 0 auto;
     padding: 48px 32px 40vh;
     font-family: var(--prose);
-    font-size: var(--font-size, 16px);
+    font-size: calc(var(--font-size, 16px) * var(--zoom, 1));
     line-height: 2.1;
     /* own stacking context so highlights (z-index -1) sit behind the text, not behind the page */
     isolation: isolate;
