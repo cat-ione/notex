@@ -5,7 +5,7 @@
   import type { Id } from '$lib/model';
   import { renderLabel } from '$lib/labels';
   import {
-    diamondPath, inkPoints, isBox, lineEnds, lookupIn, penOutline, smoothPath, strokePx,
+    diamondPath, inkPoints, isBox, lineEnds, lineLabelBox, lookupIn, penOutline, smoothPath, strokePx,
     type Box, type Pt, type Shape,
   } from '$lib/sketch/shapes';
 
@@ -67,6 +67,13 @@
       <line class="stroke" class:dash={s.dash} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke-width={w} />
       {#if hb}<path class="head" d={head(a, b, w)} stroke-width={w} />{/if}
       {#if ha}<path class="head" d={head(b, a, w)} stroke-width={w} />{/if}
+      {#if s.label && editing !== s.id}
+        {@const lb = lineLabelBox(s, find, 240, 40)}
+        <!-- (on the line, over it: the line stops either side of the words) -->
+        <foreignObject x={lb.x} y={lb.y} width={lb.w} height={lb.h}>
+          <div class="label on-line"><span>{@html renderLabel(s.label)}</span></div>
+        </foreignObject>
+      {/if}
     {:else}
       {#if s.k === 'rect'}
         <rect class="stroke" class:dash={s.dash} class:filled={s.fill} x={s.x} y={s.y} width={s.w} height={s.h} rx="4" stroke-width={w} />
@@ -147,6 +154,11 @@
     overflow: visible;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  .label.on-line span {
+    padding: 0 4px;
+    background: var(--bg);
+    border-radius: 3px;
   }
   .label.free {
     justify-content: flex-start;

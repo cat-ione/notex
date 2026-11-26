@@ -221,6 +221,13 @@
    */
   function pointerDown(e: PointerEvent) {
     const t = e.target as Element;
+    // while drawing, a press outside an open menu just closes it
+    if (ed.menu && ed.sketch.active && e.button !== 2) {
+      e.preventDefault();
+      e.stopPropagation();
+      ed.closeMenu();
+      return;
+    }
     const grip = t.closest?.('[data-dgrip]') as HTMLElement | null;
     if (grip && e.button === 0) {
       e.preventDefault();

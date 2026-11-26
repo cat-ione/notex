@@ -42,11 +42,11 @@
     ['diagrams and the pen  (\\diagram  \\sketch)', [
       ['ctrl+shift+d', 'draw in the diagram at the caret, or on the note; again to stop'],
       ['v p l a r o d t e', 'select, pen, line, arrow, box, ellipse, diamond, text, eraser (or 1–8, 0)'],
-      ['drag  /  tap', 'draw the shape  /  a box of the usual size'], ['enter', 'label the selected box, or a new box'],
+      ['drag  /  tap', 'draw the shape  /  a box of the usual size (on the grid; alt: off it)'], ['enter', 'label the selected box or arrow, or a new box'],
       ['ctrl+← → ↑ ↓', 'a box beside this one, joined by an arrow (while typing a label too)'],
       ['arrow from box to box', 'stays attached when they move'], ['$…$ in a label', 'math'],
       ['c  w  -  f', 'colour, width, dashes, fill'], ['← → ↑ ↓', 'move (shift: by 10)'], ['tab', 'next shape'],
-      ['ctrl+d  del', 'copy, delete'], ['ctrl+a', 'select all'], ['esc', 'deselect, then back to the text'],
+      ['ctrl+d  del', 'copy, delete'], [']  [', 'to the front / back'], ['ctrl+a', 'select all'], ['right-click', 'what can be done there'], ['esc', 'deselect, then back to the text'],
       ['pen', 'draws on the note any time (pressure: width; its eraser end erases); typing goes back'],
       ['finger', 'draws, until a pen has been used: then it scrolls, and a palm does nothing'],
     ]],

@@ -31,7 +31,8 @@ export function diagramTikz(shapes: Shape[], w: number, color: (c: string) => st
       case 'line': {
         const [a, b] = lineEnds(s, find);
         const tip = s.head === 'both' ? '<->' : s.head === 'end' ? '->' : '-';
-        out.push(`  \\draw${opt([tip])} ${pt(a.x, a.y)} -- ${pt(b.x, b.y)};`);
+        const lbl = s.label ? ` node[midway, fill=white, inner sep=1.5pt${s.color ? `, ${color(s.color)}` : ''}] {${text(s.label)}}` : '';
+        out.push(`  \\draw${opt([tip])} ${pt(a.x, a.y)} --${lbl} ${pt(b.x, b.y)};`);
         break;
       }
       case 'rect':

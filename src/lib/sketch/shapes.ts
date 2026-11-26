@@ -27,7 +27,8 @@ export type InkShape = Base & { k: 'ink'; pts: number[]; pen?: true };
 /** A line's end: where it is, and the shape it's attached to (if any). */
 export type End = Pt & { to?: Id };
 export type Head = 'none' | 'end' | 'both';
-export type LineShape = Base & { k: 'line'; a: End; b: End; head: Head };
+/** A line, with an optional label at its middle. */
+export type LineShape = Base & { k: 'line'; a: End; b: End; head: Head; label?: string };
 /** A box, ellipse or diamond (with a label inside), or a text (a label with no outline). */
 export type BoxKind = 'rect' | 'ellipse' | 'diamond' | 'text';
 export type BoxShape = Base & Box & { k: BoxKind; label?: string; fill?: boolean };
@@ -114,6 +115,15 @@ export function lineEnds(s: LineShape, find: Lookup): [Pt, Pt] {
   // (re-aim the first end at where the second really is)
   return [A && !B ? outlinePoint(A, pb) : pa, pb];
 }
+
+/** Where a line's label goes: a box round its middle. */
+export function lineLabelBox(s: LineShape, find: Lookup, w = 160, h = 26): Box {
+  const [a, b] = lineEnds(s, find);
+  return { x: (a.x + b.x) / 2 - w / 2, y: (a.y + b.y) / 2 - h / 2, w, h };
+}
+
+/** Whether a shape can have a label (typed with enter or a double-click). */
+export const labelled = (s: Shape): s is BoxShape | LineShape => isBox(s) || s.k === 'line';
 
 /** The smallest box around a shape (an attached line's ends as drawn). */
 export function bounds(s: Shape, find: Lookup = () => undefined): Box {

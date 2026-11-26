@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attachTarget, boundsOf, bounds, boxOf, boxShape, cloneShapes, detach, erased, hits, inkShape, lineEnds, lineShape, lookupIn,
-  moved, outlinePoint, penOutline, scaled, shapeAt, shapesIn, simplify, smoothPath, type BoxShape, type LineShape,
+  labelled, lineLabelBox, moved, outlinePoint, penOutline, scaled, shapeAt, shapesIn, simplify, smoothPath, type BoxShape, type LineShape,
 } from './shapes';
 
 const rect = (x: number, y: number, w = 100, h = 50, k: BoxShape['k'] = 'rect') => boxShape(k, { x, y, w, h });
@@ -133,5 +133,17 @@ describe('strokes', () => {
   it('a pen outline is a closed shape, a dot a circle', () => {
     expect(penOutline([0, 0, 0.5, 10, 0, 1, 20, 5, 0.2], 3)).toMatch(/^M.*Z$/);
     expect(penOutline([5, 5, 1], 4)).toMatch(/a.*a.*Z$/);
+  });
+});
+
+describe('line labels', () => {
+  it('sit in a box round the middle of the line as drawn', () => {
+    const A = rect(0, 0), B = rect(300, 0);
+    const l = lineShape({ x: 0, y: 0, to: A.id }, { x: 0, y: 0, to: B.id }, 'end');
+    const b = lineLabelBox(l, lookupIn([A, B, l]), 100, 20);
+    expect(b.x + b.w / 2).toBeCloseTo(200);
+    expect(b.y + b.h / 2).toBeCloseTo(25);
+    expect(labelled(l)).toBe(true);
+    expect(labelled(inkShape([0, 0, 0.5], false))).toBe(false);
   });
 });

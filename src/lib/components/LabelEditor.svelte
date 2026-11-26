@@ -4,17 +4,18 @@
   import { onMount, tick, untrack } from 'svelte';
   import type { Editor } from '$lib/editor.svelte';
   import { renderLabel } from '$lib/labels';
-  import { isBox, type BoxShape } from '$lib/sketch/shapes';
+  import { labelled, lineLabelBox, lookupIn, type BoxShape, type LineShape } from '$lib/sketch/shapes';
 
   let { ed }: { ed: Editor } = $props();
 
   // (the shape being labelled when this opened: a new one is a new editor)
   const id = untrack(() => ed.sketch.editing!);
-  const shape = $derived(ed.sketch.shapes().find((s) => s.id === id) as BoxShape | undefined);
+  const shape = $derived(ed.sketch.shapes().find((s) => s.id === id) as BoxShape | LineShape | undefined);
   const isText = $derived(shape?.k === 'text');
-  const at = $derived(shape ? ed.sketch.pageBox(shape) : null);
+  // (a line's label: a box round its middle)
+  const at = $derived(!shape ? null : ed.sketch.pageBox(shape.k === 'line' ? lineLabelBox(shape, lookupIn(ed.sketch.shapes())) : shape));
 
-  let value = $state(untrack(() => (ed.sketch.shapes().find((s) => s.id === id) as BoxShape | undefined)?.label ?? ''));
+  let value = $state(untrack(() => (ed.sketch.shapes().find((s) => s.id === id) as BoxShape | LineShape | undefined)?.label ?? ''));
   let area: HTMLTextAreaElement | undefined = $state();
   let mirror: HTMLDivElement | undefined = $state();
 
@@ -23,7 +24,7 @@
     await tick();
     if (!mirror) return undefined;
     const r = mirror.getBoundingClientRect();
-    const m = at && shape ? at.w / Math.max(1, shape.w) : 1;
+    const m = at && shape && shape.k !== 'line' ? at.w / Math.max(1, shape.w) : 1;
     return { w: Math.max(24, r.width / (m || 1)), h: Math.max(22, r.height / (m || 1)) };
   }
 
@@ -65,7 +66,7 @@
   });
 </script>
 
-{#if shape && at && isBox(shape)}
+{#if shape && at && labelled(shape)}
   <div class="lbl-edit" class:text={isText} style="left: {at.x}px; top: {at.y}px; width: {isText ? 'auto' : `${at.w}px`}; height: {isText ? 'auto' : `${at.h}px`}; --c: {shape.color ? `var(--ink-${shape.color})` : 'var(--fg)'}">
     <textarea
       bind:this={area}

@@ -90,7 +90,8 @@ test('dragging with the box tool makes a box, and what is typed next is its labe
   await page.keyboard.type('Start $x^2$');
   await page.keyboard.press('Enter');
   const [s] = await shapes(page);
-  expect(s).toMatchObject({ k: 'rect', x: 40, y: 40, w: 160, h: 70, label: 'Start $x^2$' });
+  // (on the diagram's grid: every 8)
+  expect(s).toMatchObject({ k: 'rect', x: 40, y: 40, w: 160, h: 72, label: 'Start $x^2$' });
   await expect(page.locator('svg.canvas .label .katex')).toHaveCount(1);
   // the tool went back to select, with the box selected
   expect(await sk(page, (s) => [s.tool, s.sel.length])).toEqual(['select', 1]);
@@ -102,7 +103,7 @@ test('a tap with a box tool makes a box of the usual size there', async ({ page 
   await page.mouse.click(...c.at(200, 100));
   await page.keyboard.press('Escape');
   const [s] = await shapes(page);
-  expect(s).toMatchObject({ k: 'ellipse', x: 140, y: 72, w: 120, h: 56 });
+  expect(s).toMatchObject({ k: 'ellipse', x: 144, y: 72, w: 120, h: 56 });
   expect(s.label).toBeUndefined();
 });
 
@@ -140,9 +141,9 @@ test('an arrow from box to box stays attached when a box is moved', async ({ pag
   const x2 = async () => Number(await page.locator('svg.canvas line').first().getAttribute('x2'));
   const before = await x2();
   // move the second box down and right
-  await drag(page, c.at(400, 60), c.at(480, 160));
+  await drag(page, c.at(400, 60), c.at(480, 156));
   list = await shapes(page);
-  expect(list.find((s) => s.id === B.id)).toMatchObject({ x: B.x + 80, y: B.y + 100 });
+  expect(list.find((s) => s.id === B.id)).toMatchObject({ x: B.x + 80, y: B.y + 96 });
   expect(await x2()).toBeGreaterThan(before + 40);
 });
 
@@ -568,4 +569,83 @@ test('printing: what is drawn on the note stays with its line', async ({ page })
   await page.evaluate(() => (window as any).__nx.ed.beginPrint());
   await expect.poll(async () => Math.round(await gap())).toBe(Math.round(before));
   await page.evaluate(() => (window as any).__nx.ed.endPrint());
+});
+
+test('in a diagram, shapes keep to its grid; alt held, they go where they are put', async ({ page }) => {
+  const c = await diagram(page);
+  await drag(page, c.at(43, 37), c.at(203, 109));
+  await page.keyboard.press('Escape');
+  let [s] = await shapes(page);
+  expect(s).toMatchObject({ x: 40, y: 40, w: 160, h: 72 });
+  // moved by 13, 5: by 16, 8
+  await drag(page, c.at(100, 70), c.at(113, 75));
+  [s] = await shapes(page);
+  expect([s.x, s.y]).toEqual([56, 48]);
+  await drag(page, c.at(120, 70), c.at(123, 77), ['Alt']);
+  [s] = await shapes(page);
+  expect([s.x, s.y]).toEqual([59, 55]);
+});
+
+test('right-click while drawing: what can be done to the shape there, or what can be drawn', async ({ page }) => {
+  const c = await diagram(page);
+  await page.mouse.click(...c.at(100, 60));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.mouse.click(...c.at(100, 60), { button: 'right' });
+  const names = () => page.locator('.dmenu .opt .name').allInnerTexts();
+  expect((await names()).slice(0, 4)).toEqual(['type its label', 'duplicate', 'bring to front', 'send to back']);
+  await page.locator('.dmenu .opt', { hasText: 'duplicate' }).click();
+  expect(await shapes(page)).toHaveLength(2);
+  // on nothing: the tools
+  await page.mouse.click(...c.at(500, 220), { button: 'right' });
+  expect((await names()).slice(0, 2)).toEqual(['draw a box', 'draw an ellipse']);
+  await page.locator('.dmenu .opt', { hasText: 'draw a diamond' }).click();
+  expect(await sk(page, (s) => s.tool)).toBe('diamond');
+  // a click elsewhere closes it without drawing
+  await page.mouse.click(...c.at(500, 220), { button: 'right' });
+  await page.mouse.click(...c.at(400, 200));
+  await expect(page.locator('.dmenu')).toHaveCount(0);
+  expect(await shapes(page)).toHaveLength(2);
+});
+
+test('a right-click on a diagram from the text goes into it, with its menu', async ({ page }) => {
+  const c = await diagram(page);
+  await page.mouse.click(...c.at(100, 60));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  expect(await mode(page)).toBe('text');
+  await page.mouse.click(...c.at(100, 60), { button: 'right' });
+  expect(await mode(page)).toBe('sketch');
+  await expect(page.locator('.dmenu .opt', { hasText: 'bring to front' })).toBeVisible();
+});
+
+test('a label on an arrow: enter on it, or a double-click; it sits on the line', async ({ page }) => {
+  const c = await diagram(page);
+  await page.mouse.click(...c.at(100, 60));
+  await page.keyboard.press('Control+ArrowRight');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Tab'); // the arrow
+  const sel = await sk(page, (s) => s.selected[0].k);
+  expect(sel).toBe('line');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('yes');
+  await page.keyboard.press('Enter');
+  const line = (await shapes(page)).find((s) => s.k === 'line');
+  expect(line.label).toBe('yes');
+  await expect(page.locator('svg.canvas .label.on-line')).toHaveText('yes');
+});
+
+test('] and [ bring the selection to the front and send it to the back', async ({ page }) => {
+  const c = await diagram(page);
+  await page.mouse.click(...c.at(100, 60));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('r');
+  await page.mouse.click(...c.at(300, 60));
+  await page.keyboard.press('Escape');
+  const [a, b] = await shapes(page);
+  await page.keyboard.press('[');
+  expect((await shapes(page)).map((s) => s.id)).toEqual([b.id, a.id]);
+  await page.keyboard.press(']');
+  expect((await shapes(page)).map((s) => s.id)).toEqual([a.id, b.id]);
 });

@@ -17,7 +17,7 @@
     sketch: 'v select · p pen · a arrow · r box · o ellipse · d diamond · t text · e eraser · enter new box · esc done',
   };
   // drawing, with something selected
-  const SKETCH_SEL = 'enter label · ctrl+→ add a box joined to it · ←→↑↓ move · del delete · c colour · w width · - dashes · f fill · ctrl+d copy · esc done';
+  const SKETCH_SEL = 'enter label · ctrl+→ add a box joined to it · ←→↑↓ move · del delete · c colour · w width · - dashes · f fill · ] [ front / back · ctrl+d copy · esc done';
   // after a click: what the mouse can do (the keys again after a key)
   const MOUSE: Record<string, string> = {
     text: 'right-click for more · alt+drag draws an arrow, alt+shift+drag a box',
@@ -25,7 +25,7 @@
     pick: 'click what it starts at, then where it ends · esc cancel',
     palette: 'click one to choose · type to filter',
     style: 'drag its dots to reshape it · scroll over it to change it · click elsewhere when done',
-    sketch: 'drag to draw · a tap with a box tool makes one · double-click a box to label it · a pen draws, its eraser end erases · esc done',
+    sketch: 'drag to draw · a tap with a box tool makes one · double-click to label · right-click for more · alt: off the grid · esc done',
   };
   // typing a note: NOTE (in its math: MATH, as on the page)
   const name = $derived(ed.note && ed.mode === 'text' ? 'NOTE' : ed.mode === 'sketch' && ed.sketch.on?.kind === 'block' ? 'DIAGRAM' : LABEL[ed.mode]);

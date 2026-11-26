@@ -5393,11 +5393,12 @@ export class Editor {
   // ── right-click menu ──
 
   /** The open right-click menu, at a window position: a drawing's (`id`), or the page's. */
-  menu = $state<{ id: Id | null; x: number; y: number; sel: number; table?: true } | null>(null);
+  menu = $state<{ id: Id | null; x: number; y: number; sel: number; table?: true; sketch?: true } | null>(null);
 
   get menuItems(): DrawingAction[] {
     if (!this.menu) return [];
     if (this.menu.table) return this.tableActions();
+    if (this.menu.sketch) return this.sketch.actions();
     return this.menu.id ? this.drawingActions(this.menu.id).filter((a) => a.menu !== false && !a.keyOnly) : this.pageActions();
   }
 
@@ -5464,6 +5465,18 @@ export class Editor {
    */
   openPageMenu(e: MouseEvent) {
     e.preventDefault();
+    // drawing, or on a diagram: what can be done to the shape there (or what can be drawn)
+    const svg = (e.target as Element | null)?.closest?.('svg.canvas');
+    const canvas = svg ? ((svg.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null) : null;
+    if (this.mode === 'sketch' || canvas) {
+      this.withFrame(() => {
+        if (canvas && !this.sketch.isOn(canvas)) this.sketch.enter({ kind: 'block', id: canvas }, { tool: 'select' });
+        this.sketch.pickAt(e);
+        this.menu = { id: null, x: e.clientX, y: e.clientY, sel: 0, sketch: true };
+        this.touch();
+      });
+      return;
+    }
     this.withFrame(() => {
       if (this.note) this.commitNote();
       if (this.mode === 'style' || this.mode === 'pick' || this.mode === 'hint') this.endDrawing();

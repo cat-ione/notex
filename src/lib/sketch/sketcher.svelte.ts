@@ -6,11 +6,11 @@
 // eraser end erases. A finger draws until a pen has been seen, then it scrolls (so a palm on
 // the screen does nothing). The mouse draws with the tool chosen.
 
-import type { Editor } from '../editor.svelte';
+import type { DrawingAction, Editor } from '../editor.svelte';
 import { block, type Block, type Id } from '../model';
 import { INKS } from '../marks';
 import {
-  attachTarget, boundsOf, boxOf, boxShape, centre, cloneShapes, detach, erased, inkShape, isBox, lineShape, lookupIn,
+  attachTarget, boundsOf, boxOf, boxShape, centre, cloneShapes, detach, erased, inkShape, isBox, labelled, lineShape, lookupIn,
   lineEnds, moved, scaled, shapeAt, shapesIn, simplify, WIDTHS, bounds,
   type Box, type BoxKind, type BoxShape, type End, type LineShape, type Placed, type Pt, type Shape, type Width,
 } from './shapes';
@@ -39,11 +39,13 @@ const TOL = { mouse: 5, pen: 6, touch: 12 } as Record<string, number>;
 /** A diagram's canvas: its height when made, and its least. */
 export const DIAGRAM_H = 280;
 const MIN_H = 80;
+/** A diagram's grid: shapes drawn and moved in it keep to it (the dots on its canvas are twice as far apart). */
+const GRID = 8;
 
 type Handle = 'nw' | 'ne' | 'sw' | 'se' | 'a' | 'b';
 type Gesture =
   | { k: 'draw'; id: number; pen: boolean; pts: number[] }
-  | { k: 'shape'; id: number; from: Pt; tool: Tool; attach?: Id; moved: boolean }
+  | { k: 'shape'; id: number; from: Pt; raw: Pt; tool: Tool; attach?: Id; moved: boolean }
   | { k: 'erase'; id: number; last: Pt; hit: boolean }
   | { k: 'move'; id: number; from: Pt; orig: Shape[]; done: boolean }
   | { k: 'handle'; id: number; h: Handle; from: Pt; orig: Shape[]; box: Box; done: boolean }
@@ -246,6 +248,15 @@ export class Sketcher {
     return { x: p.x - o.left, y: p.y - o.top, w: b.w * m.a, h: b.h * m.d };
   }
 
+  /** In a diagram, a point on its grid (alt held: where it is). */
+  private snap(p: Pt, e: { altKey?: boolean }): Pt {
+    if (this.on?.kind !== 'block' || e.altKey) return p;
+    return { x: Math.round(p.x / GRID) * GRID, y: Math.round(p.y / GRID) * GRID };
+  }
+  private snapBy(d: number, e: { altKey?: boolean }): number {
+    return this.on?.kind !== 'block' || e.altKey ? d : Math.round(d / GRID) * GRID;
+  }
+
   /** How far (in the target's units) a pointer may be from something to pick it. */
   private tol(type: string): number {
     const t = TOL[type] ?? 5;
@@ -398,11 +409,13 @@ export class Sketcher {
     else if (tool === 'text') {
       const hit = attachTarget(this.shapes(), p, this.tol(type));
       if (hit) return this.select([hit.id]), this.editLabel(hit.id), true;
-      this.addBox('text', { x: p.x, y: p.y - 12, w: 40, h: 24 });
+      const q = this.snap(p, e);
+      this.addBox('text', { x: q.x, y: q.y - 12, w: 40, h: 24 });
     } else {
       const attach = tool === 'line' || tool === 'arrow' ? attachTarget(this.shapes(), p, this.tol(type))?.id : undefined;
-      this.g = { k: 'shape', id, from: p, tool, attach, moved: false };
-      this.draft = this.shapeFor(tool, p, p, attach, undefined, e.shiftKey);
+      const from = this.snap(p, e);
+      this.g = { k: 'shape', id, from, raw: p, tool, attach, moved: false };
+      this.draft = this.shapeFor(tool, from, from, attach, undefined, e.shiftKey);
     }
     this.ed.touch();
     return true;
@@ -427,24 +440,24 @@ export class Sketcher {
         this.draft = { ...(this.draft as Shape), pts: g.pts.slice() } as Shape;
         break;
       case 'shape': {
-        g.moved ||= Math.hypot(p.x - g.from.x, p.y - g.from.y) > 3;
+        g.moved ||= Math.hypot(p.x - g.raw.x, p.y - g.raw.y) > 3;
         const to = g.tool === 'line' || g.tool === 'arrow' ? attachTarget(this.shapes(), p, this.tol(e.pointerType), g.attach)?.id : undefined;
-        this.draft = this.shapeFor(g.tool, g.from, p, g.attach, to, e.shiftKey);
+        this.draft = this.shapeFor(g.tool, g.from, this.snap(p, e), g.attach, to, e.shiftKey);
         break;
       }
       case 'erase':
         this.eraseTo(p, e.pointerType);
         break;
       case 'move': {
-        const dx = p.x - g.from.x, dy = p.y - g.from.y;
-        if (!g.done && Math.hypot(dx, dy) < 2) return;
+        const dx = this.snapBy(p.x - g.from.x, e), dy = this.snapBy(p.y - g.from.y, e);
+        if (!g.done && Math.hypot(p.x - g.from.x, p.y - g.from.y) < 2) return;
         if (!g.done) this.ed.checkpoint('style'), (g.done = true);
         const by = new Map(g.orig.map((s) => [s.id, moved(s, dx, dy)]));
         this.write(this.shapes().map((s) => by.get(s.id) ?? s), new Set(by.keys()));
         break;
       }
       case 'handle':
-        this.dragHandle(g, p, e);
+        this.dragHandle(g, this.snap(p, e), e);
         break;
       case 'marquee': {
         const r = boxOf(g.from, p);
@@ -479,7 +492,7 @@ export class Sketcher {
           if (isBox(d) && d.k !== 'text') this.editLabel(d.id);
         }
         // a tap with a box tool: a box of the usual size, centred there
-        else if (BOX_TOOLS.includes(g.tool)) this.addBox(g.tool as BoxKind, { x: g.from.x - NEW_BOX.w / 2, y: g.from.y - NEW_BOX.h / 2, ...NEW_BOX });
+        else if (BOX_TOOLS.includes(g.tool)) this.addBox(g.tool as BoxKind, { ...this.snap({ x: g.raw.x - NEW_BOX.w / 2, y: g.raw.y - NEW_BOX.h / 2 }, e), ...NEW_BOX });
         break;
       }
       case 'marquee':
@@ -602,7 +615,7 @@ export class Sketcher {
       return;
     }
     const hit = shapeAt(this.shapes(), p, tol);
-    if (hit && this.double && isBox(hit)) return void this.editLabel(hit.id);
+    if (hit && this.double && labelled(hit)) return void this.editLabel(hit.id);
     if (!hit && this.double) return void this.addBox('text', { x: p.x, y: p.y - 12, w: 40, h: 24 });
     if (hit) {
       if (e.shiftKey) this.sel = this.sel.includes(hit.id) ? this.sel.filter((x) => x !== hit.id) : [...this.sel, hit.id];
@@ -694,10 +707,10 @@ export class Sketcher {
 
   // ── labels ──
 
-  /** Start typing a box's label (or a text's text). */
+  /** Start typing a box's or a line's label (or a text's text). */
   editLabel(id: Id) {
     const s = this.shapes().find((x) => x.id === id);
-    if (!s || !isBox(s)) return;
+    if (!s || !labelled(s)) return;
     this.editing = id;
   }
 
@@ -705,19 +718,19 @@ export class Sketcher {
   setLabel(id: Id, text: string, size?: { w: number; h: number }) {
     const list = this.shapes();
     const s = list.find((x) => x.id === id);
-    if (!s || !isBox(s)) return;
+    if (!s || !labelled(s)) return;
     if (s.k === 'text' && !text.trim()) {
       this.write(list.filter((x) => x.id !== id), new Set());
       this.sel = this.sel.filter((x) => x !== id);
       return;
     }
-    if ((s.label ?? '') === text && (!size || (s.w === Math.ceil(size.w) && s.h === Math.ceil(size.h)))) return;
+    if ((s.label ?? '') === text && (!size || s.k !== 'text' || (s.w === Math.ceil(size.w) && s.h === Math.ceil(size.h)))) return;
     // (typing a label is one undo step, as typing text is)
     this.ed.checkpoint('type');
-    const next: BoxShape = { ...s, label: text || undefined };
+    const next = { ...s, label: text || undefined } as BoxShape | LineShape;
     if (!text) delete next.label;
     // a text is as big as what it says
-    if (s.k === 'text' && size) (next.w = Math.ceil(size.w)), (next.h = Math.ceil(size.h));
+    if (next.k === 'text' && size) (next.w = Math.ceil(size.w)), (next.h = Math.ceil(size.h));
     this.write(list.map((x) => (x.id === id ? next : x)), new Set([id]));
   }
 
@@ -748,7 +761,7 @@ export class Sketcher {
       case 'Delete': case 'Backspace':
         return this.removeSelected(), true;
       case 'Enter':
-        if (sel.length === 1 && isBox(sel[0])) this.editLabel(sel[0].id);
+        if (sel.length === 1 && labelled(sel[0])) this.editLabel(sel[0].id);
         else if (!sel.length) this.placeNew();
         return true;
       case 'Left': case 'Right': case 'Up': case 'Down':
@@ -771,6 +784,8 @@ export class Sketcher {
         return (this.sel = this.shapes().map((s) => s.id)), true;
       case 'C-d':
         return this.duplicate(), true;
+      case ']': case '[':
+        return this.restack(k === ']' ? 1 : -1), true;
       case 'c': case 'S-c':
         return this.restyle({ color: next(INKS as readonly string[], this.color, k === 'c' ? 1 : -1) }), true;
       case 'w':
@@ -808,6 +823,61 @@ export class Sketcher {
       return n;
     });
     this.write(list, sel);
+  }
+
+  /** A right-click: the shape there selected (unless it already is, with others). */
+  pickAt(e: { clientX: number; clientY: number }) {
+    const hit = shapeAt(this.shapes(), this.toSurface(e), this.tol('mouse'));
+    if (!hit) this.sel = [];
+    else if (!this.sel.includes(hit.id)) this.sel = [hit.id];
+    if (hit) this.tool = 'select';
+  }
+
+  /**
+   * The right-click menu while drawing: what can be done to the selection; with nothing
+   * selected, what can be drawn. Then undo, and done.
+   */
+  actions(): DrawingAction[] {
+    const sel = this.selected;
+    const run = (k: string) => () => void this.key(k);
+    const one = sel.length === 1 ? sel[0] : null;
+    const tool = (t: Tool, desc: string): DrawingAction => ({ name: t, desc, keys: [TOOLS.find((x) => x.tool === t)!.key], run: () => ((this.tool = t), (this.sel = [])) });
+    const acts: DrawingAction[] = sel.length
+      ? [
+          ...(one && labelled(one) ? [{ name: 'label', desc: one.k === 'text' ? 'edit the text' : 'type its label', keys: ['Enter'], run: () => this.editLabel(one.id) }] : []),
+          { name: 'copy', desc: 'duplicate', keys: ['C-d'], run: run('C-d') },
+          { name: 'front', desc: 'bring to front', keys: [']'], run: run(']') },
+          { name: 'back', desc: 'send to back', keys: ['['], run: run('[') },
+          { name: 'colour', desc: 'next colour', keys: ['c'], run: run('c'), sep: true },
+          { name: 'dash', desc: (one ?? sel[0]).dash ? 'solid' : 'dashed', keys: ['-'], run: run('-') },
+          ...(sel.some((x) => isBox(x) && x.k !== 'text') ? [{ name: 'fill', desc: sel.some((x) => isBox(x) && x.fill) ? 'not filled' : 'filled', keys: ['f'], run: run('f') }] : []),
+          { name: 'delete', desc: 'delete', keys: ['Delete'], run: run('Delete'), sep: true },
+        ]
+      : [
+          tool('rect', 'draw a box'),
+          tool('ellipse', 'draw an ellipse'),
+          tool('diamond', 'draw a diamond'),
+          tool('arrow', 'draw an arrow'),
+          tool('text', 'write text'),
+          tool('pen', 'draw with the pen'),
+          { name: 'all', desc: 'select everything', keys: ['C-a'], run: run('C-a'), sep: true },
+        ];
+    return [
+      ...acts,
+      { name: 'undo', desc: 'undo', keys: ['C-z'], run: () => this.ed.undo(), sep: true },
+      { name: 'redo', desc: 'redo', keys: ['C-y'], run: () => this.ed.redo() },
+      { name: 'done', desc: 'back to the text', keys: ['Escape'], run: () => this.exit() },
+    ];
+  }
+
+  /** The selection to the front (d = 1: drawn last, over the rest) or to the back. */
+  restack(d: 1 | -1) {
+    const ids = new Set(this.sel);
+    if (!ids.size) return;
+    this.ed.checkpoint('style');
+    const list = this.shapes();
+    const sel = list.filter((s) => ids.has(s.id)), rest = list.filter((s) => !ids.has(s.id));
+    this.write(d > 0 ? [...rest, ...sel] : [...sel, ...rest], new Set());
   }
 
   removeSelected() {
