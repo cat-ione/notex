@@ -16,18 +16,30 @@ export type MRow = MNode[];
  * A character of text. Its meaning in the markdown, read from the text (Editor.derive):
  * `b` / `i` / `c` bold, italic, inline code; `m` one of the markers (** ` # …).
  */
-export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true; c?: true; m?: true };
+export type Char = { t: 'c'; id: Id; ch: string; b?: true; i?: true; c?: true; m?: true; cell?: true };
 export type MathItem = { t: 'm'; id: Id; root: MRow; display: boolean };
 export type Item = Char | MathItem;
 
-export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code' | 'fence' | 'img';
+export type BlockKind = 'p' | 'h1' | 'h2' | 'h3' | 'li' | 'ol' | 'code' | 'fence' | 'img' | 'tr';
 /**
  * `indent`: how deep a list item is nested (0, absent, at the top). Headings (`# ` in their
  * text) and code blocks (lines between ``` fences: `fence` and `code` lines) are read from
  * the text; an opening fence's `lang` names its language. An image (`img`) is its `src`
- * (a data URL), shown `w` pixels wide, with its items as the caption.
+ * (a data URL), shown `w` pixels wide, with its items as the caption. A table row (`tr`) has
+ * its cells between cell walls (characters marked `cell`); its table's first row is the
+ * header (`head`), with the columns' alignment (see tables.ts).
  */
-export type Block = { id: Id; kind: BlockKind; items: Item[]; indent?: number; lang?: string; src?: string; w?: number };
+export type Block = {
+  id: Id;
+  kind: BlockKind;
+  items: Item[];
+  indent?: number;
+  lang?: string;
+  src?: string;
+  w?: number;
+  head?: true;
+  aligns?: ('left' | 'center' | 'right' | null)[];
+};
 export const isListKind = (k: BlockKind) => k === 'li' || k === 'ol';
 /** Deepest a list item can be nested. */
 export const MAX_INDENT = 4;

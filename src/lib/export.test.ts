@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { docToLatex } from './export';
+import { structureTables } from './tables';
 import { block, chars, cmd, math, sym, type Doc, type Mark } from './model';
 
 const mark = (kind: Mark['kind'], at: string[], extra: Partial<Mark> = {}): Mark => ({ id: 'k' + kind, kind, at, dash: false, label: '', ...extra });
@@ -107,7 +108,7 @@ describe('images', () => {
 describe('tables', () => {
   const P = (s: string) => block(chars(s));
   it('a table becomes a tabular: columns aligned as the separator says, a rule under the header', () => {
-    const doc: Doc = { blocks: [P('| x | f(x) | note |'), P('| :-- | :-: | --: |'), P('| 1 | 2 | small |'), P('| 3 | 4 | & big |'), P('after')], arrows: [], marks: [] };
+    const doc: Doc = { blocks: structureTables([P('| x | f(x) | note |'), P('| :-- | :-: | --: |'), P('| 1 | 2 | small |'), P('| 3 | 4 | & big |'), P('after')]), arrows: [], marks: [] };
     const tex = docToLatex(doc);
     expect(tex).toContain(String.raw`\begin{tabular}{l c r}`);
     expect(tex).toContain(String.raw`  x & f(x) & note \\ \hline`);
@@ -120,7 +121,7 @@ describe('tables', () => {
   });
 
   it('formulas in cells stay formulas', () => {
-    const doc: Doc = { blocks: [P('| n | a_n |'), P('| - | - |'), block([...chars('| 1 | '), math([sym('x')]), ...chars(' |')])], arrows: [], marks: [] };
+    const doc: Doc = { blocks: structureTables([P('| n | a_n |'), P('| - | - |'), block([...chars('| 1 | '), math([sym('x')]), ...chars(' |')])]), arrows: [], marks: [] };
     expect(docToLatex(doc)).toContain(String.raw`  1 & $x$ \\`);
   });
 

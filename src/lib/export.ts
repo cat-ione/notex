@@ -6,7 +6,7 @@
 // \tikzmarknode{...}{...} and is drawn in a tikz overlay after the paragraph.
 
 import type { Arrow, Doc, Id, Item, Mark, MRow } from './model';
-import { findTables } from './tables';
+import { cellSpans, findTables } from './tables';
 import { toLatex, toLatexWrapped, type Wraps } from './math/latex';
 import { CMDS } from './math/defs';
 import { noteRuns, noteTex } from './labels';
@@ -230,18 +230,10 @@ export function docToLatex(doc: Doc): string {
   let images = 0;
   const tables = findTables(doc.blocks);
   doc.blocks.forEach((blk, b) => {
-    // a table row: a tabular's row, its cells between the pipes
+    // a table row: a tabular's row, its cells between the walls
     const row = tables.get(b);
     if (row) {
-      if (row.role === 'sep') return;
-      const pipes: number[] = [];
-      blk.items.forEach((it, o) => it.t === 'c' && it.ch === '|' && pipes.push(o));
-      const cells: string[] = [];
-      for (let k = 0; k < pipes.length; k++) {
-        const s = pipes[k] + 1, e = pipes[k + 1] ?? blk.items.length;
-        if (k === pipes.length - 1 && s === e) break;
-        cells.push(inline(blk.items.slice(s, e), b, s).trim());
-      }
+      const cells = cellSpans(blk.items).map(([s, e]) => inline(blk.items.slice(s, e), b, s).trim());
       if (row.role === 'head') {
         const n = Math.max(cells.length, row.aligns.length);
         const cols = Array.from({ length: n }, (_, c) => ({ left: 'l', center: 'c', right: 'r' })[row.aligns[c] ?? 'left'] ?? 'l').join(' ');

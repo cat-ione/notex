@@ -19,7 +19,9 @@ and draw arrows and boxes *between parts of equations*.
   `` `code` `` and code blocks, coloured by their language (Python, C++, Julia,
   R, MATLAB and more). The markers hide once the caret moves on.
 - **Tables**, as in markdown (`| a | b |` with a `| --- |` line under the header), or `\table`.
-  Tab moves between cells, Enter adds a row; formulas and drawings work inside them.
+  Cells work as in a word processor: Tab moves between them, Enter adds a row, selecting
+  across cells selects whole cells, and a right-click in one adds or removes rows and columns
+  and aligns them. Formulas and drawings work inside them; files keep them as markdown.
 - **Images.** Paste or drop them in; they're kept inside the note.
 - **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
   type, and your own CSS (Ctrl+,).

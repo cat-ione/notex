@@ -14,10 +14,15 @@
 
 import { block, ch, chars, type Arrow, type Mark, type Block, type BlockKind, type Doc, type Id, type Item, type MRow } from './model';
 import { headingOf } from './markdown';
+import { structureTables } from './tables';
 
 /** Plain text, styled text (bold / italic / inline code), or a formula. */
 type Content = string | { s: string; b?: 1; i?: 1; c?: 1 } | { m: MRow; id: Id; d?: 1 };
-type FileBlock = { kind: BlockKind; content: Content[]; indent?: number; lang?: string; src?: string; w?: number };
+/**
+ * A table row (`tr`) is its text with | for each cell wall; `lit` lists the | that are typed
+ * text, not walls. Its table's header has `head` and the columns' alignment.
+ */
+type FileBlock = { kind: BlockKind; content: Content[]; indent?: number; lang?: string; src?: string; w?: number; head?: 1; aligns?: Block['aligns']; lit?: number[] };
 type FileArrow = Omit<Arrow, 'id'>;
 type FileMark = Omit<Mark, 'id'>;
 /** Version 2: the markdown is in the text (** ` # ```); version 1 had styles and kinds for it. */
@@ -45,8 +50,12 @@ export function encode(doc: Doc): NoteFile {
     flush();
     return {
       // (headings and code are in the text)
-      kind: b.kind === 'li' || b.kind === 'ol' || b.kind === 'img' ? b.kind : 'p',
+      kind: b.kind === 'li' || b.kind === 'ol' || b.kind === 'img' || b.kind === 'tr' ? b.kind : 'p',
       content,
+      ...(b.kind === 'tr' && b.head ? { head: 1 as const, aligns: b.aligns ?? [] } : {}),
+      ...(b.kind === 'tr' && b.items.some((it) => it.t === 'c' && it.ch === '|' && !it.cell)
+        ? { lit: b.items.flatMap((it, o) => (it.t === 'c' && it.ch === '|' && !it.cell ? [o] : [])) }
+        : {}),
       ...(b.indent ? { indent: b.indent } : {}),
       ...(b.src ? { src: b.src } : {}),
       ...(b.w ? { w: b.w } : {}),
@@ -76,6 +85,12 @@ export function decode(file: NoteFile): Doc {
       else items.push({ t: 'm', id: c.id, root: c.m, display: !!c.d });
     }
     const blk = block(items, fb.kind);
+    if (fb.kind === 'tr') {
+      // its | are cell walls, but those typed as text
+      const lit = new Set(fb.lit ?? []);
+      items.forEach((it, o) => it.t === 'c' && it.ch === '|' && !lit.has(o) && (it.cell = true));
+      if (fb.head) (blk.head = true), (blk.aligns = fb.aligns ?? []);
+    }
     if (fb.indent) blk.indent = fb.indent;
     if (fb.lang) blk.lang = fb.lang;
     if (fb.src) blk.src = fb.src;
@@ -125,7 +140,8 @@ export function withMarkdown(doc: Doc): Doc {
     if (!blk.items.some((i) => i.t === 'c' && i.m)) blk.items = withMarkers(blk.items);
     out.push(blk);
   }
-  doc.blocks = out;
+  // markdown tables (from a file before tables were tables, or written out): tables
+  doc.blocks = structureTables(out);
   return doc;
 }
 

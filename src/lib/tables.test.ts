@@ -1,76 +1,116 @@
 import { describe, expect, it } from 'vitest';
-import { aligns, cellRanges, cellTexts, findTables, isSeparator, rowLike, tableRowAt } from './tables';
-import { block, chars, math, sym, type BlockKind, type Item } from './model';
+import { aligns, cellSpans, emptyRow, findTables, isSeparator, isWall, markdownCells, rowItems, rowLike, rowMarkdown, separatorLine, structureTables, tableRowAt } from './tables';
+import { deserialize, serialize } from './format';
+import { block, chars, math, sym, type Block, type BlockKind, type Item } from './model';
 
 const P = (s: string, kind: BlockKind = 'p') => block(chars(s), kind);
-const text = (items: Item[]) => items.map((i) => (i.t === 'c' ? i.ch : '§')).join('');
+const text = (items: Item[]) => items.map((i) => (i.t === 'c' ? (i.cell ? '‖' : i.ch) : '§')).join('');
+const plain = (items: Item[]) => items.map((i) => (i.t === 'c' ? i.ch : '§')).join('');
+/** A table's rows as | cell | cell | from its cells. */
+const rows = (blocks: Block[]) => blocks.map((b) => (b.kind === 'tr' ? `${b.head ? 'H' : ' '}${cellSpans(b.items).map(([s, e]) => text(b.items.slice(s, e))).join(' ‖ ')}` : `p ${plain(b.items)}`));
 
-describe('tables', () => {
-  it('knows a separator line', () => {
-    for (const s of ['| --- | --- |', '|---|---|', '| :-- | :-: | --: |', '  | - |', '| --- | ---']) expect(isSeparator(s), s).toBe(true);
-    for (const s of ['| a | b |', '| --- | x |', '---', '| |', 'text']) expect(isSeparator(s), s).toBe(false);
-  });
-
-  it('reads the columns alignment from the separator', () => {
-    expect(aligns('| :-- | :-: | --: | --- |')).toEqual(['left', 'center', 'right', null]);
-  });
-
-  it('a table: a row, a separator, then rows, up to the first line that is not one', () => {
-    const blocks = [P('before'), P('| a | b |'), P('| - | - |'), P('| 1 | 2 |'), P('| 3 | 4 |'), P('after'), P('| x |')];
-    const t = findTables(blocks);
-    expect([...t.keys()]).toEqual([1, 2, 3, 4]);
-    expect([1, 2, 3, 4].map((b) => t.get(b)!.role)).toEqual(['head', 'sep', 'body', 'body']);
-    expect(t.get(4)!.last).toBe(true);
-    expect(t.get(1)!.table).toBe(1);
+describe('markdown tables become tables', () => {
+  it('a row, a separator, rows: a header with its alignment, and rows', () => {
+    const out = structureTables([P('before'), P('| a | b |'), P('| :-- | --: |'), P('| 1 | 2 |'), P('| 3 | 4 |'), P('after')]);
+    expect(rows(out)).toEqual(['p before', 'Ha ‖ b', ' 1 ‖ 2', ' 3 ‖ 4', 'p after']);
+    expect(out[1].aligns).toEqual(['left', 'right']);
+    // the separator line is gone: its alignment is on the header
+    expect(out).toHaveLength(5);
   });
 
   it('no separator, no table: |x| at the start of a line stays text', () => {
-    expect(findTables([P('|x| is the absolute value'), P('|y| too')]).size).toBe(0);
-    expect(findTables([P('| a | b |')]).size).toBe(0);
+    expect(rows(structureTables([P('|x| is the size'), P('|y| too')]))).toEqual(['p |x| is the size', 'p |y| too']);
   });
 
-  it('only paragraphs are rows (not list items or code)', () => {
-    expect(findTables([P('| a |', 'li'), P('| - |', 'li')]).size).toBe(0);
-    expect(findTables([P('| a |', 'code'), P('| - |', 'code')]).size).toBe(0);
+  it('a typed | is written \\| and stays a character', () => {
+    const out = structureTables([P('| a \\| b | c |'), P('| - | - |')]);
+    expect(rows(out)).toEqual(['Ha | b ‖ c']);
+    const lit = out[0].items.filter((i) => i.t === 'c' && i.ch === '|' && !i.cell);
+    expect(lit).toHaveLength(1);
   });
 
-  it('two tables apart', () => {
-    const t = findTables([P('| a |'), P('| - |'), P('gap'), P('| b |'), P('| - |'), P('| 1 |')]);
-    expect(t.get(0)!.table).toBe(0);
-    expect(t.get(3)!.table).toBe(3);
-    expect(t.get(1)!.last).toBe(true);
-    expect(t.get(5)!.last).toBe(true);
+  it('short rows get empty cells; a row typed without its closing | still counts', () => {
+    const out = structureTables([P('| a | b | c |'), P('|-|-|-|'), P('| 1 |'), P('| x | y')]);
+    expect(rows(out)).toEqual(['Ha ‖ b ‖ c', ' 1 ‖  ‖ ', ' x ‖ y ‖ ']);
   });
 
   it('two tables one under the other stay two', () => {
-    const t = findTables([P('| a |'), P('| - |'), P('| 1 |'), P('| b | c |'), P('| - | - |'), P('| 2 | 3 |')]);
-    expect([0, 1, 2, 3, 4, 5].map((b) => [t.get(b)!.table, t.get(b)!.role])).toEqual([
-      [0, 'head'], [0, 'sep'], [0, 'body'], [3, 'head'], [3, 'sep'], [3, 'body'],
+    const out = structureTables([P('| a |'), P('| - |'), P('| 1 |'), P('| b |'), P('| - |'), P('| 2 |')]);
+    expect(rows(out)).toEqual(['Ha', ' 1', 'Hb', ' 2']);
+    const t = findTables(out);
+    expect([...t.values()].map((r) => [r.table, r.role, r.last])).toEqual([
+      [0, 'head', false], [0, 'body', true], [2, 'head', false], [2, 'body', true],
     ]);
-    expect(t.get(2)!.last).toBe(true);
   });
 
-  it('cells start at their pipes; a closing pipe is a cell of its own', () => {
-    const items = chars('| a | bc |');
-    expect(cellRanges(items).map(([s, e]) => text(items.slice(s, e)))).toEqual(['| a ', '| bc ', '|']);
-    const loose = chars('  | a | b');
-    expect(cellRanges(loose).map(([s, e]) => text(loose.slice(s, e)))).toEqual(['  | a ', '| b']);
+  it('cells keep their characters (drawings on them stay)', () => {
+    const src = P('| ab | cd |');
+    const ids = src.items.filter((i) => i.t === 'c' && /[a-d]/.test(i.ch)).map((i) => i.id);
+    const [head] = structureTables([src, P('| - | - |')]);
+    expect(head.items.filter((i) => !isWall(i)).map((i) => i.id)).toEqual(ids);
   });
 
-  it("cells' text between the pipes, with formulas", () => {
-    const items = [...chars('| x '), math([sym('a')]), ...chars(' | y |')];
-    expect(cellTexts(items).map(text)).toEqual([' x § ', ' y ']);
-    expect(cellTexts(chars('| a | b')).map(text)).toEqual([' a ', ' b']);
+  it('formulas in cells stay formulas', () => {
+    const out = structureTables([block([...chars('| x | '), math([sym('a')]), ...chars(' |')]), P('| - | - |')]);
+    expect(rows(out)).toEqual(['Hx ‖ §']);
   });
 
-  it('looking up one row (from the lines around it) agrees with reading them all', () => {
-    const blocks = [P('text'), P('| a |'), P('| - |'), P('| 1 |'), P('| b | c |'), P('| - | - |'), P('| 2 | 3 |'), P('gap'), P('|x| alone'), P('| y |'), P('| - |')];
+  it('only paragraphs: lines in a list or code stay what they are', () => {
+    expect(structureTables([P('| a |', 'li'), P('| - |', 'li')]).every((b) => b.kind === 'li')).toBe(true);
+  });
+});
+
+describe('rows and cells', () => {
+  it('cells are between the walls', () => {
+    const items = rowItems([chars('ab'), [], chars('c|d')]);
+    expect(cellSpans(items).map(([s, e]) => plain(items.slice(s, e)))).toEqual(['ab', '', 'c|d']);
+  });
+
+  it('a new row has empty cells', () => {
+    expect(cellSpans(emptyRow(3).items)).toHaveLength(3);
+  });
+
+  it('looking up one row agrees with reading the whole note', () => {
+    const blocks = structureTables([P('text'), P('| a |'), P('| - |'), P('| 1 |'), P('| b | c |'), P('| - | - |'), P('| 2 | 3 |'), P('gap')]);
     const all = findTables(blocks);
     for (let b = 0; b < blocks.length; b++) expect(tableRowAt(blocks, b), `block ${b}`).toEqual(all.get(b) ?? null);
   });
+});
 
-  it('rowLike', () => {
+describe('tables as markdown', () => {
+  it('a row as a line, a typed | as \\|', () => {
+    expect(rowMarkdown(rowItems([chars('a|b'), chars('c')]), plain)).toBe('| a\\|b | c |');
+  });
+
+  it('the separator line from the alignment', () => {
+    expect(separatorLine(['left', 'center', 'right', null], 4)).toBe('| :-- | :-: | --: | --- |');
+  });
+
+  it('knows a separator line, and reads its alignment', () => {
+    for (const s of ['| --- | --- |', '|---|---|', '| :-- | :-: | --: |', '| --- | ---']) expect(isSeparator(s), s).toBe(true);
+    for (const s of ['| a | b |', '| --- | x |', '---', 'text']) expect(isSeparator(s), s).toBe(false);
+    expect(aligns('| :-- | :-: | --: | --- |')).toEqual(['left', 'center', 'right', null]);
+  });
+
+  it('markdown row cells, trimmed', () => {
+    expect(markdownCells(chars('|  a  | b\\|c |')).map(plain)).toEqual(['a', 'b|c']);
     expect(rowLike('  | a')).toBe(true);
     expect(rowLike('a | b')).toBe(false);
+  });
+});
+
+describe('tables in a note file', () => {
+  it('saved and opened again: walls, typed |, header and alignment as they were', () => {
+    const blocks = structureTables([P('| a \\| b | c |'), P('| :-: | --: |'), P('| 1 | 2 |')]);
+    const back = deserialize(serialize({ blocks, arrows: [], marks: [] }));
+    expect(rows(back.blocks)).toEqual(rows(blocks));
+    expect(back.blocks[0].head).toBe(true);
+    expect(back.blocks[0].aligns).toEqual(['center', 'right']);
+    expect(back.blocks[0].items.filter((i) => i.t === 'c' && i.ch === '|' && !i.cell)).toHaveLength(1);
+  });
+
+  it('a note with a markdown table (from before) opens as a table', () => {
+    const file = serialize({ blocks: [P('| a | b |'), P('| - | - |'), P('| 1 | 2 |')], arrows: [], marks: [] });
+    expect(rows(deserialize(file).blocks)).toEqual(['Ha ‖ b', ' 1 ‖ 2']);
   });
 });

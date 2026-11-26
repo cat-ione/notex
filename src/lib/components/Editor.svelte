@@ -20,7 +20,7 @@
   import { base } from '$app/paths';
   import type { Block, Item } from '$lib/model';
   import { highlight, type Tk } from '$lib/highlight';
-  import { cellRanges, findTables } from '$lib/tables';
+  import { cellSpans, findTables } from '$lib/tables';
 
   const ed = new Editor();
   let page: HTMLElement;
@@ -151,8 +151,12 @@
   /** A fence of a code block the caret isn't in: its line shows nothing (but the language). */
   const veiled = (b: number) => ed.doc.blocks[b].kind === 'fence' && !(reveal?.code && b >= reveal.code.first && b <= reveal.code.last);
 
-  // Tables (markdown's | rows): their rows, by block index.
+  // Tables: their rows, by block index, and the cells a selection covers (whole cells, as
+  // in a word processor)
   const tableRows = $derived(findTables(ed.doc.blocks));
+  const cellSel = $derived(ed.cellSelection);
+  const selectedCell = (b: number, c: number) =>
+    !!cellSel && b >= cellSel.rows[0] && b <= cellSel.rows[1] && c >= cellSel.cols[0] && c <= cellSel.cols[1];
 
   // Code blocks' colours: each line's characters' kinds of token, by line. A block is read
   // whole (a string or comment can run over lines), in the language its opening fence names.
@@ -232,9 +236,11 @@
       class:mk={it.m}
       class:cs={codeText(it) && !codeText(blk.items[o - 1])}
       class:ce={codeText(it) && !codeText(blk.items[o + 1])}
-      class:pipe={it.ch === '|' && tableRows.has(b)}
       data-tk={blk.kind === 'code' ? codeTokens.get(blk.id)?.[o] : undefined}
       data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}{:else}<MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}{/if}{/snippet}
+
+<!-- A cell wall: no width, nothing to see (the cell's border is the wall), but a place for the caret. -->
+{#snippet cellWall(w: Item)}<span class="ch wall" data-nx={w.id}>|</span>{/snippet}
 
 <!-- What comes before a block's text: an image. -->
 {#snippet blockHead(blk: Block, b: number)}{#if blk.kind === 'img'}<div class="figure">
@@ -278,7 +284,6 @@
           class="block {blk.kind}"
           class:tr={!!row}
           class:thead={row?.role === 'head'}
-          class:tsep={row?.role === 'sep'}
           class:tlast={row?.last}
           class:current={ed.b === b}
           class:cfirst={codeTop(b)}
@@ -294,7 +299,7 @@
           style:--hang={reveal?.b === b && reveal.hang ? reveal.hang : undefined}
         >
           <!-- (no whitespace between these: in the pre-wrap text it would show) -->
-          {#if row}{@const cells = cellRanges(blk.items)}{#each cells as [s, e], c (c)}<span class="td" style:text-align={row.aligns[c] ?? undefined}>{#each blk.items.slice(s, e) as it, k (it.id)}{@render item(blk, b, it, s + k)}{/each}{#if c === cells.length - 1}<span class="eol" data-eol={blk.id}>&#8203;</span>{/if}</span>{/each}{:else}{@render blockHead(blk, b)}{#each blk.items as it, o (it.id)}{@render item(blk, b, it, o)}{/each}<span class="eol" data-eol={blk.id}>&#8203;</span>{/if}
+          {#if row}{@const cells = cellSpans(blk.items)}{#each cells as [s, e], c (c)}<span class="td" class:csel={selectedCell(b, c)} data-c={c} style:text-align={row.aligns[c] ?? undefined}>{@render cellWall(blk.items[s - 1])}{#each blk.items.slice(s, e) as it, k (it.id)}{@render item(blk, b, it, s + k)}{/each}{#if c === cells.length - 1}{@render cellWall(blk.items[e])}<span class="eol" data-eol={blk.id}>&#8203;</span>{/if}</span>{/each}{:else}{@render blockHead(blk, b)}{#each blk.items as it, o (it.id)}{@render item(blk, b, it, o)}{/each}<span class="eol" data-eol={blk.id}>&#8203;</span>{/if}
         </div>
       {/each}
 
@@ -880,43 +885,38 @@
   :global(html.nx-print) .block.hang {
     text-indent: 0;
   }
-  /* a table: its rows line up as a grid (consecutive table rows make one table), a cell
-     from its | to the next, the pipes faint like the edges of the columns */
+  /* a table: its rows line up as a grid (consecutive table rows make one table); the walls
+     between cells are borders, not characters to see or reach */
   .block.tr {
     display: table-row;
     content-visibility: visible;
   }
   .block.tr > .td {
     display: table-cell;
-    padding-right: 0.8em;
-  }
-  .block.tr > .td:last-child {
-    padding-right: 0;
-  }
-  .ch.pipe {
-    color: var(--border);
-    margin-right: 0.4em;
-  }
-  .block.tr.thead {
-    font-weight: 600;
-    color: var(--heading);
-  }
-  .block.tr.thead > .td {
+    padding: 0 0.7em;
+    min-width: 3em;
+    /* (each line once: a cell draws its right and bottom, the first column its left) */
+    border-right: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
   }
-  /* the separator: just the line under the header, but as text when the caret is on it */
-  .block.tr.tsep:not(.current) {
-    font-size: 0;
-    line-height: 0;
+  .block.tr > .td:first-child {
+    border-left: 1px solid var(--border);
   }
-  .block.tr.tsep:not(.current) .ch {
-    visibility: hidden;
+  .block.tr.thead > .td {
+    border-top: 1px solid var(--border);
+    font-weight: 600;
+    color: var(--heading);
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
   }
-  /* (a strip to click on, to edit it) */
-  .block.tr.tsep:not(.current) > .td {
-    padding-top: 3px;
-    padding-bottom: 3px;
-    cursor: text;
+  .block.tr > .td.csel {
+    background: var(--text-sel);
+  }
+  .ch.wall {
+    display: inline-block;
+    width: 0;
+    overflow: hidden;
+    color: transparent;
+    vertical-align: top;
   }
   /* code blocks' colours, by kind of token (a theme can set --code-kw and the rest) */
   .ch[data-tk='kw'] { color: var(--code-kw, var(--ink-purple)); }
