@@ -466,7 +466,7 @@ export class Sketcher {
         break;
       }
     }
-    this.ed.touch();
+    // (no touch: what's drawn shows by itself; the note is laid out again once the pointer is up)
   }
 
   pointerUp(e: PointerEvent) {
