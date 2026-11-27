@@ -28,7 +28,7 @@
     { id: 'pen', glyph: '✐', label: 'pen', tip: 'draw on the note (a pen draws on it anyway)', keys: 'ctrl+shift+d', run: () => ed.sketch.toggleFree() },
   ];
   const right: Button[] = [
-    { id: 'find', glyph: '/', label: 'find', tip: 'find', keys: 'ctrl+f', run: () => ed.openFind() },
+    { id: 'find', glyph: '/', label: 'find', tip: 'find', keys: 'ctrl+f', run: () => ed.finder.openFind() },
     { id: 'pdf', glyph: '⎙', label: 'pdf', tip: 'save as a PDF file', keys: 'ctrl+p', run: () => ed.exportPdf() },
     { id: 'settings', glyph: '⚙', tip: 'settings', keys: 'ctrl+,', run: () => (ed.showSettings = true) },
     { id: 'help', glyph: '?', tip: 'keyboard shortcuts', keys: 'F1', run: () => (ed.showHelp = !ed.showHelp) },

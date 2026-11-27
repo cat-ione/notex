@@ -12,7 +12,7 @@
   let input = $state<HTMLInputElement>();
   let withInput = $state<HTMLInputElement>();
   $effect(() => {
-    ed.findFocus;
+    ed.finder.findFocus;
     if (ed.find && input) {
       input.focus();
       input.select();
@@ -23,15 +23,15 @@
     if (!ed.find) input?.blur();
   });
 
-  const n = $derived(ed.findMatches.length);
+  const n = $derived(ed.finder.findMatches.length);
 
   function key(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
-      ed.closeFind();
+      ed.finder.closeFind();
     } else if (e.key === 'Enter' || e.key === 'F3') {
       e.preventDefault();
-      ed.findGo(e.shiftKey ? -1 : 1);
+      ed.finder.findGo(e.shiftKey ? -1 : 1);
     } else if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       input?.select();
@@ -45,10 +45,10 @@
   function replaceKey(e: KeyboardEvent) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.altKey) {
       e.preventDefault();
-      ed.replaceAll();
+      ed.finder.replaceAll();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      ed.replaceOne();
+      ed.finder.replaceOne();
     } else key(e);
   }
 </script>
@@ -62,16 +62,16 @@
       <input
         bind:this={input}
         value={ed.find.q}
-        oninput={(e) => ed.setFindQuery(e.currentTarget.value)}
+        oninput={(e) => ed.finder.setFindQuery(e.currentTarget.value)}
         onkeydown={key}
         placeholder="find"
         spellcheck="false"
       />
       <span class="count" class:none={ed.find.q && !n}>{ed.find.q ? (n ? `${ed.find.i + 1}/${n}` : 'none') : ''}</span>
-      <button data-tip="previous" data-tip-key="shift+enter" onclick={() => ed.findGo(-1)} disabled={!n}>↑</button>
-      <button data-tip="next" data-tip-key="enter / F3" onclick={() => ed.findGo(1)} disabled={!n}>↓</button>
+      <button data-tip="previous" data-tip-key="shift+enter" onclick={() => ed.finder.findGo(-1)} disabled={!n}>↑</button>
+      <button data-tip="next" data-tip-key="enter / F3" onclick={() => ed.finder.findGo(1)} disabled={!n}>↓</button>
       <button data-tip="replace" data-tip-key="ctrl+h" class:on={ed.find.replace} onclick={() => ed.find && ((ed.find.replace = !ed.find.replace), ed.find.replace && requestAnimationFrame(() => withInput?.focus()))}>⇄</button>
-      <button data-tip="close" data-tip-key="esc" onclick={() => ed.closeFind()}>✕</button>
+      <button data-tip="close" data-tip-key="esc" onclick={() => ed.finder.closeFind()}>✕</button>
     </div>
     {#if ed.find.replace}
       <div class="with">
@@ -79,14 +79,14 @@
         <input
           bind:this={withInput}
           value={ed.find.with ?? ''}
-          oninput={(e) => ed.setReplaceText(e.currentTarget.value)}
+          oninput={(e) => ed.finder.setReplaceText(e.currentTarget.value)}
           onkeydown={replaceKey}
           placeholder="replace with"
           spellcheck="false"
           aria-label="replace with"
         />
-        <button class="word" data-tip="replace this one, then the next" data-tip-key="enter" onclick={() => ed.replaceOne()} disabled={!n}>replace</button>
-        <button class="word" data-tip="replace them all" data-tip-key="ctrl+alt+enter" onclick={() => ed.replaceAll()} disabled={!n}>all</button>
+        <button class="word" data-tip="replace this one, then the next" data-tip-key="enter" onclick={() => ed.finder.replaceOne()} disabled={!n}>replace</button>
+        <button class="word" data-tip="replace them all" data-tip-key="ctrl+alt+enter" onclick={() => ed.finder.replaceAll()} disabled={!n}>all</button>
       </div>
     {/if}
   </div>

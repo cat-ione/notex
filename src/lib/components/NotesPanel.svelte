@@ -74,7 +74,7 @@
     if (r.kind === 'note') {
       const found = !byName(r.note) && hits.has(r.note.id) ? query.trim() : '';
       await ed.openKept(r.note.id);
-      if (found) ed.findText(found);
+      if (found) ed.finder.findText(found);
     }
     else if (r.kind === 'new') (close(), await ed.newNote());
     else if (r.kind === 'welcome') await ed.openWelcome();
