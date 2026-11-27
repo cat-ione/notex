@@ -9,6 +9,10 @@
   let { ed }: { ed: Editor } = $props();
 
   const at = $derived(ed.barAt);
+  // its width, all on one row if the window has room (it wraps only when it hasn't), and its
+  // middle moved in from the window's edges by half of it
+  let width = $state(0);
+  const left = $derived(at ? Math.max(8 + width / 2 - at.pageLeft, Math.min(window.innerWidth - 8 - width / 2 - at.pageLeft, at.x)) : 0);
   const id = $derived(ed.styling);
   const mark = $derived(id ? ed.doc.marks.find((m) => m.id === id) : undefined);
   const arrow = $derived(id ? ed.doc.arrows.find((a) => a.id === id) : undefined);
@@ -43,7 +47,8 @@
   <div
     class="dbar"
     class:below={at.below}
-    style="left: {at.x}px; top: {at.y}px;"
+    bind:offsetWidth={width}
+    style="left: {left}px; top: {at.y}px;"
     onmousedown={down}
     oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(id, e.clientX, e.clientY); }}
     transition:fly={{ y: at?.below ? -4 : 4, duration: 120, easing: cubicOut }}
@@ -99,7 +104,9 @@
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
     white-space: nowrap;
     user-select: none;
-    /* (a narrow window: on two rows rather than past its edge) */
+    /* as wide as it is (not narrowed by being near the page's edge: it's moved in instead);
+       a narrow window: on two rows rather than past its edge */
+    width: max-content;
     flex-wrap: wrap;
     justify-content: center;
     max-width: calc(100vw - 16px);

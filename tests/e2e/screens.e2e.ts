@@ -60,15 +60,43 @@ test('a short window: a long menu stays within it (scrolling), over the menu bar
   expect(top).toBe(true);
 });
 
-test('a drawing’s bar near the window’s edge is moved in', async ({ page }) => {
+/** How many rows the drawing bar's buttons are on. */
+const barRows = (page: Page) =>
+  page.locator('.dbar').evaluate((bar) => new Set([...bar.querySelectorAll('button')].map((b) => Math.round(b.getBoundingClientRect().top))).size);
+
+test('a drawing’s bar near the window’s edge is moved in, on one row while the window has room for it', async ({ page }) => {
   await page.setViewportSize({ width: 520, height: 600 });
-  await type(page, 'a word at the end of the line here');
-  await page.keyboard.press('End');
-  await page.keyboard.press('Control+Shift+ArrowLeft');
-  await type(page, B + 'box');
-  await page.keyboard.press('Enter');
-  await expect(page.locator('.dbar')).toBeVisible();
+  await type(page, 'word at the end of the line here');
+  // a box on the last word (near the right edge), then on the first (the left)
+  for (const keys of [['End', 'Control+Shift+ArrowLeft'], ['Home', 'Control+Shift+ArrowRight']]) {
+    await page.keyboard.press('Escape');
+    for (const k of keys) await page.keyboard.press(k);
+    await type(page, B + 'box');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.dbar')).toBeVisible();
+    expect(await inWindow(page, '.dbar')).toBe(true);
+    expect(await barRows(page), keys[0]).toBe(1);
+  }
+  // a window too narrow for it: more rows, still within it
+  await page.setViewportSize({ width: 300, height: 600 });
+  await expect.poll(() => barRows(page)).toBeGreaterThan(1);
   expect(await inWindow(page, '.dbar')).toBe(true);
+});
+
+test('the right-click menu is as wide near the window’s right edge as anywhere', async ({ page }) => {
+  await page.setViewportSize({ width: 700, height: 600 });
+  await type(page, 'text');
+  const width = async (x: number) => {
+    await page.mouse.click(x, 200, { button: 'right' });
+    await expect(page.locator('.dmenu')).toBeVisible();
+    const w = await page.locator('.dmenu').evaluate((m) => m.getBoundingClientRect().width);
+    expect(await inWindow(page, '.dmenu')).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.dmenu')).toHaveCount(0);
+    return w;
+  };
+  const middle = await width(200);
+  expect(await width(695)).toBeCloseTo(middle, 0);
 });
 
 test('a phone: the menu bar swipes; the help is one column', async ({ page }) => {

@@ -70,7 +70,7 @@
 </script>
 
 {#if shape && at && labelled(shape)}
-  <div class="lbl-edit" class:text={isText || isPlot} class:plot={isPlot} style="left: {at.x + (isPlot ? 6 : 0)}px; top: {at.y + (isPlot ? 6 : 0)}px; width: {isText || isPlot ? 'auto' : `${at.w}px`}; height: {isText || isPlot ? 'auto' : `${at.h}px`}; --c: {shape.color ? `var(--ink-${shape.color})` : 'var(--fg)'}">
+  <div class="lbl-edit" class:text={isText || isPlot} class:plot={isPlot} style="left: {at.x + (isPlot ? 6 : 0)}px; top: {at.y + (isPlot ? 6 : 0)}px; width: {isText || isPlot ? 'max-content' : `${at.w}px`}; height: {isText || isPlot ? 'auto' : `${at.h}px`}; --c: {shape.color ? `var(--ink-${shape.color})` : 'var(--fg)'}">
     <textarea
       bind:this={area}
       bind:value

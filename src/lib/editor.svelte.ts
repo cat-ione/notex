@@ -2078,7 +2078,8 @@ export class Editor {
    * Where the toolbar goes (page coordinates): above the selected drawing and its note,
    * or below them when there's no room above.
    */
-  get barAt(): { x: number; y: number; below: boolean } | null {
+  /** Where the selected drawing's bar goes (page coordinates: its middle), and where the page is in the window. */
+  get barAt(): { x: number; y: number; below: boolean; pageLeft: number } | null {
     if (this.mode !== 'style' || !this.styling || this.menu || this.dragBusy) return null;
     const o = this.page?.getBoundingClientRect();
     const parts = this.drawingParts(this.styling);
@@ -2106,10 +2107,8 @@ export class Editor {
       else if (clear(down)) best = { y: down, below: true, d };
     }
     best ??= fits(r.y - 8 - H) ? { y: r.y - 8, below: false, d: 0 } : { y: r.y + r.h + 8, below: true, d: 0 };
-    // (in the window: a drawing near its edge has its bar moved in)
-    const half = Math.min(W, window.innerWidth - 16) / 2;
-    const x = Math.max(8 + half - o.left, Math.min(window.innerWidth - 8 - half - o.left, cx));
-    return { x, y: best.y, below: best.below };
+    // (kept in the window by its own width: see DrawingBar)
+    return { x: cx, y: best.y, below: best.below, pageLeft: o.left };
   }
 
   /**

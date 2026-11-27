@@ -52,6 +52,9 @@
     position: fixed;
     z-index: 40;
     min-width: 220px;
+    /* (as wide as its entries, even opened near the window's edge: it's moved in instead) */
+    width: max-content;
+    max-width: calc(100vw - 8px);
     padding: 4px 0;
     font-family: var(--mono);
     font-size: 12.5px;
