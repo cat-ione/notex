@@ -9,6 +9,8 @@
 // of yours instead of the built-in ones. --profile prints the hottest functions
 // (INCLUSIVE=1: with callees; CALLERS=<regex>: who calls them). CULL=Infinity
 // lays out every drawing, not just those near the screen.
+// URL=http://127.0.0.1:4173/?lab measures a build instead (pnpm build && pnpm preview): what
+// people run. The dev server's Svelte does bookkeeping of its own that a build leaves out.
 // Uses playwright-core; set CHROME to a Chromium/Chrome executable if needed.
 
 import { chromium } from 'playwright-core';

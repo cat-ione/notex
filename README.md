@@ -154,6 +154,8 @@ node tools/label-lab/lab.mjs <name>             # note layout scenarios + typing
 ```
 
 Both use `playwright-core`; set `CHROME` to a Chrome/Chromium executable if it can't find one.
+For speed, measure a build (`pnpm build && pnpm preview`, then `URL=http://127.0.0.1:4173/?lab`):
+the dev server's numbers include Svelte's own checks, which a build leaves out.
 
 **Branches.** Work happens on `dev`, where every push runs the unit and browser tests and the type-check. Merge
 into `main` once it works: `main` is what the site and releases are built from.
