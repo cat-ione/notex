@@ -80,7 +80,7 @@ test('a drawing’s bar near the window’s edge is moved in, on one row while t
   // a window too narrow for it: more rows, still within it
   await page.setViewportSize({ width: 300, height: 600 });
   await expect.poll(() => barRows(page)).toBeGreaterThan(1);
-  expect(await inWindow(page, '.dbar')).toBe(true);
+  await expect.poll(() => inWindow(page, '.dbar')).toBe(true);
   // (narrower still: rows enough to go over the window's top, from above the drawing)
   await page.setViewportSize({ width: 200, height: 600 });
   await expect.poll(() => barRows(page)).toBeGreaterThan(2);
