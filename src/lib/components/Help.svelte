@@ -33,6 +33,7 @@
       ['\\name', 'LaTeX command: \\sqrt, \\in, \\sin, \\int_0^1'],
       ['\\int  \\sum  \\lim', 'with empty limits: space goes from the lower to the upper one, then on (\\intop, \\sumop…: bare)'], ['-> => <= != +-', '→ ⇒ ≤ ≠ ±'],
       ['space / tab', 'exit box / next box'],
+      ['backspace right after', 'takes back what was just made of your typing: a/ stays a slash, xx stays xx (ctrl+z too; in text, -> and - as well)'], ['\\slash  \\dollar', 'a / or $ on purpose (in text: \\dollar, \\backslash)'],
       ['ctrl+← →', 'move by word (shift: select)'], ['& enter', 'matrix: new column / row'], ['\\dsum \\dint \\dlim …', 'a big operator at display size in a sentence, limits under and over (as \\dfrac)'], ['\\pmatrix3x3  \\pmatrix4x4', 'a 3×3 or 4×4 matrix (bmatrix, vmatrix, matrix too)'], ['\\addrow \\deleterow \\addcolumn \\deletecolumn', 'in a matrix (or right-click it); backspace in an empty row or column takes it away'], ['shift+← → / ctrl+a', 'select'], ['/  (  \\cmd', 'wrap the selection'], ['$  →  esc', 'exit math'],
     ]],
     ['drawing  (\\arrow  \\circle  \\box …)', [

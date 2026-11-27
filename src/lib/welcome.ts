@@ -156,6 +156,7 @@ export function welcomeDoc(): Doc {
       T(['`a/b` gives ', M('\\frac{a}{b}'), ', `x^2` gives ', M('x^2'), ', `x_1` gives ', M('x_1'), ' and `e^(-x^2/2)` gives ', M('e^{-x^2/2}')], 'li'),
       T(['`\\int_0^1 f(x) dx` gives ', M('\\int_0^1 f(x)\\,dx'), ' and `\\sum_(n=1)^\\infty 1/n^2` gives ', M('\\sum_{n=1}^{\\infty}\\frac{1}{n^2}=\\frac{\\pi^2}{6}')], 'li'),
       T(['Any LaTeX command by name: `\\alpha` ', M('\\alpha'), ', `\\sqrt` ', M('\\sqrt{x}'), ', `\\in` ', M('\\in'), ', `\\to` ', M('\\to'), ', and `->` ', M('\\to'), ' or `<=` ', M('\\le'), ' as you type them'], 'li'),
+      P('Backspace right after any of these puts back just what you typed: a/ stays a slash, and $ a dollar sign.', 'li'),
       T(['`\\dsum`, `\\dint`, `\\dlim`… make an operator big in a sentence, limits under and over: ', M('\\displaystyle\\sum_{k=0}^{n}\\binom{n}{k}=2^n')], 'li'),
       T(['Matrices: `\\pmatrix` (or `\\pmatrix3x3`, `\\pmatrix4x4`), then & for a new column and Enter for a new row: ', M('\\begin{pmatrix}a & b\\\\ c & d\\end{pmatrix}')], 'li'),
       P('Click into any cell; \\addrow, \\deleterow, \\addcolumn, \\deletecolumn or a right-click change its rows and columns, and Backspace in an empty row or column takes it away.', 'li', 1),

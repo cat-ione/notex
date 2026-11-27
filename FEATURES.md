@@ -16,7 +16,10 @@ point at, and a pen and touch screen that work as well as a keyboard.
   - ```` ``` ```` code blocks, coloured by language (Python, C++, Julia, R, MATLAB and more)
 - Ctrl+B / Ctrl+I / Ctrl+E / Ctrl+Shift+X / Ctrl+Shift+H put the markers round a selection.
 - Brackets and quotes close themselves; markdown markers pair over a selection.
-- Snippets and substitutions as you type (`->` → `→`, your own in the config).
+- Snippets and substitutions as you type (`->` → `→`, your own in the config). Backspace (or
+  Ctrl+Z) right after one puts back what you typed: `a/` stays a slash, `xx` stays xx, `- `
+  stays a dash, `$` a dollar sign. `\slash` and `\dollar` type them on purpose in math,
+  `\dollar` and `\backslash` in text.
 - Alt+↑ / Alt+↓ move a paragraph.
 - Paste from anywhere: a chat answer, a web page, a LaTeX source, another notes app. Math
   (`$…$`, `\(…\)`, `\[…\]`) comes in as formulas, markdown as structure.

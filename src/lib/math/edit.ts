@@ -585,11 +585,37 @@ export function typeChar(root: MRow, cur: MCursor, c: string) {
     if (def(n)?.close) break;
   }
 
-  const v = c === '{' ? '\\{' : c === '}' ? '\\}' : c === '%' ? '\\%' : c === '#' ? '\\#' : c === '&' ? '\\&' : c === '~' ? '\\sim' : c === '*' ? '*' : c;
   // `int` just became ∫ with its limits, and `o` makes it `into…`: the limits go, the word goes on
   if (/^[a-zA-Z]$/.test(c)) unlimit(root, cur, c);
-  insertNode(root, cur, sym(v));
+  insertNode(root, cur, sym(symbolFor(c)));
   autoReplace(root, cur);
+}
+
+/** The node `id` is somewhere in `row`. */
+export function hasNode(row: MRow, id: string): boolean {
+  return row.some((n) => n.id === id || (n.k === 'cmd' && n.slots.some((sl) => hasNode(sl, id))));
+}
+
+/** A typed character's symbol (some are LaTeX's own characters, written escaped). */
+const symbolFor = (c: string) => (c === '{' ? '\\{' : c === '}' ? '\\}' : c === '%' ? '\\%' : c === '#' ? '\\#' : c === '&' ? '\\&' : c === '~' ? '\\sim' : c);
+
+/**
+ * `c` typed as itself, nothing made of it (a `/` no fraction, `xx` no ×): what Backspace puts
+ * back for a substitution just made. It doesn't join the letters after it into a name either.
+ * `spell`: the symbol before it, made of letters (∈ of `in`), spelt out too (`int`, not ∈t).
+ */
+export function typeLiteral(root: MRow, cur: MCursor, c: string, spell = false) {
+  if (latexScripts && settleAuto(root, cur, c)) return;
+  if (/^[a-zA-Z]$/.test(c)) unlimit(root, cur, c);
+  const r = rowAt(root, cur.path), prev = r[cur.off - 1];
+  if (spell && prev?.k === 'sym' && prev.src) {
+    const letters = [...prev.src].map((x) => sym(x));
+    r.splice(cur.off - 1, 1, ...letters);
+    cur.off += letters.length - 1;
+  }
+  const n = sym(symbolFor(c));
+  insertNode(root, cur, n);
+  cur.brk = n.id;
 }
 
 /** In the empty limits a typed name like `int` just made: take them off if `c` continues a longer name (`intop`). */

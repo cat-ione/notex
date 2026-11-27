@@ -12,7 +12,8 @@ and draw arrows and boxes *between parts of equations*.
 - **Math the way you say it.** `$` starts a formula. `a/b` is a fraction, `x^2` and `a_n` are
   scripts, `e^(-x^2/2)` groups, and `\name` gives any LaTeX symbol. Typing `x^2` or `a_n` in a
   sentence turns it into math by itself. `\dsum`, `\dint`, `\dlim`… make an operator big in a
-  sentence, limits under and over (as `\dfrac` does a fraction).
+  sentence, limits under and over (as `\dfrac` does a fraction). Didn't mean it? Backspace
+  right after puts back what you typed (`a/` stays a slash, `xx` stays xx).
 - **Matrices.** `\pmatrix` (or `\pmatrix3x3`, `\pmatrix4x4`; `bmatrix`, `vmatrix` too), `&` for a
   new column and Enter for a new row. A click goes into any cell; `\addrow`, `\deleterow`,
   `\addcolumn`, `\deletecolumn` or a right-click change its rows and columns, and Backspace in

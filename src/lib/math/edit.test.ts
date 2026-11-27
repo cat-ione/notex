@@ -483,3 +483,37 @@ describe('display-size operators (\\dint, \\dsum, \\dlim…)', () => {
     expect(() => katex.renderToString(shown, { trust: true, strict: 'ignore', throwOnError: true })).not.toThrow();
   });
 });
+
+describe('typing a character as itself (what Backspace puts back for a substitution)', () => {
+  /** Type `keys`, the last one as itself. */
+  const literal = (keys: string) => {
+    const t = typed(keys.slice(0, -1));
+    M.typeLiteral(t.root, t.cur, keys.slice(-1));
+    return t;
+  };
+  it.each([
+    ['xx', 'xx'],
+    ['pi', 'pi'],
+    ['a/', 'a/'],
+    ['in', 'in'],
+  ])('%s stays %s', (keys, tex) => {
+    expect(toLatex(literal(keys).root).replace(/\s+/g, '')).toBe(tex);
+  });
+  it('and the letters after it start a word of their own', () => {
+    const t = literal('xx');
+    M.typeChar(t.root, t.cur, 'x');
+    expect(toLatex(t.root).replace(/\s+/g, '')).toBe('xxx');
+  });
+  it('still leaves a script it ends, as typing does', () => {
+    const t = literal('x^2+');
+    expect(toLatex(t.root).replace(/\s+/g, '')).toBe('x^{2}+');
+  });
+});
+
+describe('typing a character as itself, after a symbol it took into a longer name', () => {
+  it('spells the symbol out: int, not ∈t', () => {
+    const t = typed('in');
+    M.typeLiteral(t.root, t.cur, 't', true);
+    expect(toLatex(t.root).replace(/\s+/g, '')).toBe('int');
+  });
+});

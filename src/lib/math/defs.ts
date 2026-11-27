@@ -116,6 +116,9 @@ export const MATH_PALETTE: Record<string, Inserter> = {
   dfrac: c('dfrac'),
   binom: c('binom'),
   sqrt: c('sqrt'),
+  // characters that typed would make something else: a slash, not a fraction
+  slash: s('/'),
+  dollar: s('\\$'),
   root: c('root'),
   hat: c('hat'),
   widehat: c('widehat'),

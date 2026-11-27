@@ -1006,7 +1006,7 @@ export class Editor {
     else this.setMode('text');
     this.touch();
   }
-  undo = () => (this.note ? this.noteUndo(-1) : this.restore(this.undoStack, this.redoStack, 'undo'));
+  undo = () => this.takeBackNow(false) || (this.note ? this.noteUndo(-1) : this.restore(this.undoStack, this.redoStack, 'undo'));
   redo = () => (this.note ? this.noteUndo(1) : this.restore(this.redoStack, this.undoStack, 'redo'));
 
   setMode(m: Mode) {
@@ -3071,6 +3071,7 @@ export class Editor {
     if ((e.target instanceof HTMLTextAreaElement && !e.target.dataset.sink) || e.target instanceof HTMLInputElement) return;
     const k = keyName(e);
     if (!k) return;
+    this.keys++;
     // Let the browser fire copy/cut/paste events; those are handled separately.
     if (/^C-[cxv]$/.test(k)) return;
     const fileKeys: Record<string, () => unknown> = {
@@ -3365,6 +3366,7 @@ export class Editor {
           this.deleteSelection();
           return true;
         }
+        if (k === 'Backspace' && this.takeBackNow()) return true;
         if (this.o === 0 && this.imageEdge(-1)) return true;
         if (k === 'C-Backspace' && this.o > 0) {
           const p = this.wordPos(-1);
@@ -3375,7 +3377,6 @@ export class Editor {
         }
         if (this.o > 0) {
           const prev = blk.items[this.o - 1];
-          if (this.lastSnippet && this.undoSnippet()) return true;
           if (prev.t === 'm' && !isRefItem(prev)) {
             this.o--;
             this.enterMath(true);
@@ -3448,7 +3449,11 @@ export class Editor {
       case '$':
         if (this.literal) break;
         this.deleteSelection();
-        this.insertMath(false);
+        {
+          const back = this.lineNow('$');
+          this.insertMath(false);
+          this.substituted(back);
+        }
         return true;
       case '\\':
         if (this.literal) break;
@@ -3467,8 +3472,10 @@ export class Editor {
       // a word typed is an undo step (not the whole run of typing since the last pause)
       if (k === ' ') this.lastKind = '';
       if (literal) return true; // code is typed as it is
-      if (k === ' ') this.markdownShortcut();
-      this.textSnippet();
+      const back = this.lineNow();
+      let made = k === ' ' && this.markdownShortcut();
+      made = this.textSnippet() || made;
+      if (made) this.substituted(back);
       return true;
     }
     return false;
@@ -3709,6 +3716,7 @@ export class Editor {
     const w = items.slice(s, this.o).map((i) => (i as Char).ch).join('');
     if (!(w.length <= 2 || /^\d+$/.test(w) || /^[A-Za-z]\d+$/.test(w) || /^[A-Za-z]+$/.test(w) && M.isSubstitution(w))) return false;
     this.checkpoint();
+    const back = this.lineNow(k);
     const m = math([], false);
     const cur: MCursor = { path: [], off: 0 };
     for (const it of items.slice(s, this.o)) M.typeChar(m.root, cur, (it as Char).ch);
@@ -3719,6 +3727,7 @@ export class Editor {
     this.mc = cur;
     this.setMode('math');
     this.island = m.id;
+    this.substituted(back);
     return true;
   }
 
@@ -3876,10 +3885,59 @@ export class Editor {
     if (this.anchor) this.anchor = { b: this.anchor.b + d * span, o: this.anchor.o };
   }
 
-  /** Last text snippet expansion, so an immediate Backspace can undo it. */
-  private lastSnippet: { b: number; o: number; trigger: string; len: number } | null = null;
+  // ── taking back a substitution ──
 
-  private textSnippet() {
+  /**
+   * A substitution just made (`xx` → ×, `a/` → a fraction, `->` → →, `- ` → a list item, `x^`
+   * in a sentence → a formula…): Backspace or Ctrl+Z puts back just what was typed, until
+   * something else is typed or the caret moves. `put` does that; `at` is where the caret was
+   * left, `edits` how many edits there had been.
+   */
+  private takeBack: { put: () => void; at: string; edits: number; key: number } | null = null;
+  /** Keys pressed so far: a take-back is for the key right after the substitution. */
+  private keys = 0;
+  private caretKey(): string {
+    return this.mode === 'math' ? `m${this.b}:${this.o}:${JSON.stringify($state.snapshot(this.mc.path))}:${this.mc.off}` : `${this.mode}${this.b}:${this.o}`;
+  }
+  /** A substitution was just made; `put` puts back what was typed. */
+  private substituted(put: () => void) {
+    this.takeBack = { put, at: this.caretKey(), edits: this.edits, key: this.keys };
+  }
+  /**
+   * The substitution just made, taken back; false if there is none. (Backspace makes it an
+   * undo step, so Ctrl+Z brings the substitution back; Ctrl+Z itself is that step.)
+   */
+  private takeBackNow(step = true): boolean {
+    const t = this.takeBack;
+    this.takeBack = null;
+    if (!t || t.edits !== this.edits || this.keys - t.key > 1 || t.at !== this.caretKey()) return false;
+    if (step) this.checkpoint();
+    else (this.dirty = true), this.edits++, this.markDirty();
+    t.put();
+    this.touch();
+    return true;
+  }
+  /** What puts the caret's line back as it is now, the caret in it as text, `typed` typed at the caret. */
+  private lineNow(typed = ''): () => void {
+    const blk = this.blk, b = this.b, o = this.o;
+    const was = { items: blk.items.slice(), kind: blk.kind, check: blk.check, box: blk.box, indent: blk.indent };
+    return () => {
+      blk.items.splice(0, blk.items.length, ...was.items);
+      blk.kind = was.kind;
+      for (const k of ['check', 'box', 'indent'] as const) {
+        if (was[k] === undefined) delete blk[k];
+        else (blk as any)[k] = was[k];
+      }
+      this.b = b;
+      this.o = o;
+      this.anchor = null;
+      this.setMode('text');
+      if (typed) blk.items.splice(o, 0, ...chars(typed)), (this.o += typed.length);
+    };
+  }
+
+  /** A text snippet at the caret expanded (`->` → →); true if one was. */
+  private textSnippet(): boolean {
     const items = this.blk.items;
     let s = '';
     let best: { k: number; rep: string } | null = null;
@@ -3890,25 +3948,16 @@ export class Editor {
       s = it.ch + s;
       if (snippets[s] !== undefined) best = { k, rep: snippets[s] };
     }
-    if (!best) return;
+    if (!best) return false;
     const repl = textWithMath(best.rep);
     items.splice(this.o - best.k, best.k, ...repl);
     this.o += repl.length - best.k;
-    this.lastSnippet = { b: this.b, o: this.o, trigger: s.slice(-best.k), len: repl.length };
-  }
-
-  /** Backspace right after a snippet expanded turns it back into its trigger. */
-  private undoSnippet(): boolean {
-    const l = this.lastSnippet;
-    this.lastSnippet = null;
-    if (!l || l.b !== this.b || l.o !== this.o) return false;
-    this.blk.items.splice(this.o - l.len, l.len, ...chars(l.trigger));
-    this.o += l.trigger.length - l.len;
     return true;
   }
 
-  private markdownShortcut() {
-    if (this.note) return; // (a note is no heading or list)
+  /** `- `, `1. `, `[ ] `, `> ` at a line's start: a list item, a box to tick, a quote; true if one was made. */
+  private markdownShortcut(): boolean {
+    if (this.note) return false; // (a note is no heading or list)
     const blk = this.blk;
     const text = blk.items.slice(0, this.o).map((i) => (i.t === 'c' ? i.ch : '\0')).join('');
     const map: Record<string, BlockKind> = { '- ': 'li', '* ': 'li', '1. ': 'ol', '1) ': 'ol' };
@@ -3918,7 +3967,7 @@ export class Editor {
       blk.kind = map[text];
       delete blk.check;
       this.o = 0;
-      return;
+      return true;
     }
     // `[ ] ` / `[x] ` (after `- `, or on a line of its own): a box to tick
     const task = /^(?:[-*] )?\[( |x|X)?\] $/.exec(text);
@@ -3927,7 +3976,7 @@ export class Editor {
       blk.kind = 'li';
       blk.check = !!task[1]?.trim();
       this.o = 0;
-      return;
+      return true;
     }
     // `> `: a quote (joining one just above)
     if (text === '> ' && (blk.kind === 'p' || isListKind(blk.kind)) && !blk.box) {
@@ -3935,7 +3984,9 @@ export class Editor {
       const above = this.doc.blocks[this.b - 1]?.box;
       blk.box = above?.k === 'quote' ? { ...above } : { k: 'quote', id: uid() };
       this.o = 0;
+      return true;
     }
+    return false;
   }
 
   // ── boxes to tick ──
@@ -4334,6 +4385,22 @@ export class Editor {
 
   // ── math ──
 
+  /**
+   * The formula as it would be with `k` typed as itself (see takeBack): for a key that may
+   * make something else (a `/` a fraction, a letter a symbol: `xx` ×, `pi` π), not for brackets
+   * and scripts, which Backspace takes away as it is.
+   */
+  private mathLiteral(root: MRow, cur: MCursor, k: string): ((after: MRow) => { root: MRow; cur: MCursor }) | null {
+    if (`^_"'()[]{}|`.includes(k) || OPENERS[k]) return null;
+    const lit = { root: structuredClone($state.snapshot(root)) as MRow, cur: structuredClone($state.snapshot(cur)) as MCursor };
+    const prev = M.rowAt(root, cur.path)[cur.off - 1];
+    // (made once typed: a symbol the key took into a longer name is spelt out, `int` not ∈t)
+    return (after) => {
+      M.typeLiteral(lit.root, lit.cur, k, !!prev && !M.hasNode(after, prev.id));
+      return lit;
+    };
+  }
+
   private mathKey(k: string): boolean {
     const item = this.mathItem!;
     const root = item.root;
@@ -4407,6 +4474,7 @@ export class Editor {
       case 'C-z': this.undo(); return true;
       case 'C-y': case 'C-S-z': this.redo(); return true;
       case 'Backspace':
+        if (this.takeBackNow()) return true;
         this.checkpoint('type');
         if (!M.backspace(root, cur)) {
           if (!root.length) { this.blk.items.splice(this.o, 1); this.setMode('text'); }
@@ -4438,7 +4506,9 @@ export class Editor {
         if (!root.length && !item.display && !this.note) {
           // `$$` → display math
           this.blk.items.splice(this.o, 1);
+          const back = this.lineNow('$$');
           this.insertMath(true);
+          this.substituted(back);
         } else this.exitMath(true);
         return true;
       case ' ':
@@ -4452,7 +4522,19 @@ export class Editor {
     if (k.length === 1) {
       this.checkpoint('type');
       const scripts = cur.auto?.length ?? 0;
+      const asTyped = this.mathLiteral(root, cur, k);
       M.typeChar(root, cur, k);
+      const literal = asTyped?.(root);
+      if (literal && toLatex(literal.root) !== toLatex(root)) {
+        const { b, o } = this;
+        this.substituted(() => {
+          item.root.splice(0, item.root.length, ...literal.root);
+          this.b = b;
+          this.o = o;
+          this.mc = literal.cur;
+          this.setMode('math');
+        });
+      }
       if (cur.auto?.some((a) => a.grouped)) this.learned('script-group');
       else if (/^[a-zA-Z0-9]$/.test(k) && (cur.auto?.length ?? 0) < scripts) this.tip('script-group', 'use x^(…) for a superscript longer than one character');
       if (/^[a-zA-Z]$/.test(k)) this.nameTip(root, cur);
@@ -4802,6 +4884,9 @@ export class Editor {
       { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i'), keep: true },
       { name: 'code', desc: 'code block  ```', run: setKind('code'), keep: true },
       { name: 'table', desc: 'insert a table (tab: next cell, enter: new row)', run: () => this.insertTable() },
+      // (characters that typed would make something else)
+      { name: 'dollar', desc: 'type a $ (not a formula)', run: () => this.typeText('$') },
+      { name: 'backslash', desc: 'type a \\ (not the palette)', run: () => this.typeText('\\') },
       { name: 'diagram', desc: 'insert a diagram: boxes, arrows, pen  ctrl+shift+d in one', run: () => this.sketch.insertDiagram() },
       { name: 'graph', desc: 'insert a graph of functions: y = sin x, a line each (g in a diagram)', run: () => this.sketch.insertGraph() },
       { name: 'sketch', desc: `${this.sketch.on?.kind === 'free' ? 'stop drawing' : 'draw'} on the note (a pen draws on it anyway)  ctrl+shift+d`, run: () => this.sketch.toggleFree() },
@@ -6802,6 +6887,7 @@ function describeInserter(name: string): string {
   const n = nodes[0];
   // (a matrix: its size too)
   if (n.k === 'cmd' && CMDS[n.name]?.grid && n.cols) return `\\${n.name}  ${n.slots.length / n.cols}×${n.cols}`;
+  if (name === 'slash') return '/  a slash, not a fraction';
   return n.k === 'sym' ? n.v : `\\${n.name}`;
 }
 
