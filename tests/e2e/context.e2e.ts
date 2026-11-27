@@ -184,7 +184,7 @@ test('in a table, the toolbar’s table button opens the table’s menu; again, 
   await table(page);
   await expect(button).toHaveClass(/here/);
   await button.click();
-  expect(await menu(page)).toEqual(['add a row under this one', 'delete this row', 'add a column after this one', 'delete this column', 'align this column left', 'center this column', 'align this column right']);
+  expect(await menu(page)).toEqual(['add a row under this one', 'delete this row', 'add a column after this one', 'delete this column', 'align this column left', 'center this column', 'align this column right', 'delete this table']);
   await button.click();
   await expect(page.locator('.dmenu')).toHaveCount(0);
   await button.click();
@@ -340,7 +340,7 @@ test('in a table, the table’s commands stay first, the most used of them on to
   await type(page, '\\');
   const shown = await names(page);
   expect(shown.slice(0, 2)).toEqual(['alignright', 'addrow']);
-  expect(shown[7]).toBe('theme');
+  expect(shown[8]).toBe('theme');
   expect(await rules(page)).toBe(1);
 });
 

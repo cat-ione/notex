@@ -475,3 +475,76 @@ test('\\ over text selected in a cell keeps it (the palette acts on it); a brack
   await page.keyboard.type('(');
   expect(await view(page)).toEqual(['Above', 'H a | b', '  (1) | 2', '  3 | 4', 'Below']);
 });
+
+// ── deleting a whole table ──
+
+test('selecting just the table, all its cells (by keys), and delete: the table goes, an empty line in its place', async ({ page }) => {
+  await table(page);
+  // from the first cell's start to the last cell's end
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Shift+ArrowDown');
+  await page.keyboard.press('Shift+ArrowDown');
+  // (end: the cell's end; again: the row's)
+  await page.keyboard.press('Shift+End');
+  await page.keyboard.press('Shift+End');
+  expect(await ed(page, (e) => e.cellSelection)).not.toBeNull();
+  await page.keyboard.press('Delete');
+  expect(await view(page)).toEqual(['Above', '', 'Below']);
+  expect(await ed(page, (e) => e.doc.blocks.map((b: any) => b.kind))).toEqual(['p', 'p', 'p']);
+  // one undo brings it back
+  await page.keyboard.press('Control+z');
+  expect(await view(page)).toEqual(['Above', 'H a | b', '  1 | 2', '  3 | 4', 'Below']);
+});
+
+test('a drag over the whole table, then backspace: the table goes', async ({ page }) => {
+  await table(page);
+  const first = (await page.locator('.block.tr').nth(0).locator(':scope > .td').nth(0).boundingBox())!;
+  const last = (await page.locator('.block.tr').nth(2).locator(':scope > .td').nth(1).boundingBox())!;
+  await page.mouse.move(first.x + 2, first.y + first.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(last.x + last.width - 2, last.y + last.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.press('Backspace');
+  expect(await view(page)).toEqual(['Above', '', 'Below']);
+});
+
+test('a table at the very top of the note, selected and deleted, goes too', async ({ page }) => {
+  await table(page);
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Shift+End');
+  await page.keyboard.press('Delete'); // "Above" gone
+  await page.keyboard.press('Delete'); // the empty line gone: the table starts the note
+  expect((await view(page))[0]).toBe('H a | b');
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Shift+ArrowDown');
+  await page.keyboard.press('Shift+ArrowDown');
+  // (end: the cell's end; again: the row's)
+  await page.keyboard.press('Shift+End');
+  await page.keyboard.press('Shift+End');
+  await type(page, 'x');
+  expect(await view(page)).toEqual(['x', 'Below']);
+});
+
+test('\\deletetable (and the right-click menu in a table) deletes the table the caret is in', async ({ page }) => {
+  await table(page);
+  await page.keyboard.press('ArrowDown');
+  await type(page, String.fromCharCode(92) + 'deletetable');
+  await page.keyboard.press('Enter');
+  expect(await view(page)).toEqual(['Above', '', 'Below']);
+  await page.keyboard.press('Control+z');
+  await page.locator('.block.tr').nth(1).locator(':scope > .td').nth(0).click({ button: 'right' });
+  await page.locator('.dmenu .opt', { hasText: 'delete this table' }).click();
+  expect(await view(page)).toEqual(['Above', '', 'Below']);
+});
+
+test('home and end, pressed again at a cell’s edge, go to the row’s start and end', async ({ page }) => {
+  await table(page);
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Home');
+  expect(await ed(page, (e) => e.cellAt(e.b, e.o))).toBe(1);
+  await page.keyboard.press('Home');
+  expect(await caret(page)).toEqual([1, 1]);
+  await page.keyboard.press('End');
+  await page.keyboard.press('End');
+  expect(await caret(page)).toEqual([1, 4]);
+});

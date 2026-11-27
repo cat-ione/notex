@@ -51,6 +51,8 @@ point at, and a pen and touch screen that work as well as a keyboard.
 - Tables, as in markdown or with `\table`: Tab to the next cell, Enter for a new row, whole
   cells selected, rows and columns added, removed and aligned from a right-click. Words are
   selected within their cell (double-click a word, triple-click the cell, Ctrl+Shift+arrows).
+  A table goes with `\deletetable` (or its right-click menu), or by selecting all its cells
+  and pressing Delete.
 - Images: paste, drop or `\image`; resize by dragging a corner; a caption under each.
 
 ## Drawing on your math

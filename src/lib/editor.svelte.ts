@@ -107,6 +107,7 @@ const TABLE_ACTIONS = [
   ['left', 'alignleft', 'align this column left'],
   ['center', 'aligncenter', 'center this column'],
   ['right', 'alignright', 'align this column right'],
+  ['table-', 'deletetable', 'delete this table'],
 ] as const;
 type NoteFile = { path: string | null; name: string; id?: string };
 /** Most room (px) a line or formula is ever pushed by, so a feedback bug can't run away. */
@@ -5695,11 +5696,12 @@ export class Editor {
     const [s, e] = spans[c];
     const sel = this.selection;
     switch (k) {
-      // a cell's own start and end
+      // a cell's own start and end; there already, the row's (its first cell's start, its last's end)
       case 'Home': case 'End': case 'S-Home': case 'S-End': {
         if (k.startsWith('S-')) this.anchor ??= { b: this.b, o: this.o };
         else this.anchor = null;
-        this.o = k.endsWith('Home') ? s : e;
+        const home = k.endsWith('Home');
+        this.o = home ? (this.o === s ? spans[0][0] : s) : this.o === e ? spans[spans.length - 1][1] : e;
         this.goalX = null;
         return true;
       }
@@ -5840,7 +5842,7 @@ export class Editor {
   }
 
   /** Change the table at the caret: add or remove a row or column, or align a column. */
-  tableCommand(what: 'row+' | 'row-' | 'col+' | 'col-' | 'left' | 'center' | 'right') {
+  tableCommand(what: 'row+' | 'row-' | 'col+' | 'col-' | 'left' | 'center' | 'right' | 'table-') {
     const row = this.tableRow();
     if (!row) return this.flash('not in a table');
     const c = Math.max(0, this.cellAt(this.b, this.o));
@@ -5848,6 +5850,13 @@ export class Editor {
     while (this.tableRow(last + 1)?.table === row.table) last++;
     this.checkpoint();
     this.anchor = null;
+    if (what === 'table-') {
+      // (an empty line where it was: the caret there, nothing joined)
+      this.doc.blocks.splice(row.table, last - row.table + 1, block());
+      this.b = row.table;
+      this.o = 0;
+      return;
+    }
     const head = this.doc.blocks[row.table];
     if (what === 'row+') return this.addRow(this.b, this.columns(row.table));
     if (what === 'row-') {
@@ -5893,10 +5902,16 @@ export class Editor {
       if (row.role !== 'head') continue;
       let last = b;
       while (rows.get(last + 1)?.table === b) last++;
-      if (cmpPos(r.s, { b, o: 0 }) <= 0 && cmpPos(r.e, { b: last, o: this.doc.blocks[last].items.length }) >= 0) whole.add(b);
+      // (from its first cell's start to its last cell's end: the caret can't go past the walls)
+      const first = cellSpans(this.doc.blocks[b].items)[0], end = cellSpans(this.doc.blocks[last].items).at(-1);
+      if (cmpPos(r.s, { b, o: first?.[0] ?? 0 }) <= 0 && cmpPos(r.e, { b: last, o: end?.[1] ?? this.doc.blocks[last].items.length }) >= 0) whole.add(b);
     }
     const kept = (b: number) => rows.has(b) && !whole.has(rows.get(b)!.table);
-    if (![...Array(r.e.b - r.s.b + 1)].some((_, i) => kept(r.s.b + i))) return false;
+    // (ends in a table that goes whole: from its first row's start, to its last row's end)
+    const gone = (b: number) => rows.has(b) && !kept(b);
+    if (gone(r.s.b)) r = { ...r, s: { b: r.s.b, o: 0 } };
+    if (gone(r.e.b)) r = { ...r, e: { b: r.e.b, o: this.doc.blocks[r.e.b].items.length } };
+    if (![...Array(r.e.b - r.s.b + 1)].some((_, i) => kept(r.s.b + i)) && !gone(r.s.b) && !gone(r.e.b)) return false;
     // which columns: within one table, those between the ends; from outside it, all
     const cols = (b: number): [number, number] => (cs && rows.get(b)?.table === cs.table ? cs.cols : [0, Infinity]);
     let caret: Pos | null = null;
@@ -5919,6 +5934,12 @@ export class Editor {
       const first = this.doc.blocks[a], last = this.doc.blocks[b];
       const so = a === r.s.b ? r.s.o : 0, eo = b === r.e.b ? r.e.o : last.items.length;
       first.items.splice(so, Infinity, ...last.items.slice(eo));
+      // (a table's row whose table went: what's left of the lines is a paragraph)
+      if (gone(a)) {
+        first.kind = 'p';
+        delete first.head;
+        delete first.aligns;
+      }
       if (b > a) this.doc.blocks.splice(a + 1, b - a);
       if (a === r.s.b) caret = { b: a, o: so };
       b = a - 1;
