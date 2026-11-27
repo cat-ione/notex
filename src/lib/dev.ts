@@ -14,6 +14,7 @@ import { deserialize, withMarkdown } from './format';
 import { docToLatex } from './export';
 import { findTables } from './tables';
 import { toLatex } from './math/latex';
+import { PAPER_STYLES } from './pdf';
 
 /** A target: nodes i..j of the row at `path` inside formula `f` (index into the scenario's formulas), or words of the text. */
 type Target = { f: number; i: number; j?: number; path?: [number, number][] } | { words: [number, number] };
@@ -178,6 +179,8 @@ export function install(ed: Editor) {
     formulas: () => ed.doc.blocks.flatMap((b) => b.items.filter((i) => i.t === 'm').map((m) => toLatex(m.root))),
     /** Top-level nodes of a formula (to pick target indices). */
     probe: (tex: string) => describe(parseLatex(tex).row),
+    /** The CSS properties the PDF's copy of the page takes (see pdf.ts). */
+    paperStyles: PAPER_STYLES,
   };
 }
 

@@ -55,9 +55,10 @@ export function readPdf(page: Page): Promise<PdfPage[]> {
       const img = objs.get(+new RegExp(`/${draw[5]} (\\d+) 0 R`).exec(xobjs)![1])!;
       const iw = +/\/Width (\d+)/.exec(img.dict)![1], ih = +/\/Height (\d+)/.exec(img.dict)![1];
       const raw = await inflate(img.data!);
-      // undo the PNG predictors: each row starts with its filter's number
-      const rgb = new Uint8Array(iw * ih * 3), row = iw * 3;
-      for (let r = 0; r < ih; r++) {
+      // undo the PNG predictors, if it says it has them: each row starts with its filter's number
+      const predicted = +(/\/Predictor (\d+)/.exec(img.dict)?.[1] ?? 1) >= 10;
+      const rgb = predicted ? new Uint8Array(iw * ih * 3) : raw.subarray(0, iw * ih * 3), row = iw * 3;
+      for (let r = 0; predicted && r < ih; r++) {
         const f = raw[r * (row + 1)], src = r * (row + 1) + 1, dst = r * row;
         for (let i = 0; i < row; i++) {
           const a = i >= 3 ? rgb[dst + i - 3] : 0, b = r ? rgb[dst - row + i] : 0, c = r && i >= 3 ? rgb[dst - row + i - 3] : 0;

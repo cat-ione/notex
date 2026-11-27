@@ -1,3 +1,7 @@
 # (core-js, under jspdf, only prints a banner when installed: its script not run)
 allowBuilds:
   core-js: false
+# (html-to-image: its isInstanceOfElement remembered, not worked out again for every element
+# a PDF copies: a fifth of the time making one took)
+patchedDependencies:
+  html-to-image@1.11.13: patches/html-to-image@1.11.13.patch

@@ -162,3 +162,54 @@ test('made twice, the same PDF: nothing laid out afresh in between moves a note 
   expect(d.ink.every((v) => v === 0)).toBe(true);
   expect(Math.max(...d.tone)).toBeLessThan(10);
 });
+
+/** What the paper layout sets that the copy (pdf.ts) needn't: nothing a picture shows, or what another says. */
+const NOT_SHOWN = [
+  /^--/, // (the theme's variables: values have them filled in)
+  /^(cursor|pointer-events|user-select|touch-action|caret-color|transition-.*|animation-.*|will-change)$/,
+  /^contain-intrinsic-/, // (only with content-visibility)
+  /^perspective-origin$/, // (only with perspective)
+  /^(column-rule-color|row-rule-color|text-emphasis-color|-webkit-text-decorations-in-effect)$/, // (the text's colour, as it is anyway)
+  /(-block|-inline)(-|$)|^inset-|^(block|inline)-size$|-(start|end)-(start|end)-radius$/, // (the physical ones say it)
+  /^(text-decoration|font-variant)$/, // (shorthands of ones it has)
+];
+
+test('the copy for the PDF writes every property the paper layout uses to look as it does', async ({ page }) => {
+  await open(page);
+  const missing = await page.evaluate((notShown) => {
+    const e = (window as any).__nx.ed;
+    const has = new Set<string>((window as any).__nx.paperStyles);
+    const skip = notShown.map((s) => new RegExp(s));
+    e.beginPrint();
+    // a property is used where an element's value isn't a fresh element's of its kind (with no stylesheet)
+    const frame = document.createElement('iframe');
+    document.body.appendChild(frame);
+    const fd = frame.contentDocument!;
+    fd.open();
+    fd.write('<!doctype html><html><body></body></html>');
+    fd.close();
+    const props = Array.from(getComputedStyle(document.documentElement)).filter((p) => !has.has(p) && !skip.some((r) => r.test(p)));
+    const fresh = new Map<string, CSSStyleDeclaration>();
+    const out = new Map<string, string>();
+    for (const el of [e.page, ...e.page.querySelectorAll('*')] as Element[]) {
+      // (an SVG's insides are written by inlineSvgStyles)
+      if (el instanceof SVGElement && el.localName !== 'svg') continue;
+      for (const pseudo of [null, '::before', '::after']) {
+        const cs = getComputedStyle(el, pseudo);
+        if (pseudo && ['', 'none', 'normal'].includes(cs.getPropertyValue('content'))) continue;
+        const key = el.localName + (pseudo ?? '');
+        if (!fresh.has(key)) {
+          const f = fd.createElementNS(el.namespaceURI, el.localName);
+          fd.body.appendChild(f);
+          fresh.set(key, frame.contentWindow!.getComputedStyle(f, pseudo));
+        }
+        const base = fresh.get(key)!;
+        for (const p of props) if (!out.has(p) && cs.getPropertyValue(p) !== base.getPropertyValue(p)) out.set(p, `${key}.${el.classList[0] ?? ''}: ${cs.getPropertyValue(p)}`);
+      }
+    }
+    frame.remove();
+    e.endPrint();
+    return [...out].map(([p, eg]) => `${p} (${eg})`);
+  }, NOT_SHOWN.map((r) => r.source));
+  expect(missing).toEqual([]);
+});

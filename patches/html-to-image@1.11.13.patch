@@ -1,0 +1,60 @@
+diff --git a/es/util.js b/es/util.js
+index 90a3cd19a6bcc763d98cbd476fde17f4bc0428fa..355118614901d5407a36fde81236079bd89e2218 100644
+--- a/es/util.js
++++ b/es/util.js
+@@ -181,13 +181,22 @@ export async function nodeToDataURL(node, width, height) {
+     foreignObject.appendChild(node);
+     return svgToDataURL(svg);
+ }
++const instanceOfSeen = new WeakMap();
+ export const isInstanceOfElement = (node, instance) => {
+     if (node instanceof instance)
+         return true;
+     const nodePrototype = Object.getPrototypeOf(node);
+     if (nodePrototype === null)
+         return false;
+-    return (nodePrototype.constructor.name === instance.name ||
+-        isInstanceOfElement(nodePrototype, instance));
++    let seen = instanceOfSeen.get(nodePrototype);
++    if (!seen)
++        instanceOfSeen.set(nodePrototype, (seen = new Map()));
++    let result = seen.get(instance.name);
++    if (result === undefined) {
++        result = nodePrototype.constructor.name === instance.name ||
++            isInstanceOfElement(nodePrototype, instance);
++        seen.set(instance.name, result);
++    }
++    return result;
+ };
+ //# sourceMappingURL=util.js.map
+\ No newline at end of file
+diff --git a/lib/util.js b/lib/util.js
+index 6a6ae9c8bd15b276d46773d853c2182aaba8326e..a146aa3488afdeb4599b8072082b9dace40c112a 100644
+--- a/lib/util.js
++++ b/lib/util.js
+@@ -246,14 +246,23 @@ function nodeToDataURL(node, width, height) {
+     });
+ }
+ exports.nodeToDataURL = nodeToDataURL;
++var instanceOfSeen = new WeakMap();
+ var isInstanceOfElement = function (node, instance) {
+     if (node instanceof instance)
+         return true;
+     var nodePrototype = Object.getPrototypeOf(node);
+     if (nodePrototype === null)
+         return false;
+-    return (nodePrototype.constructor.name === instance.name ||
+-        (0, exports.isInstanceOfElement)(nodePrototype, instance));
++    var seen = instanceOfSeen.get(nodePrototype);
++    if (!seen)
++        instanceOfSeen.set(nodePrototype, (seen = new Map()));
++    var result = seen.get(instance.name);
++    if (result === undefined) {
++        result = nodePrototype.constructor.name === instance.name ||
++            (0, exports.isInstanceOfElement)(nodePrototype, instance);
++        seen.set(instance.name, result);
++    }
++    return result;
+ };
+ exports.isInstanceOfElement = isInstanceOfElement;
+ //# sourceMappingURL=util.js.map

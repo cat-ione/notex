@@ -109,5 +109,10 @@ site and releases are built from: merge into it only when asked.
   borders to another pixel ratio. `pdf.ts` works round these; prefer padding to margins and
   avoid inset shadows in the paper layout (`html.nx-print`). `tests/e2e/pdfpages.e2e.ts`
   reads the PDF back (`pdfread.ts`) and compares each sheet with the screen.
+- The page is copied once for the whole PDF, and only the CSS properties in `PAPER_STYLES`
+  (`pdf.ts`) are copied, and only where they differ from what the copy would have anyway:
+  copying is nearly all the time a PDF takes. Styling the paper layout with a property not in
+  that list fails a test in `pdfpages.e2e.ts`; add it there. `patches/` holds a small speed fix
+  to html-to-image (see `pnpm-workspace.yaml`).
 - Pointer tests send synthetic `PointerEvent`s; real pens and touch screens differ (a long
   press is also a `contextmenu`, the side button a right-click), so handle both.

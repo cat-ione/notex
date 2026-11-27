@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  html-to-image@1.11.13: 557c32613bf1cc510bcb052b3411f9fe122511e38268685c2a7c7f3da05b486e
+
 importers:
 
   .:
@@ -177,7 +180,7 @@ importers:
         version: 2.7.3
       html-to-image:
         specifier: ^1.11.13
-        version: 1.11.13
+        version: 1.11.13(patch_hash=557c32613bf1cc510bcb052b3411f9fe122511e38268685c2a7c7f3da05b486e)
       jspdf:
         specifier: ^4.2.1
         version: 4.2.1
@@ -1338,7 +1341,7 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  html-to-image@1.11.13: {}
+  html-to-image@1.11.13(patch_hash=557c32613bf1cc510bcb052b3411f9fe122511e38268685c2a7c7f3da05b486e): {}
 
   html2canvas@1.4.1:
     dependencies:
