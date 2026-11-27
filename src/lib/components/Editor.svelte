@@ -311,7 +311,7 @@
   // Tables: their rows, by block index, and the cells a selection covers (whole cells, as
   // in a word processor)
   const tableRows = $derived(findTables(ed.doc.blocks));
-  const cellSel = $derived(ed.cellSelection);
+  const cellSel = $derived(ed.tables.cellSelection);
   const selectedCell = (b: number, c: number) =>
     !!cellSel && b >= cellSel.rows[0] && b <= cellSel.rows[1] && c >= cellSel.cols[0] && c <= cellSel.cols[1];
 

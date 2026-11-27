@@ -194,7 +194,7 @@ test('a click in a cell lands in that cell, even an empty one and beside its tex
     const box = (await cells.nth(c).boundingBox())!;
     for (const fx of [0.05, 0.5, 0.95]) {
       await page.mouse.click(box.x + box.width * fx, box.y + box.height / 2);
-      expect(await ed(page, (e) => e.cellAt(e.b, e.o)), `cell ${c} at ${fx}`).toBe(c);
+      expect(await ed(page, (e) => e.tables.cellAt(e.b, e.o)), `cell ${c} at ${fx}`).toBe(c);
       expect(await ed(page, (e) => e.b)).toBe(4);
     }
   }
@@ -211,7 +211,7 @@ test('there is no line between the header and the rows to click into', async ({ 
   expect(Math.abs(row.y - (head.y + head.height))).toBeLessThan(2);
   await page.mouse.click(head.x + 20, head.y + head.height);
   expect([1, 2]).toContain(await ed(page, (e) => e.b));
-  expect(await ed(page, (e) => e.cellAt(e.b, e.o))).toBeGreaterThanOrEqual(0);
+  expect(await ed(page, (e) => e.tables.cellAt(e.b, e.o))).toBeGreaterThanOrEqual(0);
 });
 
 // ── selecting cells ──
@@ -232,7 +232,7 @@ test('only the cells between the ends are selected (rows by columns)', async ({ 
   await page.keyboard.press('Tab'); // "b"
   await page.keyboard.press('Shift+ArrowDown');
   await page.keyboard.press('Shift+ArrowDown');
-  const cs = await ed(page, (e) => e.cellSelection);
+  const cs = await ed(page, (e) => e.tables.cellSelection);
   expect(cs.cols).toEqual([1, 1]);
   await page.keyboard.press('Backspace');
   expect(await view(page)).toEqual(['Above', 'H a | ', '  1 | ', '  3 | ', 'Below']);
@@ -429,7 +429,7 @@ test('ctrl+shift+right in a cell selects up to its last word and stops there (no
   // at the cell's end: it stays (the last cell of the row: no next row taken)
   await page.keyboard.press('Control+Shift+ArrowRight');
   expect(await selected(page)).toBe('two words');
-  expect(await ed(page, (e) => [e.b, e.cellSelection])).toEqual([1, null]);
+  expect(await ed(page, (e) => [e.b, e.tables.cellSelection])).toEqual([1, null]);
 });
 
 test('ctrl+right goes a word at a time in a cell, then on to the next cell', async ({ page }) => {
@@ -443,7 +443,7 @@ test('ctrl+right goes a word at a time in a cell, then on to the next cell', asy
   expect(await caret(page)).toEqual([1, 5]);
   // the cell's end: on to the next cell's start
   await page.keyboard.press('Control+ArrowRight');
-  expect(await ed(page, (e) => [e.b, e.cellAt(e.b, e.o)])).toEqual([1, 1]);
+  expect(await ed(page, (e) => [e.b, e.tables.cellAt(e.b, e.o)])).toEqual([1, 1]);
   await page.keyboard.press('Control+ArrowLeft');
   expect(await caret(page)).toEqual([1, 5]);
 });
@@ -453,7 +453,7 @@ test('a double click on a cell’s only word selects the word, not the row; a tr
   const word = page.locator('.block.tr').nth(1).locator(':scope > .td').nth(1).locator('.ch:not(.wall)').first();
   await word.dblclick();
   expect(await selected(page)).toBe('2');
-  expect(await ed(page, (e) => e.cellSelection)).toBeNull();
+  expect(await ed(page, (e) => e.tables.cellSelection)).toBeNull();
   await page.keyboard.press('Tab');
   await type(page, 'more words');
   // (tab: the next cell, the next row's first, its text replaced)
@@ -486,7 +486,7 @@ test('selecting just the table, all its cells (by keys), and delete: the table g
   // (end: the cell's end; again: the row's)
   await page.keyboard.press('Shift+End');
   await page.keyboard.press('Shift+End');
-  expect(await ed(page, (e) => e.cellSelection)).not.toBeNull();
+  expect(await ed(page, (e) => e.tables.cellSelection)).not.toBeNull();
   await page.keyboard.press('Delete');
   expect(await view(page)).toEqual(['Above', '', 'Below']);
   expect(await ed(page, (e) => e.doc.blocks.map((b: any) => b.kind))).toEqual(['p', 'p', 'p']);
@@ -540,7 +540,7 @@ test('home and end, pressed again at a cell’s edge, go to the row’s start an
   await table(page);
   await page.keyboard.press('Tab');
   await page.keyboard.press('Home');
-  expect(await ed(page, (e) => e.cellAt(e.b, e.o))).toBe(1);
+  expect(await ed(page, (e) => e.tables.cellAt(e.b, e.o))).toBe(1);
   await page.keyboard.press('Home');
   expect(await caret(page)).toEqual([1, 1]);
   await page.keyboard.press('End');
@@ -556,15 +556,15 @@ test('up and down stay in the column: past a short cell, not into the next one o
   await page.keyboard.press('Home');
   await page.keyboard.press('End');
   await type(page, ' and a much longer first cell');
-  expect(await ed(page, (e) => [e.b, e.cellAt(e.b, e.o)])).toEqual([2, 0]);
+  expect(await ed(page, (e) => [e.b, e.tables.cellAt(e.b, e.o)])).toEqual([2, 0]);
   for (const [key, row] of [['ArrowUp', 1], ['ArrowDown', 2], ['ArrowDown', 3], ['ArrowUp', 2], ['ArrowUp', 1]] as const) {
     await page.keyboard.press(key);
-    expect(await ed(page, (e) => [e.b, e.cellAt(e.b, e.o)]), `${key} to row ${row}`).toEqual([row, 0]);
+    expect(await ed(page, (e) => [e.b, e.tables.cellAt(e.b, e.o)]), `${key} to row ${row}`).toEqual([row, 0]);
   }
   // from the second column, it stays in the second
   await page.keyboard.press('Tab');
   await page.keyboard.press('ArrowDown');
-  expect(await ed(page, (e) => [e.b, e.cellAt(e.b, e.o)])).toEqual([2, 1]);
+  expect(await ed(page, (e) => [e.b, e.tables.cellAt(e.b, e.o)])).toEqual([2, 1]);
 });
 
 // ── leaving a table ──

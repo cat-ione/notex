@@ -21,7 +21,7 @@
     { id: 'math', glyph: '$', label: 'math', tip: 'a formula ($$ for a centred one)', keys: '$', run: () => ed.mode === 'text' && ed.insertMath(false) },
     { id: 'draw', glyph: '✎', label: 'draw', tip: 'draw: arrows, boxes, circles… (alt+drag draws an arrow)', keys: 'ctrl+d', run: (at) => ed.openDrawMenu(at) },
     // (in a table: that table's rows, columns and alignment)
-    { id: 'table', glyph: '▦', label: 'table', tip: 'a table (tab: next cell, enter: new row)', run: (at) => ed.openTableMenu(at) || ed.insertTable() },
+    { id: 'table', glyph: '▦', label: 'table', tip: 'a table (tab: next cell, enter: new row)', run: (at) => ed.openTableMenu(at) || ed.tables.insertTable() },
     { id: 'image', glyph: '▣', label: 'image', tip: 'an image (or paste / drop one)', run: () => ed.chooseImages() },
     { id: 'diagram', glyph: '◇', label: 'diagram', tip: 'a diagram: boxes, arrows, the pen', run: () => ed.sketch.insertDiagram() },
     // (on: drawing on the note; a pen draws on it anyway)
