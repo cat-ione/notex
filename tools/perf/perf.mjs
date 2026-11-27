@@ -71,6 +71,9 @@ async function measureRaw(doc, name, n, act) {
   rows.push({ doc, name, median: q(0.5), p95: q(0.95), max: lat[lat.length - 1] ?? 0, perAction: s.layouts / n, layoutMs: s.layoutMs / n });
 }
 
+// the app's own code: its sources (pnpm dev), or a build's chunks (URL=…/?lab against `vite preview`)
+const APP = /src\/lib|_app\/immutable/;
+
 async function profiled(label, fn) {
   if (!PROFILE) return fn();
   await cdp.send('Profiler.enable');
@@ -96,7 +99,7 @@ async function profiled(label, fn) {
       const seen = new Set();
       for (let p = id; p; p = parent.get(p)) {
         const f = byId.get(p).callFrame;
-        if (!/src\/lib/.test(f.url)) continue;
+        if (!APP.test(f.url)) continue;
         const k = `${f.functionName || '(anon)'} ${f.url.split('/').pop().split('?')[0]}:${f.lineNumber + 1}`;
         if (seen.has(k)) continue;
         seen.add(k);
@@ -117,7 +120,7 @@ async function profiled(label, fn) {
       const chain = [];
       for (let p = parent.get(id); p && chain.length < 4; p = parent.get(p)) {
         const pf = byId.get(p).callFrame;
-        if (/src\/lib/.test(pf.url)) chain.push(`${pf.functionName || '(anon)'}:${pf.lineNumber + 1}`);
+        if (APP.test(pf.url)) chain.push(`${pf.functionName || '(anon)'}:${pf.lineNumber + 1}`);
       }
       const k = chain.join(' < ');
       under.set(k, (under.get(k) ?? 0) + (profile.timeDeltas[i] ?? 0) / 1000);
