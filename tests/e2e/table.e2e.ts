@@ -46,8 +46,7 @@ async function table(page: Page) {
   await type(page, '3');
   await page.keyboard.press('Tab');
   await type(page, '4');
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter'); // out of the table
+  await page.keyboard.press('ArrowDown'); // out of the table: a line under it
   await type(page, 'Below');
   await page.keyboard.press('Control+Home');
   await page.keyboard.press('ArrowDown');
@@ -127,7 +126,7 @@ test('tab goes to the next cell, selecting it; shift+tab back; past the last cel
   expect((await view(page)).slice(1, 5)).toEqual(['H a | b', '  1 | 2', '  3 | 4', '  5 | ']);
 });
 
-test('enter adds a row under this one; on an empty last row it leaves the table', async ({ page }) => {
+test('enter adds a row under this one', async ({ page }) => {
   await table(page);
   await page.keyboard.press('ArrowDown'); // in "1"
   await page.keyboard.press('Enter');
@@ -566,4 +565,39 @@ test('up and down stay in the column: past a short cell, not into the next one o
   await page.keyboard.press('Tab');
   await page.keyboard.press('ArrowDown');
   expect(await ed(page, (e) => [e.b, e.cellAt(e.b, e.o)])).toEqual([2, 1]);
+});
+
+// ── leaving a table ──
+
+test('enter on an empty last row adds another (empty rows stay); down from the last row leaves the table', async ({ page }) => {
+  await type(page, '| a | b |');
+  await page.keyboard.press('Enter');
+  await type(page, '| --- | --- |');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  expect(await view(page)).toEqual(['H a | b', '   | ', '   | ', '   | ']);
+  // the table ends the note: down makes a line under it, and enter there is an ordinary enter
+  await page.keyboard.press('ArrowDown');
+  expect(await ed(page, (e) => [e.b, e.o, e.doc.blocks[e.b].kind])).toEqual([4, 0, 'p']);
+  await page.keyboard.press('Enter');
+  await type(page, 'text');
+  expect(await view(page)).toEqual(['H a | b', '   | ', '   | ', '   | ', '', 'text']);
+  // with a line under it already: down goes to it, nothing added
+  await page.keyboard.press('Control+Home');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+  expect(await ed(page, (e) => [e.b, e.doc.blocks.length])).toEqual([4, 6]);
+});
+
+test('right from the last cell’s end, at the end of the note, leaves the table too', async ({ page }) => {
+  await type(page, '| a | b |');
+  await page.keyboard.press('Enter');
+  await type(page, '| --- | --- |');
+  await page.keyboard.press('Enter');
+  await type(page, '1');
+  await page.keyboard.press('Tab');
+  await type(page, '2');
+  await page.keyboard.press('ArrowRight');
+  await type(page, 'after');
+  expect(await view(page)).toEqual(['H a | b', '  1 | 2', 'after']);
 });

@@ -145,8 +145,7 @@ for (const seed of Array.from({ length: SEEDS }, (_, i) => i + FROM)) {
     await type(page, 'beta');
     await page.keyboard.press('Tab');
     await type(page, '2');
-    await page.keyboard.press('Enter');
-    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
     await type(page, 'Below the table.');
     await page.keyboard.press('Control+Home');
     const r = rng(seed);

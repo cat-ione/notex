@@ -48,7 +48,8 @@ point at, and a pen and touch screen that work as well as a keyboard.
   Ctrl+click (or a tap) opens them. A missing note is made when its link is opened.
 - Folding: Ctrl+. or the ▾ in the margin folds a heading's section (`\foldall`, `\unfoldall`).
 - The outline (Ctrl+Shift+O): headings and theorems down the side; click to go there.
-- Tables, as in markdown or with `\table`: Tab to the next cell, Enter for a new row, whole
+- Tables, as in markdown or with `\table`: Tab to the next cell, Enter for a new row (empty
+  rows stay), ↓ from the last row to the line below (made if the table ends the note), whole
   cells selected, rows and columns added, removed and aligned from a right-click. Words are
   selected within their cell (double-click a word, triple-click the cell, Ctrl+Shift+arrows).
   A table goes with `\deletetable` (or its right-click menu), or by selecting all its cells

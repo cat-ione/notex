@@ -5730,6 +5730,18 @@ export class Editor {
         this.goalX = null;
         return true;
       }
+      // out of the table at the end of the note: ↓ from its last row (→ from its last cell's
+      // end) makes a line under it to go on in
+      case 'Down': case 'Right': {
+        const last = this.b === this.doc.blocks.length - 1;
+        if (!last || (k === 'Right' && (this.o !== e || c !== spans.length - 1)) || sel) return false;
+        this.checkpoint();
+        this.doc.blocks.push(block());
+        this.b++;
+        this.o = 0;
+        this.goalX = null;
+        return true;
+      }
       // a word at a time, within the cell: at its end (or start), on to the next cell (or
       // the one before); selecting, it stops there, rather than taking the cells after it
       case 'C-Right': case 'C-S-Right': case 'C-Left': case 'C-S-Left': {
@@ -5808,17 +5820,13 @@ export class Editor {
     this.toCell(b + 1, this.cellSpans(b + 1)![0]);
   }
 
-  /** Enter in a table: a new row under this one; on an empty last row, out of the table. */
+  /**
+   * Enter in a table: a new row under this one, always (empty rows stay: it's a table, not a
+   * list). Out of it is ↓ from its last row (see tableKey).
+   */
   private tableEnter(): boolean {
     const row = this.tableRow();
     if (!row) return false;
-    const blk = this.blk;
-    if (row.role === 'body' && row.last && this.cellSpans(this.b)!.every(([s, e]) => s === e)) {
-      blk.kind = 'p';
-      blk.items.splice(0);
-      this.o = 0;
-      return true;
-    }
     this.doc.blocks.splice(this.b + 1, 0, emptyRow(this.columns(row.table)));
     this.b++;
     this.o = this.cellSpans(this.b)![0][0];

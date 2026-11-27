@@ -169,7 +169,7 @@ export function welcomeDoc(): Doc {
       P('- starts a bullet list, # a heading, ``` a code block, coloured by its language:', 'ol'),
       { ...P('def mean(xs):', 'code'), lang: 'py' },
       P('    return sum(xs) / len(xs)', 'code'),
-      P('Tables as in markdown (or \\table): Tab goes to the next cell, Enter adds a row, right-click a cell for rows and columns.'),
+      P('Tables as in markdown (or \\table): Tab goes to the next cell, Enter adds a row, ↓ from the last row leaves it, right-click a cell for rows and columns.'),
       P('| test | the series converges when |'),
       P('| --- | --- |'),
       T(['| ratio | ', M('\\lim_{n\\to\\infty} \\left|\\frac{a_{n+1}}{a_n}\\right| < 1'), ' |']),
