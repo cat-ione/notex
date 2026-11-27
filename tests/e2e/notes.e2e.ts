@@ -77,7 +77,7 @@ test('ctrl+o lists the notes; untitled ones by their first line', async ({ page 
   await saved(page);
   await page.keyboard.press('Control+o');
   await expect(page.locator('.panel')).toBeVisible();
-  await expect(panelRows(page)).toHaveText(['second note', 'first note', '+ new note', 'open a file…', 'the welcome note']);
+  await expect(panelRows(page)).toHaveText(['second note', 'first note', '+ new note', 'open a file…', 'the welcome note', 'back up all notes…', 'restore from a backup…']);
   // the latest other note is picked: enter goes back to it
   await expect(page.locator('.panel .row.sel .name')).toHaveText('first note');
 });
@@ -115,7 +115,7 @@ test('typing in the list filters it', async ({ page }) => {
   }
   await page.keyboard.press('Control+o');
   await page.keyboard.type('algebra');
-  await expect(panelRows(page)).toHaveText(['algebraic topology', 'linear algebra', '+ new note', 'open a file…', 'the welcome note']);
+  await expect(panelRows(page)).toHaveText(['algebraic topology', 'linear algebra', '+ new note', 'open a file…', 'the welcome note', 'back up all notes…', 'restore from a backup…']);
   await page.keyboard.press('Enter');
   expect(await text(page)).toBe('algebraic topology');
 });
@@ -155,7 +155,7 @@ test('deleting takes del twice; deleting the open note opens the next', async ({
   await expect(page.locator('.panel .warn')).toBeVisible();
   expect(await kept(page)).toHaveLength(2);
   await page.keyboard.press('Delete');
-  await expect(panelRows(page)).toHaveText(['keep me', '+ new note', 'open a file…', 'the welcome note']);
+  await expect(panelRows(page)).toHaveText(['keep me', '+ new note', 'open a file…', 'the welcome note', 'back up all notes…', 'restore from a backup…']);
   expect((await kept(page)).map((n) => n.title)).toEqual(['keep me']);
   expect(await text(page)).toBe('keep me');
 });
@@ -295,7 +295,7 @@ test('with the mouse: ✕ turns into a delete button, no key text; moving away c
   await row.hover();
   await row.locator('.icon.danger').click();
   await row.locator('.confirm').click();
-  await expect(panelRows(page)).toHaveText(['stays', '+ new note', 'open a file…', 'the welcome note']);
+  await expect(panelRows(page)).toHaveText(['stays', '+ new note', 'open a file…', 'the welcome note', 'back up all notes…', 'restore from a backup…']);
   expect((await kept(page)).map((n) => n.title)).toEqual(['stays']);
 });
 
@@ -322,4 +322,111 @@ test('the welcome note can be brought back from the list', async ({ page }) => {
   expect(await ed(page, (e) => e.file.name)).toBe('welcome');
   // the note before it is still kept
   expect((await kept(page)).map((n) => n.title)).toContain('mine');
+});
+
+/** A file in the browser's private storage, as bytes. */
+function fileBytes(page: Page, name: string) {
+  return page.evaluate(async (name) => {
+    const h = await (await navigator.storage.getDirectory()).getFileHandle(name);
+    return Array.from(new Uint8Array(await (await h.getFile()).arrayBuffer()));
+  }, name);
+}
+
+/** Everything the browser keeps of the app gone, as in another browser. */
+async function forgetAll(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((ok) => {
+        localStorage.clear();
+        const r = indexedDB.open('notex', 1);
+        r.onsuccess = () => {
+          const t = r.result.transaction('notes', 'readwrite');
+          t.objectStore('notes').clear();
+          t.oncomplete = () => (r.result.close(), ok());
+        };
+      }),
+  );
+  await page.reload();
+  await page.waitForFunction(() => (window as any).__nx);
+}
+
+/** Pick `files` in the file dialog that clicking `row` (in the list of notes) opens. */
+async function pickFor(page: Page, row: string, files: { name: string; bytes: number[] }[]) {
+  // (the dialog stood in for: the files handed to the input it would fill)
+  await page.evaluate((files) => {
+    const click = HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
+      if (this.type !== 'file') return click.call(this);
+      HTMLInputElement.prototype.click = click;
+      const dt = new DataTransfer();
+      for (const f of files) dt.items.add(new File([new Uint8Array(f.bytes)], f.name));
+      this.files = dt.files;
+      this.dispatchEvent(new Event('change'));
+    };
+  }, files);
+  await page.locator('.panel .row', { hasText: row }).click();
+}
+
+const bytesOf = (s: string) => Array.from(new TextEncoder().encode(s));
+
+test('backing up saves every note to a zip; restoring it elsewhere brings them back, and again adds nothing', async ({ page }) => {
+  await fakePickers(page);
+  await open(page);
+  await fresh(page);
+  await type(page, 'first note');
+  await saved(page);
+  await fresh(page);
+  await type(page, 'second note');
+  await saved(page);
+  await page.keyboard.press('Control+o');
+  const name = `notex notes ${new Date().toISOString().slice(0, 10)}.zip`;
+  await page.locator('.panel .row', { hasText: 'back up all notes…' }).click();
+  await expect.poll(() => ed(page, (e) => e.message)).toBe(`backed up 2 notes to ${name}`);
+  const zipped = await fileBytes(page, name);
+  // (a zip of note files, named as the list names them)
+  expect(zipped.slice(0, 4)).toEqual([0x50, 0x4b, 3, 4]);
+  expect(String.fromCharCode(...zipped)).toContain('second note.ntx');
+
+  await forgetAll(page);
+  expect(await kept(page)).toEqual([]);
+  await page.keyboard.press('Control+o');
+  await pickFor(page, 'restore from a backup…', [{ name, bytes: zipped }]);
+  await expect.poll(() => ed(page, (e) => e.message)).toBe('2 notes restored');
+  // (listed at once, in their order)
+  await expect(panelRows(page).nth(0)).toHaveText('second note');
+  await expect(panelRows(page).nth(1)).toHaveText('first note');
+  expect((await kept(page)).map((n) => n.name)).toEqual(['untitled', 'untitled']);
+
+  await pickFor(page, 'restore from a backup…', [{ name, bytes: zipped }]);
+  await expect.poll(() => ed(page, (e) => e.message)).toBe('0 notes restored, 2 already here');
+  expect(await kept(page)).toHaveLength(2);
+  // a restored note opens as it was
+  await page.locator('.panel .row', { hasText: 'first note' }).click();
+  await expect.poll(() => text(page)).toBe('first note');
+});
+
+test('restoring takes markdown files too, each a note named after its file', async ({ page }) => {
+  await open(page);
+  await page.keyboard.press('Control+o');
+  await pickFor(page, 'restore from a backup…', [{ name: 'groups.md', bytes: bytesOf('# Groups\n\nA group is a set.\n') }]);
+  await expect.poll(() => ed(page, (e) => e.message)).toBe('1 note restored');
+  expect((await kept(page)).map((n) => [n.name, n.title])).toEqual([['groups', 'Groups']]);
+});
+
+test('once a note is kept, the browser is asked to keep the notes for good', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__asked = 0;
+    navigator.storage.persisted = async () => false;
+    navigator.storage.persist = async () => ((window as any).__asked++, false);
+  });
+  await open(page);
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => (window as any).__asked)).toBe(0);
+  await fresh(page);
+  await type(page, 'worth keeping');
+  await saved(page);
+  await expect.poll(() => page.evaluate(() => (window as any).__asked)).toBe(1);
+  // (when the browser said no, the list says so)
+  await page.keyboard.press('Control+o');
+  await expect(page.locator('.panel .title')).toContainText('which may clear them: back them up');
 });

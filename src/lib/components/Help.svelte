@@ -25,6 +25,7 @@
       ['ctrl+.  \\foldall', 'fold the section under a heading (the ▾ in the margin too)'],
       ['ctrl+shift+o', 'the outline: headings and theorems; click to go there'],
       ['ctrl+o, then type', 'notes by name, or by what they say'],
+      ['\\backup  \\restore', 'in the browser: every note to a zip file, and back (also at the end of ctrl+o)'],
       ['\\markdown  \\copymarkdown', 'save / copy as markdown (.md files open too)'],
     ]],
     ['math', [

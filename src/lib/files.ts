@@ -211,6 +211,16 @@ export function downloadNote(name: string, doc: Doc) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** Files the user picks (`accept`: as an input's), or none if cancelled. */
+export function pickBrowserFiles(accept: string): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept, multiple: true });
+    input.onchange = () => resolve([...(input.files ?? [])]);
+    input.oncancel = () => resolve([]);
+    input.click();
+  });
+}
+
 function pickBrowserFile(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = Object.assign(document.createElement('input'), { type: 'file', accept: `.${EXT},application/json,.md,.markdown,text/markdown` });

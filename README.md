@@ -56,7 +56,9 @@ There are no desktop releases yet. To run the desktop app, build it from source 
 ## Files
 
 In the browser, every note is kept automatically; Ctrl+O lists them. Ctrl+S also saves the
-note to a file. Notes are saved as `.ntx` files (compact JSON), and `.md` files can be opened
+note to a file. A browser can clear what a site keeps, so back your notes up now and then:
+`\backup` saves them all to one zip file, and `\restore` brings them back. A browser can clear what a site keeps, so back your notes up now and then:
+`ackup` saves them all to one zip file, and `estore` brings them back. Notes are saved as `.ntx` files (compact JSON), and `.md` files can be opened
 too.
 
 ## Settings

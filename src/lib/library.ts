@@ -125,3 +125,81 @@ export async function searchNotes(q: string): Promise<Map<string, string>> {
   }
   return out;
 }
+
+// ── keeping notes safe: the browser may clear them, so they can be kept for good and backed up ──
+
+/**
+ * Ask the browser to keep the notes for good (not cleared when the disk runs low). It decides
+ * by itself, without asking (granted for an installed app, or a site used often). Whether
+ * they are now kept for good.
+ */
+export async function keepForGood(): Promise<boolean> {
+  const s = typeof navigator !== 'undefined' ? navigator.storage : undefined;
+  if (!s?.persist) return false;
+  try {
+    return (await s.persisted()) || (await s.persist());
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the browser keeps the notes for good (null: it can't say). */
+export async function keptForGood(): Promise<boolean | null> {
+  try {
+    return (await navigator.storage?.persisted?.()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** A name as a file's: no characters a file name can't have, and not too long. */
+export const fileName = (s: string) => s.replace(/[\/:*?"<>|\x00-\x1f]+/g, '-').replace(/^[\s.]+|[\s.]+$/g, '').slice(0, 80) || 'untitled';
+
+/** Every note as a file, for a backup: named as the list shows it, no two the same. */
+export async function backupFiles(): Promise<{ name: string; text: string }[]> {
+  const rows = ((await done((await store('readonly')).getAll())) as Row[]).sort((a, b) => b.updated - a.updated);
+  const taken = new Set<string>();
+  return rows.map((r) => {
+    const base = fileName(shownName(r));
+    let name = `${base}.ntx`;
+    for (let k = 2; taken.has(name.toLowerCase()); k++) name = `${base} (${k}).ntx`;
+    taken.add(name.toLowerCase());
+    return { name, text: r.doc };
+  });
+}
+
+/**
+ * Notes from a backup (or any note files), each kept as a new note. One already here (the
+ * same name and the very same file) is left out, so restoring a backup twice adds nothing.
+ * `read`: a file's text as a note (markdown read as markdown); one it can't read is skipped.
+ */
+export async function restoreFiles(files: { name: string; text: string }[], read: (name: string, text: string) => Doc): Promise<{ added: number; same: number; bad: string[] }> {
+  const rows = (await done((await store('readonly')).getAll())) as Row[];
+  // (named as a backup names them: an untitled note by its first line)
+  const have = new Set(rows.map((r) => `${fileName(shownName(r))}\n${r.doc}`));
+  const out = { added: 0, same: 0, bad: [] as string[] };
+  const now = Date.now();
+  for (const [i, f] of files.entries()) {
+    let doc: Doc;
+    try {
+      doc = read(f.name, f.text);
+    } catch {
+      out.bad.push(f.name);
+      continue;
+    }
+    const name = f.name.replace(/^.*[\\/]/, '').replace(/\.(ntx|md|markdown)$/i, '').replace(/ \(\d+\)$/, '');
+    // (a note file is kept as it is, so a second restore finds it the same)
+    const text = /\.ntx$/i.test(f.name) ? f.text : serialize(doc);
+    if (have.has(`${name}\n${text}`)) {
+      out.same++;
+      continue;
+    }
+    // (named by its first line, it was untitled; the backup's order kept: its first file the latest)
+    const title = titleOf(doc);
+    const row: Row = { id: crypto.randomUUID(), name: title && name === fileName(title) ? 'untitled' : name, title, updated: now - i, doc: text };
+    await done((await store('readwrite')).put(row));
+    have.add(`${name}\n${text}`);
+    out.added++;
+  }
+  return out;
+}

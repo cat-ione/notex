@@ -28,6 +28,7 @@ import { imageSrc, pickImageFiles } from './images';
 import * as F from './files';
 import { hexColour, pdfOf, type PdfLink, type PdfRun } from './pdf';
 import * as L from './library';
+import { unzip, zip } from './zip';
 import { cellSpans, emptyRow, findTables, isSeparator, isWall, markdownCells, rowItems, rowLike, rowMarkdown, separatorLine, structureTables, tableRowAt, wall } from './tables';
 import * as C from './config';
 import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sharedRange, union, type Rect } from './geom';
@@ -616,10 +617,61 @@ export class Editor {
       if (this.handle && (await F.mayWrite(this.handle, false))) await F.writeFile(this.handle, doc, this.fileParts);
       if (edits === this.edits) this.dirty = false;
       localStorage.setItem('notex.file', JSON.stringify({ ...this.file, dirty: this.dirty }));
+      // (once there's a note to lose: asked once a visit, the browser answers by itself)
+      if (!this.askedToKeep) (this.askedToKeep = true), void L.keepForGood();
     } catch (e) {
       this.flash(`couldn't save: ${e}`);
     }
   }
+  private askedToKeep = false;
+
+  /** Browser: every note kept here saved to one zip file (of .ntx files), where the user says. */
+  async backupNotes() {
+    await this.persist();
+    const day = new Date().toISOString().slice(0, 10);
+    try {
+      const files = await L.backupFiles();
+      if (!files.length) return this.flash('no notes to back up yet');
+      const save = await F.browserSaveTarget(`notex notes ${day}`, 'zip', 'notes backup', 'application/zip');
+      if (!save) return;
+      const enc = new TextEncoder();
+      const name = await save(new Blob([zip(files.map((f) => ({ name: f.name, data: enc.encode(f.text) }))) as BlobPart], { type: 'application/zip' }));
+      try {
+        localStorage.setItem('notex.backup', String(Date.now()));
+      } catch {}
+      this.flash(`backed up ${files.length} note${files.length === 1 ? '' : 's'} to ${name}`);
+    } catch (e) {
+      this.flash(`couldn't back up: ${e}`);
+    }
+  }
+
+  /** Browser: notes from a backup (a zip), or note and markdown files, kept here as new notes. */
+  async restoreNotes() {
+    const picked = await F.pickBrowserFiles('.zip,application/zip,.ntx,.md,.markdown');
+    if (!picked.length) return;
+    await this.persist();
+    try {
+      const files: { name: string; text: string }[] = [];
+      const dec = new TextDecoder();
+      for (const f of picked) {
+        if (/\.zip$/i.test(f.name)) {
+          for (const e of await unzip(new Uint8Array(await f.arrayBuffer())))
+            if (/\.(ntx|md|markdown)$/i.test(e.name) && !/(^|\/)(__MACOSX|\.)/.test(e.name)) files.push({ name: e.name, text: dec.decode(e.data) });
+        } else files.push({ name: f.name, text: await f.text() });
+      }
+      if (!files.length) return this.flash('no notes in that file');
+      const r = await L.restoreFiles(files, F.readDoc);
+      const said = [`${r.added} note${r.added === 1 ? '' : 's'} restored`];
+      if (r.same) said.push(`${r.same} already here`);
+      if (r.bad.length) said.push(`couldn't read ${r.bad.join(', ')}`);
+      this.flash(said.join(', '));
+      this.notesChanged++;
+    } catch (e) {
+      this.flash(`couldn't restore: ${e}`);
+    }
+  }
+  /** Bumped when notes are added to those kept here by other means than typing (the list shows them). */
+  notesChanged = $state(0);
 
   /**
    * Browser: pick up where the last visit left off (the open note's file, to go on saving
@@ -5115,7 +5167,13 @@ export class Editor {
       { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },
       { name: 'new', desc: 'new note  ctrl+n', run: () => this.newNote() },
       { name: 'open', desc: 'open a note  ctrl+o', run: () => this.openNote() },
-      ...(F.isDesktop() ? [] : [{ name: 'notes', desc: 'your notes  ctrl+o', run: () => this.openNote() }]),
+      ...(F.isDesktop()
+        ? []
+        : [
+            { name: 'notes', desc: 'your notes  ctrl+o', run: () => this.openNote() },
+            { name: 'backup', desc: 'save every note kept in this browser to a zip file', run: () => void this.backupNotes() },
+            { name: 'restore', desc: 'bring back notes from a backup (or .ntx and .md files)', run: () => void this.restoreNotes() },
+          ]),
       { name: 'save', desc: 'save  ctrl+s', run: () => this.saveNote() },
       { name: 'saveas', desc: 'save as…  ctrl+shift+s', run: () => this.saveNoteAs() },
       { name: 'welcome', desc: 'open the welcome note', run: () => this.openWelcome() },

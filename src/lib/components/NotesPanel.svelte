@@ -3,12 +3,12 @@
   // files from disk, and the welcome note. Type to filter (by name, and by what the notes
   // say: the line it's in shows, and opening the note finds it there); ↑ ↓ and Enter open;
   // F2 renames; del twice deletes. With the mouse: click to open, ✎ renames, ✕ then
-  // "delete" deletes.
+  // "delete" deletes. At the end, backing them all up to a zip and restoring from one.
   import { onMount, tick } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import type { Editor } from '$lib/editor.svelte';
-  import { listNotes, searchNotes, shownName, type NoteMeta } from '$lib/library';
+  import { keptForGood, listNotes, searchNotes, shownName, type NoteMeta } from '$lib/library';
   import { canUseFiles } from '$lib/files';
 
   let { ed }: { ed: Editor } = $props();
@@ -24,7 +24,17 @@
   let input: HTMLInputElement | undefined = $state();
   let nameInput: HTMLInputElement | undefined = $state();
 
-  type Row = { kind: 'note'; note: NoteMeta } | { kind: 'new' } | { kind: 'file' } | { kind: 'welcome' };
+  type Row = { kind: 'note'; note: NoteMeta } | { kind: 'new' } | { kind: 'file' } | { kind: 'welcome' } | { kind: 'backup' } | { kind: 'restore' };
+  /** Whether the browser keeps the notes for good (else it may clear them when the disk runs low). */
+  let safe = $state<boolean | null>(null);
+  /** When they were last backed up. */
+  const backedUp = (() => {
+    try {
+      return Number(localStorage.getItem('notex.backup')) || 0;
+    } catch {
+      return 0;
+    }
+  })();
   /** The notes whose text has what's typed, with the line it's in. */
   let hits = $state(new Map<string, string>());
   const byName = (n: NoteMeta) => `${shownName(n)} ${n.title} ${n.file ?? ''}`.toLowerCase().includes(query.trim().toLowerCase());
@@ -48,7 +58,7 @@
     const q = query.trim().toLowerCase(), at = line.toLowerCase().indexOf(q);
     return at < 0 ? [[line, false]] : [[line.slice(0, at), false], [line.slice(at, at + q.length), true], [line.slice(at + q.length), false]];
   }
-  const rows = $derived<Row[]>([...shown.map((note) => ({ kind: 'note' as const, note })), { kind: 'new' }, { kind: 'file' }, { kind: 'welcome' }]);
+  const rows = $derived<Row[]>([...shown.map((note) => ({ kind: 'note' as const, note })), { kind: 'new' }, { kind: 'file' }, { kind: 'welcome' }, { kind: 'backup' }, { kind: 'restore' }]);
 
   async function refresh() {
     notes = await listNotes();
@@ -68,6 +78,8 @@
     }
     else if (r.kind === 'new') (close(), await ed.newNote());
     else if (r.kind === 'welcome') await ed.openWelcome();
+    else if (r.kind === 'backup') await ed.backupNotes();
+    else if (r.kind === 'restore') await ed.restoreNotes();
     else await ed.openFromDisk();
   }
 
@@ -137,7 +149,12 @@
   onMount(() => {
     // the latest other note first: ctrl+o, enter goes back and forth between two notes
     refresh().then(() => (sel = Math.max(0, notes.findIndex((n) => n.id !== ed.file.id))));
+    keptForGood().then((k) => (safe = k));
     input?.focus();
+  });
+  // notes restored: listed
+  $effect(() => {
+    if (ed.notesChanged) void refresh();
   });
   // filtering starts from the top
   $effect(() => {
@@ -150,7 +167,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="scrim" onmousedown={(e) => e.target === e.currentTarget && close()}>
   <div class="panel" transition:fly={{ y: 8, duration: 180, easing: cubicOut }} onkeydown={onKey}>
-    <div class="title">notes <span>· kept in this browser</span></div>
+    <div class="title">notes <span>· kept in this browser{#if safe === false}, which may clear them: back them up{/if}</span></div>
     <div class="search"><span class="sigil">/</span><input bind:this={input} bind:value={query} placeholder="filter" spellcheck="false" aria-label="filter notes" /></div>
     <div class="list">
       {#each rows as r, i (r.kind === 'note' ? r.note.id : r.kind)}
@@ -188,8 +205,12 @@
             <span class="name">+ new note</span>{#if ed.input === 'keys'}<kbd>ctrl+n</kbd>{/if}
           {:else if r.kind === 'file'}
             <span class="name">open a file…</span><span class="when">{canUseFiles() ? 'a note (saved back to it) or markdown' : '.ntx or .md'}</span>
-          {:else}
+          {:else if r.kind === 'welcome'}
             <span class="name">the welcome note</span><span class="when">everything notex does</span>
+          {:else if r.kind === 'backup'}
+            <span class="name">back up all notes…</span><span class="when">{backedUp ? `backed up ${ago(backedUp)}` : 'to a zip file'}</span>
+          {:else}
+            <span class="name">restore from a backup…</span><span class="when">a zip, or .ntx and .md files</span>
           {/if}
         </div>
       {/each}

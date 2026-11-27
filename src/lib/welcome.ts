@@ -196,6 +196,7 @@ export function welcomeDoc(): Doc {
         : [
             P('Every note is kept in this browser as you type; Ctrl+O lists them, Ctrl+N starts a new one.', 'li'),
             P('Ctrl+S also saves the note to a .ntx file, and keeps saving to it.', 'li'),
+            P('\\backup saves every note to one zip file, and \\restore brings them back, here or in another browser.', 'li'),
             P('Once opened, notex works offline, and the browser can install it as an app.', 'li'),
           ]),
       P('\\pdf or Ctrl+P saves it as a PDF file, drawings and all.', 'li'),
