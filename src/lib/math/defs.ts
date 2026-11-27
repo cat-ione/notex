@@ -150,6 +150,10 @@ export const MATH_PALETTE: Record<string, Inserter> = {
   bmatrix: grid('bmatrix', 2, 2),
   vmatrix: grid('vmatrix', 2, 2),
   matrix: grid('matrix', 2, 2),
+  // a size chosen: pmatrix3x3, bmatrix2x4… (2 to 4 rows and columns)
+  ...Object.fromEntries(
+    ['pmatrix', 'bmatrix', 'vmatrix', 'matrix'].flatMap((n) => [2, 3, 4].flatMap((r) => [2, 3, 4].map((c) => [`${n}${r}x${c}`, grid(n, r, c)]))),
+  ),
   cases: grid('cases', 2, 2),
   aligned: grid('aligned', 2, 2),
   sum: withScript('\\sum', 'subsup'),

@@ -302,6 +302,7 @@ export function backspace(root: MRow, cur: MCursor): boolean {
   }
   const p = parentOf(root, cur);
   if (!p) return false;
+  if (def(p.node)?.grid && p.node.cols) return gridBackspace(root, cur);
   // At the start of a slot: delete the node if empty, otherwise unwrap it.
   const before = p.node.slots.slice(0, p.step.s).reduce((a, s) => a + s.length, 0);
   const contents = p.node.slots.flat();
@@ -641,6 +642,94 @@ function autoReplace(root: MRow, cur: MCursor) {
     if ('nodes' in ins) applyInserter(root, cur, { ...ins, nodes: () => ins.nodes().map((n, i) => (i === 0 && n.k === 'sym' ? { ...n, src: best.key } : n)) });
     else applyInserter(root, cur, ins);
   }
+}
+
+/** The innermost grid (matrix, cases…) round the caret: where it is, its cell, its size. */
+export function gridAt(root: MRow, cur: MCursor): { d: number; node: MCmd; row: number; col: number; rows: number; cols: number } | null {
+  for (let d = cur.path.length - 1; d >= 0; d--) {
+    const node = rowAt(root, cur.path.slice(0, d))[cur.path[d].i] as MCmd;
+    if (!def(node)?.grid || !node.cols) continue;
+    const s = cur.path[d].s, cols = node.cols;
+    return { d, node, row: Math.floor(s / cols), col: s % cols, rows: node.slots.length / cols, cols };
+  }
+  return null;
+}
+
+/** The caret into a grid's cell (at its end, or its start). */
+function toCell(cur: MCursor, d: number, s: number, slots: MRow[], atEnd: boolean) {
+  cur.path = [...cur.path.slice(0, d), { i: cur.path[d].i, s }];
+  cur.off = atEnd ? slots[s].length : 0;
+}
+
+/**
+ * A row or column of the grid round the caret added (under / after the caret's) or taken
+ * away (the caret's; the last one stays). False when the caret is in no grid, or nothing
+ * could be done.
+ */
+export function gridEdit(root: MRow, cur: MCursor, what: 'row+' | 'row-' | 'col+' | 'col-'): boolean {
+  const g = gridAt(root, cur);
+  if (!g) return false;
+  const { d, node, row, col, rows, cols } = g;
+  const at = (r: number, c: number) => r * cols + c;
+  if (what === 'row+') {
+    node.slots.splice(at(row + 1, 0), 0, ...Array.from({ length: cols }, () => [] as MRow));
+    toCell(cur, d, at(row + 1, col), node.slots, false);
+  } else if (what === 'row-') {
+    if (rows <= 1) return false;
+    node.slots.splice(at(row, 0), cols);
+    const r = Math.min(row, rows - 2);
+    toCell(cur, d, at(r, col), node.slots, true);
+  } else if (what === 'col+') {
+    for (let r = rows - 1; r >= 0; r--) node.slots.splice(at(r, col + 1), 0, []);
+    node.cols = cols + 1;
+    toCell(cur, d, row * (cols + 1) + col + 1, node.slots, false);
+  } else {
+    if (cols <= 1) return false;
+    for (let r = rows - 1; r >= 0; r--) node.slots.splice(at(r, col), 1);
+    node.cols = cols - 1;
+    toCell(cur, d, row * (cols - 1) + Math.min(col, cols - 2), node.slots, true);
+  }
+  return true;
+}
+
+/**
+ * Backspace at the start of a grid's cell: its row goes if it's empty, else its column if
+ * that is; a grid all empty goes; otherwise the caret goes to the end of the cell before
+ * (from the first cell: before the grid). Never the grid unwrapped into a line.
+ */
+function gridBackspace(root: MRow, cur: MCursor): boolean {
+  const g = gridAt(root, cur)!;
+  const { d, node, row, col, rows, cols } = g;
+  const empty = (ss: MRow[]) => ss.every((s) => !s.length);
+  const parentRow = rowAt(root, cur.path.slice(0, d)), i = cur.path[d].i;
+  if (empty(node.slots)) {
+    if (rows > 1) return gridEdit(root, cur, 'row-');
+    if (cols > 1) return gridEdit(root, cur, 'col-');
+    parentRow.splice(i, 1);
+    cur.path = cur.path.slice(0, d);
+    cur.off = i;
+    return true;
+  }
+  const rowCells = node.slots.slice(row * cols, row * cols + cols);
+  if (rows > 1 && empty(rowCells)) {
+    gridEdit(root, cur, 'row-');
+    // (to the end of the row before, as text's backspace joins onto the line before)
+    if (row > 0) toCell(cur, d, (row - 1) * cols + cols - 1, node.slots, true);
+    return true;
+  }
+  const colCells = node.slots.filter((_, s) => s % cols === col);
+  if (cols > 1 && empty(colCells)) {
+    gridEdit(root, cur, 'col-');
+    if (col > 0) toCell(cur, d, row * (cols - 1) + col - 1, node.slots, true);
+    return true;
+  }
+  const s = row * cols + col;
+  if (s > 0) toCell(cur, d, s - 1, node.slots, true);
+  else {
+    cur.path = cur.path.slice(0, d);
+    cur.off = i;
+  }
+  return true;
 }
 
 /** `&` / Enter inside a grid: move to the next cell, growing the grid at the edge. */

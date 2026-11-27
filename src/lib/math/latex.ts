@@ -56,6 +56,14 @@ const MATH_ESC: Record<string, string> = {
   '{': '\\{', '}': '\\}', '#': '\\#', '%': '\\%', '&': '\\&', $: '\\$', _: '\\_', '^': '\\hat{}', '\\': '\\backslash ', '~': '\\sim ',
 };
 
+/** A slot's path as a word for an attribute (`0-5_2-1`), and back. */
+export const slotKey = (path: Step[]) => path.map((p) => `${p.i}-${p.s}`).join('_');
+export const slotPath = (key: string): Step[] =>
+  key.split('_').map((p) => {
+    const [i, s] = p.split('-').map(Number);
+    return { i, s };
+  });
+
 function symLatex(v: string) {
   if (MATH_ESC[v]) return MATH_ESC[v];
   // Separate control words from following letters: `\alpha x`.
@@ -69,7 +77,9 @@ function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
 
   if (r.length === 0) {
     if (!o.anchors) return '';
-    const body = (hasCaret ? CARET : '') + (text ? '\\square' : EMPTY);
+    // (an empty slot's box says which slot it is: a click on it goes in there, see Editor.mathAt)
+    const box = text ? '\\square' : EMPTY;
+    const body = (hasCaret ? CARET : '') + (path.length ? `\\htmlData{nxslot=${slotKey(path)}}{${box}}` : box);
     return hasCaret && path.length ? `\\htmlClass{nx-active-row}{${body}}` : body;
   }
 

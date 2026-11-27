@@ -374,3 +374,86 @@ describe('substitutions', () => {
     }
   });
 });
+
+describe('matrices', () => {
+  /** A matrix typed: `&` next column, `|` next row (Enter), `‹` backspace; then the LaTeX. */
+  function matrix(keys: string, name = 'pmatrix') {
+    const root: MRow = [];
+    const cur: MCursor = { path: [], off: 0 };
+    M.applyInserter(root, cur, MATH_PALETTE[name]);
+    for (const k of keys) {
+      if (k === '&') M.gridNext(root, cur, 'col');
+      else if (k === '|') M.gridNext(root, cur, 'row');
+      else if (k === '‹') M.backspace(root, cur);
+      else M.typeChar(root, cur, k);
+    }
+    const tex = () => toLatex(root).replace(/\s+/g, ' ').trim();
+    return { root, cur, tex };
+  }
+  const env = (rows: string[][]) => (String.raw`\begin{pmatrix}` + rows.map((r) => r.join(' & ')).join(String.raw` \\ `) + String.raw`\end{pmatrix}`).replace(/\s+/g, ' ');
+
+  it('comes in the sizes asked for, 2x2 to 4x4', () => {
+    const m = matrix('', 'pmatrix3x4');
+    const g = M.gridAt(m.root, m.cur)!;
+    expect([g.rows, g.cols]).toEqual([3, 4]);
+    expect(MATH_PALETTE.bmatrix4x2).toBeDefined();
+    expect(MATH_PALETTE.pmatrix5x5).toBeUndefined();
+  });
+
+  it('backspace in an empty row takes the row, to the end of the row before', () => {
+    const m = matrix('a&b|');
+    expect(m.tex()).toBe(env([['a', 'b'], ['', '']]));
+    M.backspace(m.root, m.cur);
+    expect(m.tex()).toBe(env([['a', 'b']]));
+    M.typeChar(m.root, m.cur, 'c');
+    expect(m.tex()).toBe(env([['a', 'bc']]));
+  });
+
+  it('backspace in an empty column takes the column', () => {
+    const m = matrix('a&&|b&');
+    expect(m.tex()).toBe(env([['a', '', ''], ['b', '', '']]));
+    M.backspace(m.root, m.cur);
+    expect(m.tex()).toBe(env([['a', ''], ['b', '']]));
+    // (the caret at the end of the cell before)
+    M.typeChar(m.root, m.cur, 'x');
+    expect(m.tex()).toBe(env([['a', ''], ['bx', '']]));
+  });
+
+  it('backspace at a cell start otherwise goes to the cell before, never unwrapping the matrix', () => {
+    const m = matrix('a&b|c&d');
+    M.backspace(m.root, m.cur); // d
+    M.backspace(m.root, m.cur); // at d's cell start: to the end of c
+    M.typeChar(m.root, m.cur, 'x');
+    expect(m.tex()).toBe(env([['a', 'b'], ['cx', '']]));
+  });
+
+  it('backspace in an empty matrix shrinks it, then takes it away', () => {
+    const m = matrix('');
+    // 2x2, 1x2, 1x1, gone
+    for (let i = 0; i < 2; i++) M.backspace(m.root, m.cur);
+    expect(m.root.length).toBe(1);
+    expect(m.tex()).toBe(String.raw`\begin{pmatrix}\end{pmatrix}`);
+    M.backspace(m.root, m.cur);
+    expect(m.root).toEqual([]);
+  });
+
+  it('rows and columns added and taken away where the caret is', () => {
+    const m = matrix('a&b|c&d');
+    M.gridEdit(m.root, m.cur, 'row+');
+    M.typeChar(m.root, m.cur, 'e');
+    expect(m.tex()).toBe(env([['a', 'b'], ['c', 'd'], ['', 'e']]));
+    M.gridEdit(m.root, m.cur, 'col+');
+    M.typeChar(m.root, m.cur, 'f');
+    expect(m.tex()).toBe(env([['a', 'b', ''], ['c', 'd', ''], ['', 'e', 'f']]));
+    M.gridEdit(m.root, m.cur, 'col-');
+    expect(m.tex()).toBe(env([['a', 'b'], ['c', 'd'], ['', 'e']]));
+    M.gridEdit(m.root, m.cur, 'row-');
+    expect(m.tex()).toBe(env([['a', 'b'], ['c', 'd']]));
+    // the last row and column stay
+    const one = matrix('', 'pmatrix2x2');
+    M.gridEdit(one.root, one.cur, 'row-');
+    expect(M.gridEdit(one.root, one.cur, 'row-')).toBe(false);
+    M.gridEdit(one.root, one.cur, 'col-');
+    expect(M.gridEdit(one.root, one.cur, 'col-')).toBe(false);
+  });
+});

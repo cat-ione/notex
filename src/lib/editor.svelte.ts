@@ -33,7 +33,7 @@ import { byLine, fromDOM, inkRects, lineGroups, measure, relTo, releaseRange, sh
 import * as M from './math/edit';
 import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from './math/defs';
 import { parseLatex } from './math/parse';
-import { toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
+import { slotPath, toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { Sketcher, type Tool } from './sketch/sketcher.svelte';
 import { labelled } from './sketch/shapes';
 import type { Placed } from './sketch/shapes';
@@ -109,6 +109,15 @@ const TABLE_ACTIONS = [
   ['right', 'alignright', 'align this column right'],
   ['table-', 'deletetable', 'delete this table'],
 ] as const;
+/** What can be done to a matrix (or cases, aligned…) the caret is in: the palette, and the right-click menu. */
+const MATRIX_ACTIONS = [
+  ['row+', 'addrow', 'add a row under this one'],
+  ['row-', 'deleterow', 'delete this row'],
+  ['col+', 'addcolumn', 'add a column after this one'],
+  ['col-', 'deletecolumn', 'delete this column'],
+] as const;
+/** A matrix of a chosen size (pmatrix3x4): found when typed, not listed with nothing typed. */
+const SIZED = /\dx\d$/;
 type NoteFile = { path: string | null; name: string; id?: string };
 /** Most room (px) a line or formula is ever pushed by, so a feedback bug can't run away. */
 const MAX_ROOM = 400;
@@ -1523,7 +1532,7 @@ export class Editor {
   }
 
   /** On a formula (element `mel`, `hit` the element under the point): the node there. */
-  private mathAt(mel: Element, hit: Element, x: number, y: number): { pos: Pos; math: { item: MathItem; id: Id | null; after: boolean } } | null {
+  private mathAt(mel: Element, hit: Element, x: number, y: number): { pos: Pos; math: { item: MathItem; id: Id | null; after: boolean; slot?: Step[] } } | null {
     {
       const pos = this.findItem(mel.getAttribute('data-nx')!);
       if (pos) {
@@ -1531,22 +1540,32 @@ export class Editor {
         // empty layout boxes, gaps and lines (between symbols, above short letters, a
         // fraction bar, KaTeX's stacked rows over a whole fraction): the nearest symbol,
         // not whatever structure happens to contain the point.
-        let node = hit!.closest('[data-nx]');
-        // (KaTeX's layout spans hold a zero-width space: that is not a glyph)
-        const onGlyph = /[^\s\u200b\u2060\ufeff]/.test(hit!.textContent ?? '') && !hit!.querySelector('[data-nx]') && node !== mel;
+        let node = hit!.closest('[data-nx], [data-nxslot]');
+        // (KaTeX's layout spans hold a zero-width space: that is not a glyph; and a glyph
+        // only where its ink is: a matrix's row reaches, invisibly, over the row below)
+        const inInk = () => {
+          const rg = sharedRange();
+          rg.selectNodeContents(hit!);
+          return [...rg.getClientRects()].some((r) => x >= r.left - 1 && x <= r.right + 1 && y >= r.top - 1 && y <= r.bottom + 1);
+        };
+        const onGlyph = /[^\s\u200b\u2060\ufeff]/.test(hit!.textContent ?? '') && !hit!.querySelector('[data-nx]') && node !== mel && inInk();
         if (!onGlyph) {
           let nd = Infinity;
-          for (const e of mel.querySelectorAll('[data-nx]')) {
-            if (e.querySelector('[data-nx]')) continue;
+          for (const e of mel.querySelectorAll('[data-nx], [data-nxslot]')) {
+            if (e.querySelector('[data-nx], [data-nxslot]')) continue;
             const r = e.getBoundingClientRect();
             if (!r.width && !r.height) continue;
             const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
             if (d < nd) (nd = d), (node = e);
           }
         }
+        const item = this.blockAt(pos.b).items[pos.o] as MathItem;
+        // (an empty slot: into it)
+        const slot = node?.getAttribute('data-nxslot');
+        if (slot) return { pos, math: { item, id: null, after: false, slot: slotPath(slot) } };
         const id = node && node !== mel ? node.getAttribute('data-nx') : null;
         const r = node?.getBoundingClientRect();
-        return { pos, math: { item: this.blockAt(pos.b).items[pos.o] as MathItem, id, after: !r || x > r.left + r.width / 2 } };
+        return { pos, math: { item, id, after: !r || x > r.left + r.width / 2 } };
       }
     }
     return null;
@@ -1736,7 +1755,8 @@ export class Editor {
   }
 
   /** The caret position inside a formula for a hit. */
-  private mathPos(m: { item: MathItem; id: Id | null; after: boolean }): MCursor {
+  private mathPos(m: { item: MathItem; id: Id | null; after: boolean; slot?: Step[] }): MCursor {
+    if (m.slot && M.rowAt(m.item.root, m.slot)) return { path: m.slot.map((p) => ({ ...p })), off: 0 };
     const found = m.id ? findNode(m.item.root, m.id) : null;
     if (!found) return { path: [], off: m.after ? m.item.root.length : 0 };
     // after a base means after its scripts too (not wedged between them)
@@ -4532,9 +4552,12 @@ export class Editor {
       const extra = q ? rankDraws().filter((d) => !names.includes(d.name)) : [];
       // nothing typed yet: the likeliest first (what wraps a selection, with one)
       const first = this.mathSelRange ? MATH_WRAP : MATH_COMMON;
-      const math = find(q ? names : [...first.filter((n) => names.includes(n)), ...names.filter((n) => !first.includes(n))])
-        .map((n) => ({ name: n, desc: user[n] !== undefined ? user[n] : describeInserter(n) }));
-      return [...math, ...extra];
+      const listed = q ? names : [...first.filter((n) => names.includes(n)), ...names.filter((n) => !first.includes(n) && !SIZED.test(n))];
+      const math = find(listed).map((n) => ({ name: n, desc: user[n] !== undefined ? user[n] : describeInserter(n) }));
+      // in a matrix: its rows and columns first
+      const grid = this.mathItem && M.gridAt(this.mathItem.root, this.mc) ? MATRIX_ACTIONS : [];
+      const gridItems = find(grid.map(([, n]) => n), (n) => grid.find(([, m]) => m === n)![2]).map((n) => ({ name: n, desc: grid.find(([, m]) => m === n)![2] }));
+      return [...gridItems, ...math.filter((m) => !grid.some(([, n]) => n === m.name)), ...extra];
     }
     const cmds = this.textCommands();
     // what fits where the caret is comes first (as typed, an exact name still wins)
@@ -4615,7 +4638,9 @@ export class Editor {
         M.insertNode(item.root, this.mc, sym('\\' + k));
         return true;
       }
-      if (p.ctx === 'math' && p.query && !/[a-zA-Z]/.test(k)) {
+      // (unless the name goes on with it: pmatrix3x4)
+      const goesOn = (n: string) => n.startsWith(p.query + k);
+      if (p.ctx === 'math' && p.query && !/[a-zA-Z]/.test(k) && !Object.keys(MATH_PALETTE).some(goesOn) && !Object.keys(this.config.snippets.math).some(goesOn)) {
         // as in LaTeX, the name ends at the first non-letter: \int_0^1, \alpha^2, \sin(x)
         // (only the name as typed: an unknown one is a raw \name, not the closest suggestion)
         this.acceptPalette(undefined);
@@ -4671,6 +4696,9 @@ export class Editor {
     }
     if (p.ctx === 'math') {
       const item = this.mathItem!;
+      // a matrix's rows and columns
+      const ga = this.mathItem && M.gridAt(item.root, this.mc) ? (MATRIX_ACTIONS.find(([, n]) => n === q) ?? MATRIX_ACTIONS.find(([, n]) => n === name)) : undefined;
+      if (ga) return picks(ga[1]), this.matrixCommand(ga[0]);
       this.checkpoint();
       // Exact names win over the highlighted suggestion; user snippets win over built-ins.
       const user = this.config.snippets.math;
@@ -6254,6 +6282,15 @@ export class Editor {
   }
 
   /** In a formula: the commonest structures (wrapping the selection, if any), and the rest of math's commands. */
+  /** A row or column of the matrix the caret is in, added or taken away. */
+  matrixCommand(what: 'row+' | 'row-' | 'col+' | 'col-') {
+    const item = this.mathItem;
+    if (!item || !M.gridAt(item.root, this.mc)) return this.flash('not in a matrix');
+    this.checkpoint();
+    this.msel = null;
+    if (!M.gridEdit(item.root, this.mc, what)) this.flash(what === 'row-' ? 'a matrix keeps one row' : 'a matrix keeps one column');
+  }
+
   private mathActions(): DrawingAction[] {
     const put = (name: string) => () => {
       this.openPalette('math');
@@ -6263,7 +6300,11 @@ export class Editor {
     const acts: [string, string][] = this.mathSelRange
       ? [['frac', 'a fraction over it'], ['sqrt', 'a square root of it'], ['hat', 'a hat on it'], ['bar', 'a bar over it'], ['boxed', 'a box round it']]
       : [['frac', 'fraction'], ['sqrt', 'square root'], ['sum', 'sum'], ['int', 'integral'], ['pmatrix', 'matrix']];
+    const grid = this.mathItem && M.gridAt(this.mathItem.root, this.mc)
+      ? MATRIX_ACTIONS.map(([what, name, desc], i): DrawingAction => ({ name, desc, keys: [`\\${name}`], run: () => this.matrixCommand(what), ...(i === 0 ? { sep: true as const } : {}) }))
+      : [];
     return [
+      ...grid,
       ...acts.map(([name, desc], i): DrawingAction => ({ name, desc, keys: [`\\${name}`], run: put(name), ...(i === 0 ? { sep: true as const } : {}) })),
       { name: 'mathcommands', desc: 'every math command', keys: ['\\'], run: () => this.openPalette('math') },
     ];
@@ -6742,6 +6783,8 @@ function describeInserter(name: string): string {
   const ins = MATH_PALETTE[name];
   const nodes = 'node' in ins ? [ins.node()] : ins.nodes();
   const n = nodes[0];
+  // (a matrix: its size too)
+  if (n.k === 'cmd' && CMDS[n.name]?.grid && n.cols) return `\\${n.name}  ${n.slots.length / n.cols}×${n.cols}`;
   return n.k === 'sym' ? n.v : `\\${n.name}`;
 }
 
