@@ -116,7 +116,7 @@ const MATRIX_ACTIONS = [
   ['col+', 'addcolumn', 'add a column after this one'],
   ['col-', 'deletecolumn', 'delete this column'],
 ] as const;
-/** A matrix of a chosen size (pmatrix3x4): found when typed, not listed with nothing typed. */
+/** A matrix of a chosen size (pmatrix3x3): found when typed, not listed with nothing typed. */
 const SIZED = /\dx\d$/;
 type NoteFile = { path: string | null; name: string; id?: string };
 /** Most room (px) a line or formula is ever pushed by, so a feedback bug can't run away. */
@@ -4638,7 +4638,7 @@ export class Editor {
         M.insertNode(item.root, this.mc, sym('\\' + k));
         return true;
       }
-      // (unless the name goes on with it: pmatrix3x4)
+      // (unless the name goes on with it: pmatrix3x3)
       const goesOn = (n: string) => n.startsWith(p.query + k);
       if (p.ctx === 'math' && p.query && !/[a-zA-Z]/.test(k) && !Object.keys(MATH_PALETTE).some(goesOn) && !Object.keys(this.config.snippets.math).some(goesOn)) {
         // as in LaTeX, the name ends at the first non-letter: \int_0^1, \alpha^2, \sin(x)

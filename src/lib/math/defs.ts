@@ -150,9 +150,9 @@ export const MATH_PALETTE: Record<string, Inserter> = {
   bmatrix: grid('bmatrix', 2, 2),
   vmatrix: grid('vmatrix', 2, 2),
   matrix: grid('matrix', 2, 2),
-  // a size chosen: pmatrix3x3, bmatrix2x4… (2 to 4 rows and columns)
+  // bigger to start with: pmatrix3x3, bmatrix4x4…
   ...Object.fromEntries(
-    ['pmatrix', 'bmatrix', 'vmatrix', 'matrix'].flatMap((n) => [2, 3, 4].flatMap((r) => [2, 3, 4].map((c) => [`${n}${r}x${c}`, grid(n, r, c)]))),
+    ['pmatrix', 'bmatrix', 'vmatrix', 'matrix'].flatMap((n) => [3, 4].map((k) => [`${n}${k}x${k}`, grid(n, k, k)])),
   ),
   cases: grid('cases', 2, 2),
   aligned: grid('aligned', 2, 2),

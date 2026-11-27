@@ -65,9 +65,9 @@ test('a click on a letter in the second row lands in its cell (not the row above
   }
 });
 
-test('made at a size: \\pmatrix3x4 and the like (2 to 4 rows and columns)', async ({ page }) => {
-  await matrix(page, 'pmatrix3x4');
-  expect(await tex(page)).toBe(env([['', '', '', ''], ['', '', '', ''], ['', '', '', '']]));
+test('made bigger: \\pmatrix3x3 and \\pmatrix4x4', async ({ page }) => {
+  await matrix(page, 'pmatrix3x3');
+  expect(await tex(page)).toBe(env([['', '', ''], ['', '', ''], ['', '', '']]));
   // (the sizes only when typed: not crowding the palette's list)
   await page.keyboard.press('Escape');
   await type(page, '$' + B);

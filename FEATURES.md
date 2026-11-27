@@ -33,8 +33,8 @@ point at, and a pen and touch screen that work as well as a keyboard.
 - Greek names, functions, `<=`, `!=`, `oo` and more become symbols (each group can be switched
   on or off).
 - Matrices, cases and aligned equations: `&` for a new column, Enter for a new row; a click
-  goes into any cell, empty ones too. `\pmatrix3x4` and the like give a size (2 to 4 rows and
-  columns). Rows and columns are added and deleted with `\addrow`, `\deleterow`,
+  goes into any cell, empty ones too. `\pmatrix3x3` and `\pmatrix4x4` (and the like) start
+  bigger. Rows and columns are added and deleted with `\addrow`, `\deleterow`,
   `\addcolumn`, `\deletecolumn` or a right-click; Backspace in an empty row or column takes
   it away.
 - `x^2` or `a_n` typed in a sentence turns into math by itself.

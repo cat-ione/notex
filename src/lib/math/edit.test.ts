@@ -392,12 +392,13 @@ describe('matrices', () => {
   }
   const env = (rows: string[][]) => (String.raw`\begin{pmatrix}` + rows.map((r) => r.join(' & ')).join(String.raw` \\ `) + String.raw`\end{pmatrix}`).replace(/\s+/g, ' ');
 
-  it('comes in the sizes asked for, 2x2 to 4x4', () => {
-    const m = matrix('', 'pmatrix3x4');
+  it('comes 2x2, or 3x3 and 4x4 when asked', () => {
+    const m = matrix('', 'pmatrix3x3');
     const g = M.gridAt(m.root, m.cur)!;
-    expect([g.rows, g.cols]).toEqual([3, 4]);
-    expect(MATH_PALETTE.bmatrix4x2).toBeDefined();
-    expect(MATH_PALETTE.pmatrix5x5).toBeUndefined();
+    expect([g.rows, g.cols]).toEqual([3, 3]);
+    expect(MATH_PALETTE.bmatrix4x4).toBeDefined();
+    expect(MATH_PALETTE.pmatrix3x4).toBeUndefined();
+    expect(MATH_PALETTE.pmatrix2x2).toBeUndefined();
   });
 
   it('backspace in an empty row takes the row, to the end of the row before', () => {
@@ -450,7 +451,7 @@ describe('matrices', () => {
     M.gridEdit(m.root, m.cur, 'row-');
     expect(m.tex()).toBe(env([['a', 'b'], ['c', 'd']]));
     // the last row and column stay
-    const one = matrix('', 'pmatrix2x2');
+    const one = matrix('', 'pmatrix');
     M.gridEdit(one.root, one.cur, 'row-');
     expect(M.gridEdit(one.root, one.cur, 'row-')).toBe(false);
     M.gridEdit(one.root, one.cur, 'col-');
