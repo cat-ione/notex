@@ -57,20 +57,22 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- (under the menu bar, and under the drawing bar while drawing) -->
   <div class="findbar" style:top="{(ed.config.ui.toolbar ? 40 : 10) + (ed.sketch.active ? 44 : 0)}px" transition:fly={{ y: -6, duration: 130, easing: cubicOut }} onmousedown={(e) => e.stopPropagation()}>
-    <span class="sigil">/</span>
-    <input
-      bind:this={input}
-      value={ed.find.q}
-      oninput={(e) => ed.setFindQuery(e.currentTarget.value)}
-      onkeydown={key}
-      placeholder="find"
-      spellcheck="false"
-    />
-    <span class="count" class:none={ed.find.q && !n}>{ed.find.q ? (n ? `${ed.find.i + 1}/${n}` : 'none') : ''}</span>
-    <button data-tip="previous" data-tip-key="shift+enter" onclick={() => ed.findGo(-1)} disabled={!n}>↑</button>
-    <button data-tip="next" data-tip-key="enter / F3" onclick={() => ed.findGo(1)} disabled={!n}>↓</button>
-    <button data-tip="replace" data-tip-key="ctrl+h" class:on={ed.find.replace} onclick={() => ed.find && ((ed.find.replace = !ed.find.replace), ed.find.replace && requestAnimationFrame(() => withInput?.focus()))}>⇄</button>
-    <button data-tip="close" data-tip-key="esc" onclick={() => ed.closeFind()}>✕</button>
+    <div class="row">
+      <span class="sigil">/</span>
+      <input
+        bind:this={input}
+        value={ed.find.q}
+        oninput={(e) => ed.setFindQuery(e.currentTarget.value)}
+        onkeydown={key}
+        placeholder="find"
+        spellcheck="false"
+      />
+      <span class="count" class:none={ed.find.q && !n}>{ed.find.q ? (n ? `${ed.find.i + 1}/${n}` : 'none') : ''}</span>
+      <button data-tip="previous" data-tip-key="shift+enter" onclick={() => ed.findGo(-1)} disabled={!n}>↑</button>
+      <button data-tip="next" data-tip-key="enter / F3" onclick={() => ed.findGo(1)} disabled={!n}>↓</button>
+      <button data-tip="replace" data-tip-key="ctrl+h" class:on={ed.find.replace} onclick={() => ed.find && ((ed.find.replace = !ed.find.replace), ed.find.replace && requestAnimationFrame(() => withInput?.focus()))}>⇄</button>
+      <button data-tip="close" data-tip-key="esc" onclick={() => ed.closeFind()}>✕</button>
+    </div>
     {#if ed.find.replace}
       <div class="with">
         <span class="sigil">→</span>
@@ -96,11 +98,10 @@
     top: 10px;
     right: 18px;
     z-index: 25;
+    /* (a row each, as wide as the wider: the replace row under find, not beside it) */
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     max-width: calc(100% - 36px);
-    align-items: center;
-    gap: 4px;
     padding: 4px 6px 4px 10px;
     font-family: var(--mono);
     font-size: 12.5px;
@@ -108,6 +109,13 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .row,
+  .with {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
   }
   .sigil {
     color: var(--accent);
@@ -152,10 +160,6 @@
     color: var(--accent);
   }
   .with {
-    flex-basis: 100%;
-    display: flex;
-    align-items: center;
-    gap: 4px;
     padding-top: 3px;
     margin-top: 3px;
     border-top: 1px solid var(--border);

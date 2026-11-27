@@ -112,7 +112,7 @@ point at, and a pen and touch screen that work as well as a keyboard.
   caret is comes first; what you use most comes first (can be switched off).
 - Right-click menus with what fits there: a table's rows, a formula's math, a selection's
   styles.
-- Find (Ctrl+F, F3) in text, math and drawings' notes; find and replace (Ctrl+H).
+- Find (Ctrl+F, F3) in text, math and drawings' notes; find and replace (Ctrl+H). With the bar open, a click on the page types there again (the matches stay highlighted; Ctrl+F goes back to the bar).
 - Zoom: Ctrl+wheel, a trackpad pinch, Ctrl+= / Ctrl+- / Ctrl+0.
 
 ## Files

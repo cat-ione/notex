@@ -1766,6 +1766,10 @@ export class Editor {
   }
 
   private mouseDownInner(e: MouseEvent) {
+    // (the find bar stays open, but typing goes to the page again: its matches still
+    // highlighted, Ctrl+F to go back to it)
+    const a = document.activeElement;
+    if (a instanceof HTMLInputElement && a.closest('.findbar')) a.blur();
     if (this.menu) {
       this.menu = null;
       e.preventDefault();

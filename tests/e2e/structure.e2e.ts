@@ -301,6 +301,31 @@ test.describe('find and replace', () => {
     await page.keyboard.press('Control+z');
     expect(await text(page)).toBe('dog and cat\ncat');
   });
+
+  test('the replace field goes under find, the bar no wider for it', async ({ page }) => {
+    await type(page, 'cat');
+    await page.keyboard.press('Control+f');
+    const width = () => page.locator('.findbar').evaluate((e) => e.getBoundingClientRect().width);
+    const alone = await width();
+    await page.keyboard.press('Control+h');
+    await expect(page.locator('.findbar .with input')).toBeVisible();
+    expect(await width()).toBe(alone);
+  });
+
+  test('with the bar open, a click on the page types there again; its matches stay highlighted', async ({ page }) => {
+    await type(page, 'cat and cat');
+    await page.keyboard.press('Control+f');
+    await page.keyboard.type('cat');
+    const r = (await page.locator('.block .ch').first().boundingBox())!;
+    await page.mouse.click(r.x + 1, r.y + r.height / 2);
+    await page.keyboard.type('a ');
+    expect(await text(page)).toBe('a cat and cat');
+    await expect(page.locator('.findbar')).toBeVisible();
+    expect(await ed(page, (e) => e.find?.q)).toBe('cat');
+    // and back to it
+    await page.keyboard.press('Control+f');
+    await expect(page.locator('.findbar input').first()).toBeFocused();
+  });
 });
 
 test('the notes list finds notes by what they say, shows the line, and opening one finds it there', async ({ page }) => {
