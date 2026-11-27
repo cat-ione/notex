@@ -3182,7 +3182,32 @@ export class Editor {
         if (!best || d < best.d) best = { b, o, d };
       }
     }
-    return best ? { b: best.b, o: best.o } : edge;
+    if (!best) return edge;
+    // from a table's cell to the row above or below: the same column (the nearest place in
+    // that row could be the next cell's start, its text shorter than the padding between)
+    const from = this.tableRow(this.b), to = this.tableRow(best.b);
+    if (from && to && from.table === to.table && best.b !== this.b) {
+      const spans = this.cellSpans(best.b)!;
+      const [s, e] = spans[Math.min(Math.max(0, this.cellAt(this.b, this.o)), spans.length - 1)];
+      if (e === s) return { b: best.b, o: s };
+      // each place in the cell, by its own characters (the place at its end: after its last
+      // character, not the wall there); a cell over several lines: its line nearest where
+      // the caret came from
+      const stops: { o: number; r: { left: number; top: number; bottom: number } }[] = [];
+      for (let o = s; o <= e; o++) {
+        const r = this.stopRect(best.b, o < e ? o : e - 1);
+        if (r) stops.push({ o, r: { left: o < e ? r.left : r.right, top: r.top, bottom: r.bottom } });
+      }
+      const edgeY = dir === 1 ? Math.min(...stops.map((x) => x.r.top)) : Math.max(...stops.map((x) => x.r.bottom));
+      const onLine = stops.filter((x) => (dir === 1 ? x.r.top < edgeY + 2 : x.r.bottom > edgeY - 2));
+      let pick: { o: number; d: number } | null = null;
+      for (const { o, r } of onLine) {
+        const d = Math.abs(r.left - gx);
+        if (!pick || d < pick.d) pick = { o, d };
+      }
+      if (pick) return { b: best.b, o: pick.o };
+    }
+    return { b: best.b, o: best.o };
   }
 
   private textKey(k: string): boolean {

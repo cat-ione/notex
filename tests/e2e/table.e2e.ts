@@ -548,3 +548,22 @@ test('home and end, pressed again at a cell’s edge, go to the row’s start an
   await page.keyboard.press('End');
   expect(await caret(page)).toEqual([1, 4]);
 });
+
+test('up and down stay in the column: past a short cell, not into the next one over', async ({ page }) => {
+  await table(page);
+  // row 2's first cell much longer than the header's "a"
+  await page.keyboard.press('ArrowDown');
+  // (home: the cell's start, wherever in it; end: its end)
+  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
+  await type(page, ' and a much longer first cell');
+  expect(await ed(page, (e) => [e.b, e.cellAt(e.b, e.o)])).toEqual([2, 0]);
+  for (const [key, row] of [['ArrowUp', 1], ['ArrowDown', 2], ['ArrowDown', 3], ['ArrowUp', 2], ['ArrowUp', 1]] as const) {
+    await page.keyboard.press(key);
+    expect(await ed(page, (e) => [e.b, e.cellAt(e.b, e.o)]), `${key} to row ${row}`).toEqual([row, 0]);
+  }
+  // from the second column, it stays in the second
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('ArrowDown');
+  expect(await ed(page, (e) => [e.b, e.cellAt(e.b, e.o)])).toEqual([2, 1]);
+});
