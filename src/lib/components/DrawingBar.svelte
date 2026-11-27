@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import { innerWidth } from 'svelte/reactivity/window';
   import { keyLabel, type Editor } from '$lib/editor.svelte';
   import { INKS, MARK_KINDS, inkVar } from '$lib/marks';
 
@@ -12,7 +13,7 @@
   // its width, all on one row if the window has room (it wraps only when it hasn't), and its
   // middle moved in from the window's edges by half of it
   let width = $state(0);
-  const left = $derived(at ? Math.max(8 + width / 2 - at.pageLeft, Math.min(window.innerWidth - 8 - width / 2 - at.pageLeft, at.x)) : 0);
+  const left = $derived(at ? Math.max(8 + width / 2 - at.pageLeft, Math.min((innerWidth.current ?? window.innerWidth) - 8 - width / 2 - at.pageLeft, at.x)) : 0);
   const id = $derived(ed.styling);
   const mark = $derived(id ? ed.doc.marks.find((m) => m.id === id) : undefined);
   const arrow = $derived(id ? ed.doc.arrows.find((a) => a.id === id) : undefined);

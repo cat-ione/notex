@@ -132,7 +132,17 @@ export function differences(page: Page, i: number, sheetHeight: number, ratio = 
       const w = Math.min(s.width, p.width), rows = Math.min(s.height, p.height - from);
       // (row y of the sheet is row from + y of the screenshot)
       const pics = [{ img: s, top: 0 }, { img: p, top: from }];
-      const bg = [s.data[0], s.data[1], s.data[2]];
+      const bg = (() => {
+        // (the sheet's commonest colour: its first pixel may be a box's or a highlight's, where
+        // a page break falls in one)
+        const seen = new Map<number, number>();
+        for (let k = 0; k < s.data.length; k += 4 * 7) {
+          const c = (s.data[k] << 16) | (s.data[k + 1] << 8) | s.data[k + 2];
+          seen.set(c, (seen.get(c) ?? 0) + 1);
+        }
+        const c = [...seen].sort((a, b) => b[1] - a[1])[0][0];
+        return [c >> 16, (c >> 8) & 255, c & 255];
+      })();
       const px = (k: number, x: number, y: number) => {
         const { img, top } = pics[k], j = ((top + y) * img.width + x) * 4;
         return [img.data[j], img.data[j + 1], img.data[j + 2]];
@@ -196,7 +206,8 @@ export function differences(page: Page, i: number, sheetHeight: number, ratio = 
 
 /**
  * The colours in a rectangle of sheet `i`'s picture, given in the paper layout's CSS pixels
- * from the sheet's top left: how much of it is ink (not the background `bg`), and its
+ * from the sheet's top left: how much of it is ink (not the background `bg`, the sheet's
+ * commonest colour), and its
  * commonest colour that isn't the background.
  */
 export function sample(page: Page, i: number, r: { x: number; y: number; w: number; h: number }, ratio = 2.5) {
@@ -205,7 +216,17 @@ export function sample(page: Page, i: number, r: { x: number; y: number; w: numb
       const s: ImageData = (window as any).__sheets[i];
       const x0 = Math.max(0, Math.round(r.x * ratio)), y0 = Math.max(0, Math.round(r.y * ratio));
       const x1 = Math.min(s.width, Math.round((r.x + r.w) * ratio)), y1 = Math.min(s.height, Math.round((r.y + r.h) * ratio));
-      const bg = [s.data[0], s.data[1], s.data[2]];
+      const bg = (() => {
+        // (the sheet's commonest colour: its first pixel may be a box's or a highlight's, where
+        // a page break falls in one)
+        const seen = new Map<number, number>();
+        for (let k = 0; k < s.data.length; k += 4 * 7) {
+          const c = (s.data[k] << 16) | (s.data[k + 1] << 8) | s.data[k + 2];
+          seen.set(c, (seen.get(c) ?? 0) + 1);
+        }
+        const c = [...seen].sort((a, b) => b[1] - a[1])[0][0];
+        return [c >> 16, (c >> 8) & 255, c & 255];
+      })();
       let ink = 0, n = 0;
       const seen = new Map<string, number>();
       for (let y = y0; y < y1; y++)

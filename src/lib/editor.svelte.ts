@@ -12,6 +12,7 @@
 //   label   — typing an arrow label (transient)
 
 import { flushSync, tick } from 'svelte';
+import { innerHeight, innerWidth } from 'svelte/reactivity/window';
 import { arrowGeo, attachAt, curveThrough, defaultBend, nextSide, sideName, type ArrowGeo, type Outline } from './arrows';
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { rank } from './match';
@@ -2172,6 +2173,8 @@ export class Editor {
   /** Where the selected drawing's bar goes (page coordinates: its middle), and where the page is in the window. */
   get barAt(): { x: number; y: number; below: boolean; pageLeft: number } | null {
     if (this.mode !== 'style' || !this.styling || this.menu || this.dragBusy) return null;
+    // (measured again when the window changes size: the page may have moved in it)
+    void innerWidth.current, innerHeight.current;
     const o = this.page?.getBoundingClientRect();
     const parts = this.drawingParts(this.styling);
     if (!parts.length || !o) return null;

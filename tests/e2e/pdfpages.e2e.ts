@@ -117,7 +117,7 @@ test('a long note in another theme, on Letter, zoomed and scrolled: every drawin
   for (let i = 0; i < pages.length; i++) {
     const { bg } = await sample(page, i, { x: 0, y: 0, w: 1, h: 1 });
     expect(bg[0] + bg[1] + bg[2], 'a dark sheet').toBeLessThan(200);
-    expect(pages[i].fill!.map((v, k) => Math.abs(v - bg[k]) <= 2)).toEqual([true, true, true]);
+    expect(pages[i].fill!.map((v, k) => Math.abs(v - bg[k]) <= 2), `sheet ${i + 1}: margins ${pages[i].fill}, picture ${bg}`).toEqual([true, true, true]);
   }
   await matchesScreen(page, pages);
   // and the screen as it was
