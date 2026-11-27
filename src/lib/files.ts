@@ -4,18 +4,22 @@
 import type { Doc } from './model';
 import { deserialize, serialize, type FileParts } from './format';
 import { markdownToDoc } from './mdfile';
+import { latexToDoc } from './teximport';
 
 export const EXT = 'ntx';
 const FILTERS = [{ name: 'notex note', extensions: [EXT] }];
-/** Opening: a note, or a markdown file (read in as a note; saved as a note, not over it). */
-const OPEN_FILTERS = [{ name: 'notex note or markdown', extensions: [EXT, 'md', 'markdown'] }, ...FILTERS, { name: 'markdown', extensions: ['md', 'markdown'] }];
+/** Opening: a note, a markdown or a LaTeX file (read in as a note; saved as a note, not over it). */
+const OPEN_FILTERS = [{ name: 'notex note, markdown or LaTeX', extensions: [EXT, 'md', 'markdown', 'tex'] }, ...FILTERS, { name: 'markdown', extensions: ['md', 'markdown'] }, { name: 'LaTeX', extensions: ['tex'] }];
 export const isMarkdown = (name: string) => /\.(md|markdown)$/i.test(name);
-/** A file's text as a note: markdown read as markdown, else a note file. */
-export const readDoc = (name: string, text: string): Doc => (isMarkdown(name) ? markdownToDoc(text) : deserialize(text));
+export const isTex = (name: string) => /\.tex$/i.test(name);
+/** A file read in as a note and never saved over (markdown, LaTeX): not a note file. */
+export const isForeign = (name: string) => isMarkdown(name) || isTex(name);
+/** A file's text as a note: markdown read as markdown, LaTeX as LaTeX, else a note file. */
+export const readDoc = (name: string, text: string): Doc => (isMarkdown(name) ? markdownToDoc(text) : isTex(name) ? latexToDoc(text) : deserialize(text));
 
 export const isDesktop = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-export const baseName = (path: string) => path.split(/[\\/]/).pop()!.replace(new RegExp(`\\.(${EXT}|md|markdown)$`, 'i'), '');
+export const baseName = (path: string) => path.split(/[\\/]/).pop()!.replace(new RegExp(`\\.(${EXT}|md|markdown|tex)$`, 'i'), '');
 
 async function core() {
   return await import('@tauri-apps/api/core');
@@ -25,16 +29,16 @@ async function dialog() {
 }
 
 /**
- * Ask for a file to open. Returns null when cancelled. A markdown file comes with no path:
- * it's read in as a note, and saving it asks where (a note isn't written over markdown).
+ * Ask for a file to open. Returns null when cancelled. A markdown or LaTeX file comes with no
+ * path: it's read in as a note, and saving it asks where (a note isn't written over it).
  */
 export async function openNote(): Promise<{ path: string | null; name: string; doc: Doc } | null> {
   if (isDesktop()) {
     const path = await (await dialog()).open({ multiple: false, directory: false, filters: OPEN_FILTERS });
     if (typeof path !== 'string') return null;
-    if (isMarkdown(path)) {
+    if (isForeign(path)) {
       const { invoke } = await core();
-      return { path: null, name: baseName(path), doc: markdownToDoc(await invoke<string>('read_note', { path })) };
+      return { path: null, name: baseName(path), doc: readDoc(path, await invoke<string>('read_note', { path })) };
     }
     return { path, name: baseName(path), doc: await readNote(path) };
   }
@@ -130,7 +134,7 @@ type Permissions = {
 const pickers = () => window as unknown as FilePickers;
 const PICK: Picker = { types: [{ description: 'notex note', accept: { 'application/json': [`.${EXT}`] } }] };
 /** Opening: notes and markdown files. */
-const PICK_OPEN: Picker = { types: [{ description: 'notex note or markdown', accept: { 'application/json': [`.${EXT}`], 'text/markdown': ['.md', '.markdown'] } }] };
+const PICK_OPEN: Picker = { types: [{ description: 'notex note, markdown or LaTeX', accept: { 'application/json': [`.${EXT}`], 'text/markdown': ['.md', '.markdown'], 'application/x-tex': ['.tex'] } }] };
 
 /** Whether this browser can save to files on disk (else notes download). */
 export const canUseFiles = () => !isDesktop() && typeof window !== 'undefined' && 'showSaveFilePicker' in window;
@@ -223,7 +227,7 @@ export function pickBrowserFiles(accept: string): Promise<File[]> {
 
 function pickBrowserFile(): Promise<File | null> {
   return new Promise((resolve) => {
-    const input = Object.assign(document.createElement('input'), { type: 'file', accept: `.${EXT},application/json,.md,.markdown,text/markdown` });
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept: `.${EXT},application/json,.md,.markdown,text/markdown,.tex` });
     input.onchange = () => resolve(input.files?.[0] ?? null);
     input.oncancel = () => resolve(null);
     input.click();

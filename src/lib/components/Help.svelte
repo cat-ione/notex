@@ -27,6 +27,7 @@
       ['ctrl+o, then type', 'notes by name, or by what they say'],
       ['\\backup  \\restore', 'in the browser: every note to a zip file, and back (also at the end of ctrl+o)'],
       ['\\markdown  \\copymarkdown', 'save / copy as markdown (.md files open too)'],
+      ['ctrl+o  or drop a .tex', 'open a LaTeX file as a note: sections, lists, theorems, numbered equations, \\ref'],
     ]],
     ['math', [
       ['/', 'fraction'], ['^  _', 'superscript / subscript: x^2, x^10, e^-x'], ['^(…)  _(…)', 'longer scripts: e^(-x^2/2), \\int_0^(2\\pi)'],

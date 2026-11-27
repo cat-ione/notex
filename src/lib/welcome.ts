@@ -200,7 +200,7 @@ export function welcomeDoc(): Doc {
             P('Once opened, notex works offline, and the browser can install it as an app.', 'li'),
           ]),
       P('\\pdf or Ctrl+P saves it as a PDF file, drawings and all.', 'li'),
-      P('\\export copies it as LaTeX, drawings included; \\markdown saves it as markdown, and .md files open as notes.', 'li'),
+      P('\\export copies it as LaTeX, drawings included; \\markdown saves it as markdown, and .md and .tex files open as notes.', 'li'),
       P('Press F1 for every shortcut, and type \\welcome to bring this note back.'),
     ],
     arrows,

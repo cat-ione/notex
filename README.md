@@ -24,8 +24,8 @@ with a lecture, and you can draw arrows, boxes and notes directly on parts of an
   diagrams and flowcharts, and plots of functions you type in.
 - **Pen and touch.** Write and draw with a pen on a tablet, with a tool menu that opens where
   the pen is.
-- **Export.** Save a note as a PDF, copy it as LaTeX (drawings included), or save it as
-  markdown.
+- **Export and import.** Save a note as a PDF, copy it as LaTeX (drawings included), or save it as
+  markdown. Open markdown and LaTeX files as notes.
 - **Make it yours.** Themes, fonts, text size, your own snippets and custom CSS.
 
 ## Getting started
@@ -57,9 +57,11 @@ There are no desktop releases yet. To run the desktop app, build it from source 
 
 In the browser, every note is kept automatically; Ctrl+O lists them. Ctrl+S also saves the
 note to a file. A browser can clear what a site keeps, so back your notes up now and then:
-`\backup` saves them all to one zip file, and `\restore` brings them back. A browser can clear what a site keeps, so back your notes up now and then:
-`ackup` saves them all to one zip file, and `estore` brings them back. Notes are saved as `.ntx` files (compact JSON), and `.md` files can be opened
-too.
+`\backup` saves them all to one zip file, and `\restore` brings them back.
+
+Notes are saved as `.ntx` files (compact JSON). Markdown (`.md`) and LaTeX (`.tex`) files open
+as notes too: a LaTeX file's sections, lists, theorems, numbered equations and references
+become the note's own.
 
 ## Settings
 

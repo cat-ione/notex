@@ -705,8 +705,8 @@ export class Editor {
         if (!h) return;
         const known = await L.noteForFile(h);
         if (known) return this.openKept(known);
-        // (a markdown file is read in, not saved back to: a note isn't written over it)
-        this.load(await F.readFile(h), { path: null, name: F.baseName(h.name), id: uid() }, F.isMarkdown(h.name) ? null : h);
+        // (a markdown or LaTeX file is read in, not saved back to: a note isn't written over it)
+        this.load(await F.readFile(h), { path: null, name: F.baseName(h.name), id: uid() }, F.isForeign(h.name) ? null : h);
       } else {
         const r = await F.openNote();
         if (!r) return;
@@ -1120,7 +1120,10 @@ export class Editor {
   }
 
   load(doc: Doc, file: NoteFile, handle: FileSystemFileHandle | null = null) {
-    this.doc = doc;
+    // (a file read in, LaTeX: what it left out said once it's open)
+    const { dropped, ...rest } = doc as Doc & { dropped?: string[] };
+    if (dropped?.length) setTimeout(() => this.flash(`opened without its ${dropped.join(' and ')}: a note can't hold them`));
+    this.doc = rest;
     this.derive(0, Infinity);
     this.file = file;
     this.handle = handle;
@@ -1521,8 +1524,8 @@ export class Editor {
   /** Files dropped on the page: images go where they were dropped. */
   dropFiles(e: DragEvent) {
     const all = [...(e.dataTransfer?.files ?? [])];
-    // a note or a markdown file dropped on the page: opened
-    const note = all.find((f) => F.isMarkdown(f.name) || f.name.toLowerCase().endsWith(`.${F.EXT}`));
+    // a note, a markdown or a LaTeX file dropped on the page: opened
+    const note = all.find((f) => F.isForeign(f.name) || f.name.toLowerCase().endsWith(`.${F.EXT}`));
     if (note) {
       e.preventDefault();
       void this.openDropped(note);
@@ -1540,7 +1543,7 @@ export class Editor {
     void this.insertImages(files);
   }
 
-  /** A note or markdown file dropped on the page: opened as a note (kept in the browser, or unsaved on the desktop). */
+  /** A note, markdown or LaTeX file dropped on the page: opened as a note (kept in the browser, or unsaved on the desktop). */
   private async openDropped(f: File) {
     let doc: Doc;
     try {
