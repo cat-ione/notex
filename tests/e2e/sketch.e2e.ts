@@ -855,20 +855,6 @@ test('a box just drawn with the pen is resized by its handle, with the pen, the 
   expect(await sk(page, (s) => s.tool)).toBe('rect');
 });
 
-test('a highlighter stroke: flat ends; held still at its end, it straightens', async ({ page }) => {
-  const c = await diagram(page);
-  await page.keyboard.press('h');
-  await held(page, line(c.x + 60, c.y + 80, c.x + 360, c.y + 90, 20).map(([x, y], i) => [x, y + Math.sin(i) * 3, 0.5] as P));
-  const [s] = await shapes(page);
-  expect(s).toMatchObject({ k: 'ink', hl: true });
-  // two points: straight, from where it started to where it was held
-  expect(s.pts.length).toBe(6);
-  expect(Math.abs(s.pts[0] - 60)).toBeLessThan(4);
-  expect(Math.abs(s.pts[3] - 360)).toBeLessThan(4);
-  const cap = await page.evaluate(() => getComputedStyle(document.querySelector('svg.canvas .stroke.hl')!).strokeLinecap);
-  expect(cap).toBe('butt');
-});
-
 test('a pen stroke made dashed shows dashed', async ({ page }) => {
   const c = await diagram(page);
   await page.keyboard.press('p');

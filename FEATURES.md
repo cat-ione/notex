@@ -74,8 +74,7 @@ point at, and a pen and touch screen that work as well as a keyboard.
 - Ctrl+Shift+D draws in a diagram, or anywhere on the note, pinned to the line under it.
 - Graphs: `\graph` (or `g`) plots what you type, `y = sin x`, one function a line,
   `x: -2pi..2pi` for the range; axes, ticks in π, a legend, breaks at asymptotes.
-- A rough line, box, circle or diamond drawn with the pen and held still straightens (a
-  highlighter stroke too, into a straight one).
+- A rough line, box, circle or diamond drawn with the pen and held still straightens.
 
 ## Pen and touch
 

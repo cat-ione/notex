@@ -57,7 +57,7 @@
       ['ctrl+shift+d', 'draw in the diagram at the caret, or on the note; again to stop'],
       ['v p h l a r o d t g e', 'select, pen, highlighter, line, arrow, box, ellipse, diamond, text, graph, eraser'],
       ['\\graph', 'a graph: type what to plot, y = sin x (shift+enter: another; x: -pi..pi, y: -1..1)'],
-      ['hold the pen still', 'at the end of a rough line, box, circle or diamond (or a highlighter stroke): it straightens'],
+      ['hold the pen still', 'at the end of a rough line, box, circle or diamond: it straightens'],
       ['drag  /  tap', 'draw the shape  /  a box of the usual size (where you put it; alt, or the setting: to a grid, lines to box edges)'], ['enter', 'label the selected box or arrow, or a new box'],
       ['ctrl+← → ↑ ↓', 'a box beside this one, joined by an arrow (while typing a label too)'],
       ['arrow ending on a box', 'stays where you put it on the box, and moves with it'], ['a handle of what’s selected', 'resizes it, whatever the tool (as a box just drawn by pen)'], ['$…$ in a label', 'math'],

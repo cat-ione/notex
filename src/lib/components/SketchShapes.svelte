@@ -231,10 +231,9 @@
     stroke-linejoin: round;
   }
   /* a highlighter: wide and see-through, the text showing under it */
-  /* (a highlighter's flat tip: square ends, not round blobs) */
   .stroke.hl {
     stroke-opacity: 0.32;
-    stroke-linecap: butt;
+    stroke-linecap: round;
   }
   /* (in no colour of its own: the highlighter's warm one, not the text's) */
   .plain .stroke.hl {
