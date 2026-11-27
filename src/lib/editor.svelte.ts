@@ -290,14 +290,19 @@ export class Editor {
    */
   private room: Record<Id, Spacer> = {};
   private setRoom(next: Record<Id, Spacer>) {
-    for (const k of Object.keys(this.room)) if (!(k in next)) delete this.spacers[k];
+    let keys = false;
+    for (const k of Object.keys(this.room)) if (!(k in next)) delete this.spacers[k], (keys = true);
     for (const [k, v] of Object.entries(next)) {
       const cur = this.room[k];
+      if (!cur) keys = true;
       // (a copy: the page's object keeps its values apart from the one it was given)
       if (!cur || cur.above !== v.above || cur.below !== v.below) this.spacers[k] = { ...v };
     }
     this.room = next;
+    if (keys) this.roomKeys++;
   }
+  /** Bumped when room is first made after an item, or taken away (the item is drawn afresh). */
+  roomKeys = $state(0);
   private spacerPasses = 0;
   private spacerVersion = -1;
   /** A layout waiting for blocks to be drawn (see makeRoom). */

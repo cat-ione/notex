@@ -28,7 +28,7 @@
   import RadialMenu from './RadialMenu.svelte';
   import { isDesktop, setWindowTitle } from '$lib/files';
   import { base } from '$app/paths';
-  import { BOX_NAME, isFigure, type Block, type Item } from '$lib/model';
+  import { BOX_NAME, isFigure, type Block, type Char, type Item } from '$lib/model';
   import { highlight, type Tk } from '$lib/highlight';
   import { cellSpans, findTables } from '$lib/tables';
 
@@ -258,12 +258,33 @@
   const reveal = $derived(ed.reveal);
   // inline code's text (not its backticks): its first / last character has the rounded end
   const codeText = (it: Item | undefined) => it?.t === 'c' && !!it.c && !it.m;
+  // A character's classes, as one string: a long note has a great many characters, and one
+  // class string costs the page far less to set up and keep than a class: for each style.
+  const chClass = (items: Item[], it: Char, o: number) => {
+    let c = 'ch';
+    if (it.m) c += ' mk';
+    else {
+      if (it.b) c += ' b';
+      if (it.i) c += ' i';
+      if (it.s) c += ' s';
+      if (it.h) c += ' hl';
+      if (it.l) c += ' ln';
+    }
+    if (it.c) c += ' c';
+    if (codeText(it)) {
+      if (!codeText(items[o - 1])) c += ' cs';
+      if (!codeText(items[o + 1])) c += ' ce';
+    }
+    return c;
+  };
 
   // The markers that show (Editor.reveal) get a class of their own, set here on just
   // them: no other character depends on where the caret is.
   let showing: Element[] = [];
   $effect(() => {
     const rv = reveal;
+    // (and again when room is made after a character or taken away: it's drawn afresh)
+    void ed.roomKeys;
     const items = rv ? ed.doc.blocks[rv.b]?.items : undefined;
     for (const e of showing) e.classList.remove('show');
     showing = [];
@@ -296,8 +317,10 @@
 
   // Code blocks' colours: each line's characters' kinds of token, by line. A block is read
   // whole (a string or comment can run over lines), in the language its opening fence names.
+  // (a plain object, not a map: read in every code character's template, a lookup there
+  // without a call needs nothing set up to remember it)
   const codeTokens = $derived.by(() => {
-    const out = new Map<string, (Tk | undefined)[]>();
+    const out: Record<string, (Tk | undefined)[]> = {};
     if (!ed.config.highlightCode) return out;
     const blocks = ed.doc.blocks;
     for (let b = 0; b < blocks.length; b++) {
@@ -311,7 +334,7 @@
       const kinds = highlight(texts.map((t) => t.join('')).join('\n'), open.lang);
       let at = 0;
       lines.forEach((l, k) => {
-        out.set(l.id, texts[k].map((ch) => ((at += ch.length), kinds[at - ch.length])));
+        out[l.id] = texts[k].map((ch) => ((at += ch.length), kinds[at - ch.length]));
         at++;
       });
       b = e - 1;
@@ -416,21 +439,17 @@
      (Kept on one line: whitespace here would show up in the pre-wrap text.) -->
 {#snippet spacer(id: string)}<span class="nx-sp nx-probe" data-pt={id} style="vertical-align: top">&#8288;</span><span class="nx-sp nx-probe" data-pb={id} style="vertical-align: bottom">&#8288;</span>{#if ed.spacers[id]?.below !== undefined}<span class="nx-sp below" data-sp="{id}-below" style="vertical-align: -{ed.spacers[id].below}px">&#8288;</span>{/if}{#if ed.spacers[id]?.above !== undefined}<span class="nx-sp above" data-sp="{id}-above" style="vertical-align: {ed.spacers[id].above}px">&#8288;</span>{/if}{/snippet}
 
-<!-- One item of a block: a character, or a formula (with what makes room for drawings). -->
-{#snippet item(blk: Block, b: number, it: Item, o: number)}{#if it.t === 'c'}<span
-      class="ch"
-      class:b={it.b && !it.m}
-      class:i={it.i && !it.m}
-      class:c={it.c}
-      class:s={it.s && !it.m}
-      class:hl={it.h && !it.m}
-      class:ln={it.l && !it.m}
-      class:mk={it.m}
-      class:cs={codeText(it) && !codeText(blk.items[o - 1])}
-      class:ce={codeText(it) && !codeText(blk.items[o + 1])}
-      data-tk={blk.kind === 'code' ? codeTokens.get(blk.id)?.[o] : undefined}
+<!-- A character. -->
+{#snippet ch(blk: Block, it: Char, o: number)}<span
+      class={chClass(blk.items, it, o)}
+      data-tk={blk.kind === 'code' ? codeTokens[blk.id]?.[o] : undefined}
       title={it.l && !it.m ? 'ctrl+click to open' : undefined}
-      data-nx={it.id}>{it.ch}</span>{#if ed.spacers[it.id]}{@render spacer(it.id)}{/if}{:else}<MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} eqn={it.display && it.num ? ed.labels.get(it.id) : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}{/if}{/snippet}
+      data-nx={it.id}>{it.ch}</span>{/snippet}
+
+<!-- One item of a block: a character, or a formula (with what makes room for drawings).
+     (Whether a character has room made after it is part of the one choice each item makes:
+     a choice of its own would cost every character of a long note.) -->
+{#snippet item(blk: Block, b: number, it: Item, o: number)}{#if it.t === 'c' && !ed.spacers[it.id]}{@render ch(blk, it, o)}{:else if it.t === 'c'}{@render ch(blk, it, o)}{@render spacer(it.id)}{:else}<MathView item={it} cursor={editingMath(b, o) ? ed.mc : null} sel={editingMath(b, o) ? ed.mathSelRange : null} pad={it.display ? ed.spacers[it.id] : undefined} eqn={it.display && it.num ? ed.labels.get(it.id) : undefined} />{#if !it.display && ed.spacers[it.id]}{@render spacer(it.id)}{/if}{/if}{/snippet}
 
 <!-- A cell wall: no width, nothing to see (the cell's border is the wall), but a place for the caret. -->
 {#snippet cellWall(w: Item)}<span class="ch wall" data-nx={w.id}>|</span>{/snippet}

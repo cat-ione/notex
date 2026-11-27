@@ -64,6 +64,20 @@ test('markdown: bold, italic and code, markers hidden away from the caret', asyn
   await expect(page.locator('.ch.b').first()).toHaveCSS('font-weight', '700');
 });
 
+test('the markers at the caret still show when room is made under them for a drawing', async ({ page }) => {
+  await type(page, 'a **bold** word');
+  await page.keyboard.press('Home');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.ch.mk:visible')).toHaveCount(4);
+  // room after the first marker, as a note under it would make (the marker is drawn afresh)
+  await ed(page, (e) => {
+    const star = e.doc.blocks[0].items.find((i: any) => i.ch === '*');
+    e.setRoom({ ...e.room, [star.id]: { below: 0 } });
+  });
+  await expect(page.locator('.nx-sp.below')).toHaveCount(1);
+  await expect(page.locator('.ch.mk:visible')).toHaveCount(4);
+});
+
 test('brackets and quotes come in pairs, and backspace takes both', async ({ page }) => {
   await type(page, 'f(x');
   expect(await text(page)).toBe('f(x)');
