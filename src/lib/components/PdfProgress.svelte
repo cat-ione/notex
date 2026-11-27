@@ -13,7 +13,8 @@
   const size = $derived(m.count <= 3 ? 168 : m.count <= 8 ? 124 : m.count <= 18 ? 92 : m.count <= 40 ? 64 : 44);
 </script>
 
-<div class="making" role="status" aria-live="polite" transition:fade={{ duration: 120 }}>
+<!-- (in the screen's theme: the page under it has the PDF's for now) -->
+<div class="making" role="status" aria-live="polite" style={m.theme} transition:fade={{ duration: 120 }}>
   <div class="head">
     <span class="what">making the PDF</span>
     <span class="count">{m.count ? `${done} / ${m.count}` : '…'} {m.count === 1 ? 'sheet' : 'sheets'}</span>

@@ -728,9 +728,10 @@ export class Editor {
   /**
    * The PDF being made here, sheet by sheet (see PdfProgress.svelte): how many sheets, which
    * are being drawn, a small picture of each one done; the paper's shape (width over height),
-   * its margin (a share of its width) and its colour.
+   * its margin (a share of its width) and its colour; the screen's theme (`theme`: its colours,
+   * as they were before the page took the PDF's).
    */
-  pdfMaking = $state<{ count: number; drawing: number[]; pictures: string[]; paper: number; margin: number; bg: string } | null>(null);
+  pdfMaking = $state<{ count: number; drawing: number[]; pictures: string[]; paper: number; margin: number; bg: string; theme: string } | null>(null);
   /** Esc while the PDF is made: stop making it. */
   private pdfCancel = false;
 
@@ -903,12 +904,15 @@ export class Editor {
       save = path ? async (b) => (await F.writeBytes(path, b), path.split(/[\\/]/).pop()!) : null;
     } else save = await F.browserSaveTarget(name, 'pdf', 'PDF', 'application/pdf');
     if (!save || !this.page) return;
+    // (the screen's colours, for showing it being made: the page takes the PDF's theme)
+    const cs = getComputedStyle(document.documentElement);
+    const theme = ['--bg', '--fg', '--muted', '--accent'].map((v) => `${v}: ${cs.getPropertyValue(v).trim()}`).join('; ');
     this.beginPrint();
     this.pdfCancel = false;
     try {
       const paper = C.PAPERS[this.config.pdf.paper] ?? C.PAPERS.A4;
       const bg = hexColour(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#ffffff');
-      const making = (this.pdfMaking = { count: 0, drawing: [], pictures: [], paper: paper.w / paper.h, margin: C.PAPER_MARGIN / paper.w, bg });
+      const making = (this.pdfMaking = { count: 0, drawing: [], pictures: [], paper: paper.w / paper.h, margin: C.PAPER_MARGIN / paper.w, bg, theme });
       const blob = await pdfOf(
         this.page,
         { w: paper.w, h: paper.h, margin: C.PAPER_MARGIN, textHeight: (paper.h - 2 * C.PAPER_MARGIN) * 96, bg },

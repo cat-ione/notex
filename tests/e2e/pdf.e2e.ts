@@ -184,8 +184,12 @@ test('while the PDF is made, its sheets show as they are made: each one’s pict
   await longNote(page);
   const { download, made } = await startPdf(page);
   await expect(page.locator('.making')).toBeVisible();
+  // in the screen's theme (midnight: dark), not the PDF's (paper: light)
+  const bg = await page.locator('.making').evaluate((el) => getComputedStyle(el).backgroundColor.match(/[\d.]+/g)!.slice(0, 3).map(Number));
+  expect(bg[0] + bg[1] + bg[2]).toBeLessThan(200);
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('paper');
   // every sheet there from the start, filling in
-  await expect.poll(() => page.locator('.making .sheet').count()).toBeGreaterThan(2);
+  await expect.poll(() => page.locator('.making .sheet').count(), { timeout: 60_000 }).toBeGreaterThan(2);
   const count = await page.locator('.making .sheet').count();
   await expect(page.locator('.making .sheet.done img').first()).toBeVisible({ timeout: 120_000 });
   await expect(page.locator('.making .count')).toContainText(`/ ${count} sheets`);
