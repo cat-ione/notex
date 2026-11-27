@@ -12,7 +12,7 @@
       ['\\table   | a | b |', 'table: tab next cell, enter new row (empty ones stay), ↓ from the last row: out of it'],
       ['in a table', 'home / end: the cell’s start / end (again: the row’s); \\deletetable, or select all its cells and delete'],
       ['paste / drop / \\image', 'insert an image (type under it for a caption)'], ['alt+← →', 'image: resize (or drag its corner)'],
-      ['ctrl+f  F3  ctrl+h', 'find, find next, find and replace'], ['ctrl+= ctrl+- ctrl+0', 'zoom (or ctrl+wheel, a pinch)'], ['alt+↑ ↓', 'move paragraph up / down'], ['ctrl+s  o  n', 'save, open, new'], ['\\pdf  ctrl+p', 'save as a PDF file'], ['ctrl+,', 'settings'], ['\\toolbar  \\statusbar', 'show / hide the bars'], ['F1', 'keyboard shortcuts'],
+      ['ctrl+f  F3  ctrl+h', 'find, find next, find and replace'], ['ctrl+= ctrl+- ctrl+0', 'zoom (or ctrl+wheel, a pinch)'], ['alt+↑ ↓', 'move paragraph up / down'], ['ctrl+s  o  n', 'save, open, new'], ['\\pdf  ctrl+p', 'save as a PDF file (esc while it’s made: stop)'], ['ctrl+,', 'settings'], ['\\toolbar  \\statusbar', 'show / hide the bars'], ['F1', 'keyboard shortcuts'],
     ]],
     ['structure', [
       ['[ ] ␣   [x] ␣', 'a box to tick (after - too); ctrl+enter ticks it'],

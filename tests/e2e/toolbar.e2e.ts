@@ -98,7 +98,8 @@ test('pdf, in the browser, saves a PDF file (no print dialog: there is no printi
   // (the paper layout undone, no dialog opened)
   expect(await page.evaluate(() => (window as any).__prints)).toBe(0);
   await expect(page.locator('.nx-page-push')).toHaveCount(0);
-  expect(await page.evaluate(() => document.documentElement.classList.contains('nx-print'))).toBe(false);
+  // (once the finished sheets have shown a moment)
+  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains('nx-print'))).toBe(false);
 });
 
 test('save downloads the note where the browser has no file pickers', async ({ page }) => {

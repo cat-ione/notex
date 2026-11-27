@@ -725,6 +725,14 @@ export class Editor {
 
   /** Laid out for paper (see beginPrint); the screen shows a veil meanwhile. */
   printing = $state(false);
+  /**
+   * The PDF being made here, sheet by sheet (see PdfProgress.svelte): how many sheets, which
+   * are being drawn, a small picture of each one done; the paper's shape (width over height),
+   * its margin (a share of its width) and its colour.
+   */
+  pdfMaking = $state<{ count: number; drawing: number[]; pictures: string[]; paper: number; margin: number; bg: string } | null>(null);
+  /** Esc while the PDF is made: stop making it. */
+  private pdfCancel = false;
 
   // ── zoom: the page bigger or smaller (ctrl+wheel, a pinch, ctrl+= / ctrl+- / ctrl+0) ──
 
@@ -895,16 +903,34 @@ export class Editor {
       save = path ? async (b) => (await F.writeBytes(path, b), path.split(/[\\/]/).pop()!) : null;
     } else save = await F.browserSaveTarget(name, 'pdf', 'PDF', 'application/pdf');
     if (!save || !this.page) return;
-    this.flash('making the PDF…');
     this.beginPrint();
+    this.pdfCancel = false;
     try {
       const paper = C.PAPERS[this.config.pdf.paper] ?? C.PAPERS.A4;
       const bg = hexColour(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#ffffff');
-      const blob = await pdfOf(this.page, { w: paper.w, h: paper.h, margin: C.PAPER_MARGIN, textHeight: (paper.h - 2 * C.PAPER_MARGIN) * 96, bg });
-      this.flash(`saved ${await save(blob)}`);
+      const making = (this.pdfMaking = { count: 0, drawing: [], pictures: [], paper: paper.w / paper.h, margin: C.PAPER_MARGIN / paper.w, bg });
+      const blob = await pdfOf(
+        this.page,
+        { w: paper.w, h: paper.h, margin: C.PAPER_MARGIN, textHeight: (paper.h - 2 * C.PAPER_MARGIN) * 96, bg },
+        {
+          progress: (p) => {
+            const m = this.pdfMaking ?? making;
+            if ('count' in p) m.count = p.count;
+            else if ('drawing' in p) m.drawing = p.drawing;
+            else m.pictures[p.done] = p.picture;
+          },
+          cancelled: () => this.pdfCancel,
+        },
+      );
+      const name = await save(blob);
+      // (every sheet in view a moment, done)
+      if (this.pdfMaking) this.pdfMaking.drawing = [];
+      await new Promise((r) => setTimeout(r, 400));
+      this.flash(`saved ${name}`);
     } catch (e) {
-      this.flash(`could not make the PDF: ${e}`);
+      this.flash((e as DOMException)?.name === 'AbortError' ? 'PDF cancelled' : `could not make the PDF: ${e}`);
     } finally {
+      this.pdfMaking = null;
       this.endPrint();
     }
   }
@@ -3064,6 +3090,12 @@ export class Editor {
 
   private keyInner(e: KeyboardEvent) {
     if (e.isComposing) return;
+    // laid out for paper, the note is the PDF's until it's made: no typing in it (esc stops)
+    if (this.printing) {
+      if (e.key === 'Escape') this.pdfCancel = true;
+      e.preventDefault();
+      return;
+    }
     // a click leaves the anchor on the caret: that's no selection (an edit would make it one)
     if (this.anchor && this.anchor.b === this.b && this.anchor.o === this.o) this.anchor = null;
     // Text fields (settings, config editor) handle their own keys (not the one that takes a

@@ -19,6 +19,7 @@
   import Toolbar from './Toolbar.svelte';
   import Help from './Help.svelte';
   import Settings from './Settings.svelte';
+  import PdfProgress from './PdfProgress.svelte';
   import NotesPanel from './NotesPanel.svelte';
   import SketchShapes from './SketchShapes.svelte';
   import NoteInk from './NoteInk.svelte';
@@ -643,7 +644,9 @@
     <Settings {ed} />
   {/if}
 
-  {#if ed.printing}
+  {#if ed.pdfMaking}
+    <PdfProgress {ed} />
+  {:else if ed.printing}
     <div class="veil"><span>saving PDF…</span></div>
   {/if}
 
@@ -1447,9 +1450,9 @@
   }
   /* everything where it ends up at once (notes glide to new places on screen), and no glow:
      a shadow on every letter turns a PDF into pictures */
-  :global(html.nx-print *),
-  :global(html.nx-print *::before),
-  :global(html.nx-print *::after) {
+  :global(html.nx-print *:not(.making, .making *)),
+  :global(html.nx-print *:not(.making *)::before),
+  :global(html.nx-print *:not(.making *)::after) {
     transition: none !important;
     animation: none !important;
     text-shadow: none !important;

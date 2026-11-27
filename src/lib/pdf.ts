@@ -5,12 +5,29 @@
 /** What a sheet is: its size and margin (inches), its text's height in CSS pixels, its colour. */
 export type Sheet = { w: number; h: number; margin: number; textHeight: number; bg: string };
 
-/** The page element, as laid out for print, as a PDF (pixels per CSS pixel: `ratio`). */
-export async function pdfOf(page: HTMLElement, sheet: Sheet, ratio = 2.5): Promise<Blob> {
+/**
+ * How making a PDF is going, as it goes (to show it): how many sheets there will be, which
+ * are being drawn now, and each as it's done, with a small picture of it.
+ */
+export type PdfProgress = { count: number } | { drawing: number[] } | { done: number; picture: string };
+
+/**
+ * The page element, as laid out for print, as a PDF (pixels per CSS pixel: `ratio`).
+ * `progress` hears how it's going; once `cancelled` says so, it stops (an AbortError).
+ */
+export async function pdfOf(
+  page: HTMLElement,
+  sheet: Sheet,
+  { ratio = 2.5, progress, cancelled }: { ratio?: number; progress?: (p: PdfProgress) => void; cancelled?: () => boolean } = {},
+): Promise<Blob> {
   const [{ toCanvas, getFontEmbedCSS }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
   const width = page.offsetWidth, total = Math.max(page.scrollHeight, page.offsetHeight);
   const ph = sheet.textHeight;
   const count = Math.max(1, Math.ceil((total - 2) / ph));
+  progress?.({ count });
+  const stop = () => {
+    if (cancelled?.()) throw new DOMException('the PDF was cancelled', 'AbortError');
+  };
   // (a few sheets at a time: a canvas can't be too tall)
   const per = Math.max(1, Math.floor(12000 / (ph * ratio)));
   const fontEmbedCSS = await getFontEmbedCSS(page);
@@ -29,6 +46,8 @@ export async function pdfOf(page: HTMLElement, sheet: Sheet, ratio = 2.5): Promi
       // every box between pixels, where a box's line and corners come out with a seam; as does
       // a transform), the rest left over the top of the first
       const top = Math.floor(first * ph), over = first * ph - top;
+      stop();
+      progress?.({ drawing: Array.from({ length: n }, (_, k) => first + k) });
       const canvas = await toCanvas(page, {
         pixelRatio: ratio,
         width,
@@ -45,6 +64,16 @@ export async function pdfOf(page: HTMLElement, sheet: Sheet, ratio = 2.5): Promi
         pdf.setFillColor(sheet.bg);
         pdf.rect(0, 0, sheet.w, sheet.h, 'F');
         pdf.addImage(sliceAt, 'PNG', sheet.margin, sheet.margin, tw, Math.min(th, sheet.h - 2 * sheet.margin), undefined, 'FAST');
+        if (progress) {
+          const small = document.createElement('canvas');
+          small.width = 240;
+          small.height = Math.round((240 * sliceAt.height) / sliceAt.width);
+          small.getContext('2d')!.drawImage(sliceAt, 0, 0, small.width, small.height);
+          progress({ done: first + k, picture: small.toDataURL() });
+          // (a moment for the screen to show it)
+          await new Promise((r) => setTimeout(r, 0));
+          stop();
+        }
       }
     }
   } finally {

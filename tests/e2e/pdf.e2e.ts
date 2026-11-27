@@ -1,6 +1,6 @@
 // PDFs: the note is laid out for paper first (its width, the PDF theme, page
 // breaks that don't cut through a line or a formula), and put back afterwards.
-import { test, expect, open, fresh, type, ed } from './helpers';
+import { test, expect, open, fresh, type, ed, text } from './helpers';
 import type { Page } from '@playwright/test';
 
 /** A long note: filler paragraphs, then the welcome note's drawings on later pages. */
@@ -164,4 +164,51 @@ test('the editing marks (caret, selection, markers) are not printed', async ({ p
   }
   await page.emulateMedia({ media: 'screen' });
   await page.evaluate(() => (window as any).__nx.ed.endPrint());
+});
+
+/** Make the PDF the browser's way (a download), not waiting for it; the download, if any comes. */
+async function startPdf(page: Page) {
+  await page.evaluate(() => {
+    delete (Window.prototype as any).showSaveFilePicker;
+    delete (window as any).showSaveFilePicker;
+  });
+  const download = page.waitForEvent('download', { timeout: 200_000 }).catch(() => null);
+  const made = page.evaluate(() => (window as any).__nx.ed.exportPdf());
+  return { download, made };
+}
+
+test('while the PDF is made, its sheets show as they are made: each one’s picture, and how many are done', async ({ page }) => {
+  // (slow when other tests make PDFs at the same time)
+  test.setTimeout(240_000);
+  await open(page);
+  await longNote(page);
+  const { download, made } = await startPdf(page);
+  await expect(page.locator('.making')).toBeVisible();
+  // every sheet there from the start, filling in
+  await expect.poll(() => page.locator('.making .sheet').count()).toBeGreaterThan(2);
+  const count = await page.locator('.making .sheet').count();
+  await expect(page.locator('.making .sheet.done img').first()).toBeVisible({ timeout: 120_000 });
+  await expect(page.locator('.making .count')).toContainText(`/ ${count} sheets`);
+  await expect.poll(() => page.locator('.making .sheet.done img').count(), { timeout: 200_000 }).toBe(count);
+  await made;
+  expect(await download).not.toBeNull();
+  await expect(page.locator('.making')).toHaveCount(0);
+});
+
+test('esc stops making the PDF: no file, and the note as it was', async ({ page }) => {
+  test.setTimeout(120_000);
+  await open(page);
+  await longNote(page);
+  const before = await text(page);
+  const { download, made } = await startPdf(page);
+  await expect(page.locator('.making .sheet').first()).toBeVisible();
+  // (keys while it's made don't reach the note)
+  await page.keyboard.type('xyz');
+  await page.keyboard.press('Escape');
+  await made;
+  await expect(page.locator('.making')).toHaveCount(0);
+  expect(await Promise.race([download, new Promise((r) => setTimeout(() => r('none'), 1500))])).toBe('none');
+  expect(await page.evaluate(() => document.documentElement.classList.contains('nx-print'))).toBe(false);
+  expect(await page.evaluate(() => (window as any).__nx.ed.message)).toContain('cancelled');
+  expect(await text(page)).toBe(before);
 });
