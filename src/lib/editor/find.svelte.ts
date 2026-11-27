@@ -50,7 +50,6 @@ export class Finder {
   });
 
   /** Open find (with the selected text, if a word or so is selected), or focus it again. */
-  /** The draw menu (ctrl+d), from text or math: at the caret, or under `under` (a button). Whether it opened. */
   openFind(replace = false) {
     const s = this.ed.selection;
     let q = this.ed.find?.q ?? this.lastFind;

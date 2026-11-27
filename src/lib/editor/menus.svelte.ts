@@ -64,9 +64,9 @@ export class Menus {
 
   private mathActions(): DrawingAction[] {
     const put = (name: string) => () => {
-      this.ed.openPalette('math');
+      this.ed.commands.openPalette('math');
       this.ed.palette!.query = name;
-      this.ed.acceptPalette(undefined);
+      this.ed.commands.acceptPalette(undefined);
     };
     const acts: [string, string][] = this.ed.mathSelRange
       ? [['frac', 'a fraction over it'], ['sqrt', 'a square root of it'], ['hat', 'a hat on it'], ['bar', 'a bar over it'], ['boxed', 'a box round it']]
@@ -77,7 +77,7 @@ export class Menus {
     return [
       ...grid,
       ...acts.map(([name, desc], i): DrawingAction => ({ name, desc, keys: [`\\${name}`], run: put(name), ...(i === 0 ? { sep: true as const } : {}) })),
-      { name: 'mathcommands', desc: 'every math command', keys: ['\\'], run: () => this.ed.openPalette('math') },
+      { name: 'mathcommands', desc: 'every math command', keys: ['\\'], run: () => this.ed.commands.openPalette('math') },
     ];
   }
 
@@ -126,7 +126,7 @@ export class Menus {
     this.ed.withFrame(() => {
       if (this.ed.noteEd.note) this.ed.noteEd.commitNote();
       if (this.ed.mode === 'style' || this.ed.mode === 'pick' || this.ed.mode === 'hint') this.ed.drawings.endDrawing();
-      if (this.ed.mode === 'palette') this.ed.closePalette();
+      if (this.ed.mode === 'palette') this.ed.commands.closePalette();
       const h = this.ed.hitTest(e.clientX, e.clientY);
       if (h && !h.math) h.pos = this.ed.tables.snapClick(h.pos, e.clientX, e.clientY);
       const s = this.ed.selection;
@@ -164,7 +164,7 @@ export class Menus {
       case 'pick': return this.ed.drawings.pickKey(k);
       case 'style': return this.ed.drawings.styleKey(k);
       case 'hint': return this.ed.hintKey(k);
-      case 'palette': return this.ed.paletteKey(k);
+      case 'palette': return this.ed.commands.paletteKey(k);
       case 'sketch': return this.ed.sketch.key(k);
     }
   }

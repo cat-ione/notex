@@ -218,7 +218,7 @@ const listTop = (page: Page) => page.evaluate(() => document.querySelector('.pal
 
 test('the palette lists every command, and the arrows scroll through them', async ({ page }) => {
   await type(page, '\\');
-  const all = await ed(page, (e) => e.textCommands().length);
+  const all = await ed(page, (e) => e.commands.textCommands().length);
   expect(await names(page)).toHaveLength(all);
   expect(await listTop(page)).toBe(0);
   for (let i = 0; i < 20; i++) await page.keyboard.press('ArrowDown');

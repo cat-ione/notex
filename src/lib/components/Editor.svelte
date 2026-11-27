@@ -118,7 +118,7 @@
   let paletteBox = $state<HTMLDivElement>();
   let paletteShift = $state(0);
   $effect(() => {
-    void ed.drawings.paletteAnchor?.x, void ed.paletteItems.length, void ed.palette?.query;
+    void ed.drawings.paletteAnchor?.x, void ed.commands.paletteItems.length, void ed.palette?.query;
     if (!paletteBox || !page) return;
     const w = paletteBox.offsetWidth, x = ed.drawings.paletteAnchor?.x ?? 0;
     paletteShift = Math.max(0, Math.min(x, page.clientWidth - 8 - w)) - x;
@@ -638,9 +638,9 @@
           <!-- (typing filters it; opened by a click, it says what it is until something is typed) -->
           <div class="prompt"><span class="sigil">{SIGIL[ed.palette.ctx]}</span> {#if ed.input === 'mouse' && !ed.palette.query}<span class="what">{ed.palette.ctx === 'draw' ? 'draw' : ed.palette.ctx === 'ref' ? 'refer to' : 'commands'}</span>{:else}{ed.palette.ctx === 'draw' ? '' : ed.palette.ctx === 'ref' ? 'refer to ' : '\\'}{ed.palette.query}<span class="blink">▏</span>{/if}</div>
           <div class="opts" bind:this={paletteList} style:max-height="{room}px">
-          {#each ed.paletteItems as item, i (item.name)}
+          {#each ed.commands.paletteItems as item, i (item.name)}
             {#if item.rule}<div class="rule"></div>{/if}
-            <div class="opt" class:sel={i === ed.palette.sel} onmousemove={(e) => mouseMoved(e) && ed.palette && ed.palette.sel !== i && (ed.palette.sel = i)} onclick={() => ed.pickPalette(i)}>
+            <div class="opt" class:sel={i === ed.palette.sel} onmousemove={(e) => mouseMoved(e) && ed.palette && ed.palette.sel !== i && (ed.palette.sel = i)} onclick={() => ed.commands.pickPalette(i)}>
               <span class="name">{#if item.draw && ed.palette.ctx !== 'draw'}<span class="pen">✎</span>{/if}{#each matched(item.name, ed.palette.query) as [part, hit], k (k)}<span class:hit>{part}</span>{/each}</span><span class="desc" title={item.desc}>{item.desc}</span>
             </div>
           {:else}

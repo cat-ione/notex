@@ -44,8 +44,10 @@ browser tests drive the app through real keys and pointer events and read the st
 | | |
 |---|---|
 | `src/lib/model.ts` | the document: blocks of items (a character or a formula), arrows, marks, ink |
-| `src/lib/editor.svelte.ts` | the Editor class: every key, mode, command, the palette's commands, undo |
+| `src/lib/editor.svelte.ts` | the Editor class: every key, mode, typing in text and math, the mouse, undo |
+| `src/lib/editor/` | the Editor's parts, each a class holding the editor (`ed.tables`, `ed.finder`, `ed.drawings`, `ed.menus`, `ed.noteEd`, `ed.pageLayout`, `ed.files`, `ed.paper`, `ed.commands` for the palette) |
 | `src/lib/components/Editor.svelte` | the page: blocks, caret, selection, menus, the touch keyboard's field |
+| `src/lib/teximport.ts`, `zip.ts` | a LaTeX file read in as a note; zip files (backups of the browser's notes) |
 | `src/lib/markdown.ts` | inline markdown (bold, links…), headings, fences, horizontal lines |
 | `src/lib/math/` | the formula tree: typing in it (`edit.ts`), commands (`defs.ts`), LaTeX out (`latex.ts`) and in (`parse.ts`) |
 | `src/lib/sketch/` | diagrams and ink: shapes, the Sketcher (pointer gestures, tools), graphs, shape recognition, TikZ |
@@ -71,12 +73,16 @@ browser tests drive the app through real keys and pointer events and read the st
 - **Drawings anchor to ids**, never positions, so they follow the text as it's edited.
 - **Modes**: `text`, `math`, `palette`, `style` (a drawing selected), `pick` (choosing an
   arrow's ends), `sketch` (drawing). `touch()` after an action recomputes what depends on it.
-- **The palette** (`\` or Ctrl+K) lists commands for a context (`math`, `text`, `draw`,
+- **The palette** (`\` or Ctrl+K, `ed.commands`) lists commands for a context (`math`, `text`, `draw`,
   `style`, `ref`); a command's `tags` and the `TAGS` map let a group word find it.
 - **Pointers**: `ed.pointer` is the last kind used (mouse, pen, touch). The Sketcher takes
   pen and finger gestures; the pen's side button selects; a tap of it, or a finger held,
   opens the ring menu (`RadialMenu.svelte`).
 - **Free ink is stored unzoomed**; the zoom (`--zoom`) is applied when drawing it.
+- **Parts of the Editor** (`src/lib/editor/`, and the Sketcher) are classes built with the
+  editor (`constructor(private ed: Editor)`) that reach the rest through `this.ed`. The state
+  the page reads mostly stays on the Editor (`ed.find`, `ed.palette`, `ed.file`); a part keeps
+  what only it uses. An area with a few hundred lines of its own goes in a part, not the class.
 
 ## Conventions
 

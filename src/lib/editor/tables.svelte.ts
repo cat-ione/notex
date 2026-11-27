@@ -456,6 +456,4 @@ export class Tables {
     this.ed.o += items.length;
     this.ed.touch();
   }
-
-  /** The welcome note, as it comes (a new copy: one made your own is kept as it is). */
 }

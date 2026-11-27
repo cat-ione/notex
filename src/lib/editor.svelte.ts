@@ -10,6 +10,10 @@
 //   hint    — jump labels; type a label to jump (transient)
 //   palette — command palette (transient)
 //   label   — typing an arrow label (transient)
+//
+// Areas with much code of their own are parts in ./editor/ (tables, find, drawings, the
+// right-click menu, a drawing's note, layout, the file, paper, the palette), each holding
+// the editor as the Sketcher does.
 
 import { flushSync, tick } from 'svelte';
 import { innerHeight, innerWidth } from 'svelte/reactivity/window';
@@ -37,6 +41,7 @@ import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from '
 import { parseLatex } from './math/parse';
 import { slotPath, toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { Sketcher, type Tool } from './sketch/sketcher.svelte';
+import { Palette } from './editor/palette.svelte';
 import { Paper } from './editor/paper.svelte';
 import { NoteFiles } from './editor/files.svelte';
 import { PageLayout } from './editor/layout.svelte';
@@ -79,7 +84,7 @@ export type Loc =
 export type Pos = { b: number; o: number };
 
 /** `tags`: words it's found by too, as a group (draw, table, box…), besides its description's. */
-type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean; keep?: true; tags?: string };
+export type PaletteEntry = { name: string; desc: string; run: () => void; draw?: boolean; keep?: true; tags?: string };
 /** A choice on the ring menu: does `run`, or opens a ring of its own (`sub`). `color`: shown as a dot of it. */
 export type RadialItem = { label: string; icon: string; run?: () => void; sub?: () => RadialItem[]; on?: boolean; off?: boolean; color?: string };
 
@@ -105,8 +110,8 @@ type Snap = { doc: Doc; b: number; o: number };
 export const STORAGE_KEY = 'notex.doc.v1';
 
 /** The math palette with nothing typed: the commonest first, and what wraps a selection with one. */
-const MATH_COMMON = ['frac', 'sqrt', 'sum', 'int', 'lim', 'pmatrix', 'cases', 'infty'];
-const MATH_WRAP = ['frac', 'sqrt', 'hat', 'bar', 'vec', 'boxed', 'cancel', 'abs'];
+export const MATH_COMMON = ['frac', 'sqrt', 'sum', 'int', 'lim', 'pmatrix', 'cases', 'infty'];
+export const MATH_WRAP = ['frac', 'sqrt', 'hat', 'bar', 'vec', 'boxed', 'cancel', 'abs'];
 
 /** What can be done to a table (the palette, and the right-click menu in a table). */
 export const TABLE_ACTIONS = [
@@ -127,7 +132,7 @@ export const MATRIX_ACTIONS = [
   ['col-', 'deletecolumn', 'delete this column'],
 ] as const;
 /** A matrix of a chosen size (pmatrix3x3): found when typed, not listed with nothing typed. */
-const SIZED = /\dx\d$/;
+export const SIZED = /\dx\d$/;
 type NoteFile = { path: string | null; name: string; id?: string };
 /** Most room (px) a line or formula is ever pushed by, so a feedback bug can't run away. */
 export const MAX_ROOM = 400;
@@ -136,6 +141,16 @@ export class Editor {
   doc = $state<Doc>({ blocks: [block()], arrows: [], marks: [] });
   /** Drawing and diagramming (in a diagram block, or on top of the note). */
   sketch: Sketcher = new Sketcher(this);
+  /** Its parts (see ./editor/): each holds the editor, as the Sketcher does. */
+  tables = new Tables(this);
+  finder = new Finder(this);
+  drawings = new Drawings(this);
+  menus = new Menus(this);
+  noteEd = new NoteTyping(this);
+  pageLayout = new PageLayout(this);
+  files = new NoteFiles(this);
+  paper = new Paper(this);
+  commands = new Palette(this);
   mode = $state<Mode>('text');
   /** Block index and item offset of the text caret (0..items.length). */
   b = $state(0);
@@ -198,7 +213,7 @@ export class Editor {
    */
   openRadial(x: number, y: number, pointer?: number) {
     const sk = this.sketch;
-    if (this.palette) this.closePalette();
+    if (this.palette) this.commands.closePalette();
     this.menus.menu = null;
     const el = document.elementFromPoint(x, y);
     this.radialCanvas = (el?.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null;
@@ -601,8 +616,6 @@ export class Editor {
     this.msgTimer = setTimeout(() => (this.message = ''), 3500);
   }
 
-  files = new NoteFiles(this);
-  paper = new Paper(this);
   // ── zoom: the page bigger or smaller (ctrl+wheel, a pinch, ctrl+= / ctrl+- / ctrl+0) ──
 
   /** How much bigger the page is shown, on this device (text, page, images, diagrams, drawings). */
@@ -1390,7 +1403,7 @@ export class Editor {
     const h = this.hitTest(e.clientX, e.clientY);
     if (!h) return;
     if (!h.math) h.pos = this.tables.snapClick(h.pos, e.clientX, e.clientY);
-    if (this.mode === 'palette') this.closePalette();
+    if (this.mode === 'palette') this.commands.closePalette();
     // a reference: ctrl+click follows it; a click puts the caret beside it (it's one thing)
     if (h.math && isRefItem(h.math.item) && !e.shiftKey) {
       if (e.ctrlKey || e.metaKey) {
@@ -2056,7 +2069,6 @@ export class Editor {
     }
   }
 
-  pageLayout = new PageLayout(this);
   // ───────────────────────── keyboard ─────────────────────────
 
   key(e: KeyboardEvent) {
@@ -2321,7 +2333,7 @@ export class Editor {
       case 'C-a': this.selectAll(); return true;
       case 'C-z': this.undo(); return true;
       case 'C-y': case 'C-S-z': this.redo(); return true;
-      case 'C-k': this.openPalette('text'); return true;
+      case 'C-k': this.commands.openPalette('text'); return true;
       case 'C-m': this.deleteSelection(); this.insertMath(false); return true;
       case 'C-b': this.toggleStyle('b'); return true;
       case 'C-i': this.toggleStyle('i'); return true;
@@ -2464,7 +2476,7 @@ export class Editor {
         return true;
       case '\\':
         if (this.literal) break;
-        this.openPalette('text');
+        this.commands.openPalette('text');
         return true;
     }
     if (k.length === 1 && this.pairKey(k)) return true;
@@ -2697,7 +2709,7 @@ export class Editor {
     this.edits++;
   }
 
-  private forget(blk: Block) {
+  forget(blk: Block) {
     this.blockSnaps.delete(blk);
     this.idSets.delete(blk);
     this.blockCounts.delete(blk);
@@ -2781,7 +2793,7 @@ export class Editor {
    * Ctrl+B / Ctrl+I / Ctrl+E: the markdown markers around the selection (taken off again
    * if they're already there), or a pair at the caret to type between.
    */
-  private toggleStyle(s: keyof typeof MARKER) {
+  toggleStyle(s: keyof typeof MARKER) {
     const m = MARKER[s], L = m.length;
     const sel = this.selection;
     this.checkpoint();
@@ -3009,7 +3021,7 @@ export class Editor {
   }
 
   /** Lines `a`..`z` (or the caret's): each a list item with a box to tick, or not any more. */
-  private toggleTasks() {
+  toggleTasks() {
     const sel = this.selection;
     const [a, z] = sel ? [sel.s.b, sel.e.b] : [this.b, this.b];
     const blocks = this.doc.blocks.slice(a, z + 1).filter((x) => x.kind === 'p' || isListKind(x.kind));
@@ -3177,7 +3189,7 @@ export class Editor {
   }
 
   /** Type `s` at the caret, the caret `back` characters before its end ([[|]]). */
-  private typeText(s: string, back = 0) {
+  typeText(s: string, back = 0) {
     if (this.mode !== 'text' || this.literal) return;
     this.checkpoint();
     this.deleteSelection();
@@ -3452,7 +3464,7 @@ export class Editor {
     if (range) {
       const { s, e } = range;
       const wrapper = text ? null : k === '/' ? cmd('frac', [[], []]) : OPENERS[k] ? cmd(OPENERS[k], [[]]) : null;
-      if (k === '\\') return this.openPalette('math'), true; // the chosen command wraps the selection
+      if (k === '\\') return this.commands.openPalette('math'), true; // the chosen command wraps the selection
       this.msel = null;
       if (wrapper) {
         this.checkpoint();
@@ -3528,7 +3540,7 @@ export class Editor {
         this.lastKind = ''; // (an undo step ends with the word)
         return true;
       case ';': this.pending = ';'; return true;
-      case '\\': this.openPalette('math'); return true;
+      case '\\': this.commands.openPalette('math'); return true;
       case '&': if (M.gridNext(root, cur, 'col')) return true; break;
     }
     if (k.length === 1) {
@@ -3629,324 +3641,6 @@ export class Editor {
     }
   }
 
-  // ── palette ──
-
-  get paletteItems(): PaletteItem[] {
-    const p = this.palette;
-    if (!p) return [];
-    const q = p.query;
-    // what's been picked most (and lately) in this palette first, unless that's switched off
-    const remember = this.config.rememberCommands;
-    const use = (n: string) => (remember ? U.score(p.ctx, n) : 0);
-    const order = (names: string[]) => (remember ? U.byUse(p.ctx, names) : names);
-    // (as typed: by name, forgiving a typo, or by a word of what it does)
-    const find = (names: string[], desc?: (n: string) => string) => (q ? rank(names, q, use, desc) : order(names));
-    const draws = this.drawCommands();
-    const rankDraws = () => find(draws.map((c) => c.name), (n) => `${draws.find((c) => c.name === n)!.desc} draw drawing shape`).map((n) => draws.find((c) => c.name === n)!);
-    if (p.ctx === 'draw') return rankDraws();
-    if (p.ctx === 'ref') {
-      const ts = this.refTargets();
-      // (in the note's order, nothing typed: not by use, which says little about what to refer to)
-      return (q ? rank(ts.map((t) => t.name), q, () => 0, (n) => ts.find((t) => t.name === n)!.desc) : ts.map((t) => t.name)).map((n) => ({ name: n, desc: ts.find((t) => t.name === n)!.desc }));
-    }
-    if (p.ctx === 'style') {
-      const acts = this.styling ? this.drawings.drawingActions(this.styling).filter((a) => !a.keyOnly) : [];
-      return find(acts.map((c) => c.name), (n) => acts.find((c) => c.name === n)!.desc).map((n) => {
-        const c = acts.find((c) => c.name === n)!;
-        return { name: c.name, desc: `${c.desc}  ${keyLabel(c.keys[0])}` };
-      });
-    }
-    if (p.ctx === 'math') {
-      const user = this.config.snippets.math;
-      const names = [...new Set([...Object.keys(user), ...Object.keys(MATH_PALETTE)])];
-      // Drawing commands join in once something is typed, after the math ones (a math command of the same name wins).
-      const extra = q ? rankDraws().filter((d) => !names.includes(d.name)) : [];
-      // nothing typed yet: the likeliest first (what wraps a selection, with one)
-      const first = this.mathSelRange ? MATH_WRAP : MATH_COMMON;
-      const listed = q ? names : [...first.filter((n) => names.includes(n)), ...names.filter((n) => !first.includes(n) && !SIZED.test(n))];
-      const math = find(listed).map((n) => ({ name: n, desc: user[n] !== undefined ? user[n] : describeInserter(n) }));
-      // in a matrix: its rows and columns first
-      const grid = this.mathItem && M.gridAt(this.mathItem.root, this.mc) ? MATRIX_ACTIONS : [];
-      const gridItems = find(grid.map(([, n]) => n), (n) => grid.find(([, m]) => m === n)![2]).map((n) => ({ name: n, desc: grid.find(([, m]) => m === n)![2] }));
-      return [...gridItems, ...math.filter((m) => !grid.some(([, n]) => n === m.name)), ...extra];
-    }
-    const cmds = this.textCommands();
-    // what fits where the caret is comes first (as typed, an exact name still wins)
-    const near = this.nearCommands();
-    // (by its description, and the words of its group: draw finds every drawing command)
-    const found = find(cmds.map((c) => c.name), (n) => {
-      const c = cmds.find((c) => c.name === n)!;
-      return `${c.desc} ${c.tags ?? ''} ${TAGS[c.name] ?? ''} ${c.draw ? 'draw drawing shape' : ''}`;
-    });
-    const listed = !near
-      ? found
-      : q
-        ? [...found.filter((n) => n === q), ...found.filter((n) => n !== q && near.names.includes(n)), ...found.filter((n) => n !== q && !near.names.includes(n))]
-        : [...order(near.names), ...found.filter((n) => !near.names.includes(n))];
-    return listed.map((n, i) => {
-      const c = cmds.find((c) => c.name === n)!;
-      const item: PaletteItem = { name: c.name, desc: c.desc, draw: c.draw };
-      // (a line under what fits)
-      if (near && !q && i === near.names.length) item.rule = true;
-      return item;
-    });
-  }
-
-  /**
-   * The commands that fit where the caret is, to offer first: a table's, a selection's
-   * (styles, drawing on it), a list's, a heading's. (In math, the math palette does instead.)
-   */
-  nearCommands(): { names: string[] } | null {
-    if (this.tables.tableRow()) return { names: TABLE_ACTIONS.map((a) => a[1]) };
-    if (this.cmdSel ?? this.selection) return { names: ['bold', 'italic', 'inlinecode', 'strikethrough', 'texthighlight', 'arrow', 'box', 'circle', 'highlight'] };
-    const kind = this.blk.kind;
-    if (kind === 'li' || kind === 'ol') return { names: kind === 'li' ? ['ol', 'p'] : ['li', 'p'] };
-    if (kind === 'h1' || kind === 'h2' || kind === 'h3') return { names: ['h1', 'h2', 'h3', 'p'].filter((k) => k !== kind) };
-    return null;
-  }
-
-  openPalette(ctx: PaletteCtx) {
-    this.palette = { ctx, query: '', sel: 0 };
-    this.paletteAt = null;
-    this.setMode('palette');
-  }
-
-  /** Choose the palette's `i`th item (a click on it). */
-  pickPalette(i: number) {
-    if (this.palette) this.acceptPalette(this.paletteItems[i]);
-  }
-
-  closePalette() {
-    this.palette = null;
-    this.mode = this.prevMode;
-  }
-
-  paletteKey(k: string): boolean {
-    const p = this.palette!;
-    const items = this.paletteItems;
-    switch (k) {
-      case 'Escape': this.closePalette(); return true;
-      case 'Backspace':
-        if (!p.query) this.closePalette();
-        else { p.query = p.query.slice(0, -1); p.sel = 0; }
-        return true;
-      case 'Down': case 'C-n': case 'C-j': p.sel = Math.min(items.length - 1, p.sel + 1); return true;
-      case 'Up': case 'C-p': case 'C-k': p.sel = Math.max(0, p.sel - 1); return true;
-      case 'PageDown': p.sel = Math.min(items.length - 1, p.sel + 10); return true;
-      case 'PageUp': p.sel = Math.max(0, p.sel - 10); return true;
-      case 'Enter': case 'Tab': case ' ':
-        // (what to refer to has spaces in its name: theorem 2)
-        if (k === ' ' && p.ctx === 'ref') break;
-        this.acceptPalette(items[p.sel]);
-        return true;
-    }
-    if (k.length === 1) {
-      if (p.ctx === 'math' && !p.query && !/[a-zA-Z]/.test(k)) {
-        // `\,` `\;` `\{` … → raw single-char control sequences
-        this.closePalette();
-        this.checkpoint();
-        const item = this.mathItem!;
-        M.insertNode(item.root, this.mc, sym('\\' + k));
-        return true;
-      }
-      // (unless the name goes on with it: pmatrix3x3)
-      const goesOn = (n: string) => n.startsWith(p.query + k);
-      if (p.ctx === 'math' && p.query && !/[a-zA-Z]/.test(k) && !Object.keys(MATH_PALETTE).some(goesOn) && !Object.keys(this.config.snippets.math).some(goesOn)) {
-        // as in LaTeX, the name ends at the first non-letter: \int_0^1, \alpha^2, \sin(x)
-        // (only the name as typed: an unknown one is a raw \name, not the closest suggestion)
-        this.acceptPalette(undefined);
-        if (k !== ' ') this.menus.runKey(k);
-        return true;
-      }
-      if (p.ctx === 'text' && !p.query && k === '\\') {
-        this.closePalette();
-        this.checkpoint('type');
-        this.blk.items.splice(this.o, 0, ch('\\'));
-        this.o++;
-        return true;
-      }
-      p.query += k;
-      p.sel = 0;
-      return true;
-    }
-    return true;
-  }
-
-  acceptPalette(picked: PaletteItem | undefined) {
-    const p = this.palette!;
-    const name = picked?.name;
-    // an exact name as typed wins, unless another item was chosen (arrowed to, clicked)
-    const q = picked && picked.name !== this.paletteItems[0]?.name ? picked.name : p.query;
-    this.closePalette();
-    // (remembered, to come first next time)
-    const picks = (n: string) => this.config.rememberCommands && U.used(p.ctx, n);
-    if (p.ctx === 'ref') {
-      const ts = this.refTargets();
-      const t = ts.find((t) => t.name === q) ?? ts.find((t) => t.name === name);
-      if (t) this.insertRef(t.id);
-      else this.flash(ts.length ? `nothing called ${q} to refer to` : 'nothing to refer to yet: number a display formula, or make a theorem');
-      return;
-    }
-    if (p.ctx === 'style') {
-      const acts = this.styling ? this.drawings.drawingActions(this.styling) : [];
-      const c = acts.find((c) => c.name === q) ?? acts.find((c) => c.name === name);
-      if (c) picks(c.name), c.run();
-      else if (q) this.flash(`unknown action: ${q}`);
-      return;
-    }
-    if (p.ctx === 'draw' || picked?.draw) {
-      const draws = this.drawCommands();
-      const c = (p.ctx === 'draw' && draws.find((c) => c.name === q)) || draws.find((c) => c.name === name);
-      if (!c) return void (q && this.flash(`unknown drawing: ${q}`));
-      picks(c.name);
-      this.cmdSel = this.selection;
-      this.anchor = null;
-      c.run();
-      this.cmdSel = null;
-      return;
-    }
-    if (p.ctx === 'math') {
-      const item = this.mathItem!;
-      // a matrix's rows and columns
-      const ga = this.mathItem && M.gridAt(item.root, this.mc) ? (MATRIX_ACTIONS.find(([, n]) => n === q) ?? MATRIX_ACTIONS.find(([, n]) => n === name)) : undefined;
-      if (ga) return picks(ga[1]), this.menus.matrixCommand(ga[0]);
-      this.checkpoint();
-      // Exact names win over the highlighted suggestion; user snippets win over built-ins.
-      const user = this.config.snippets.math;
-      const key = user[q] !== undefined || MATH_PALETTE[q] ? q : name;
-      if (key && (user[key] !== undefined || MATH_PALETTE[key])) picks(key);
-      const range = this.mathSelRange;
-      this.msel = null;
-      if (range) {
-        // With a selection, a structural command wraps it (\sqrt, \hat, \frac…); anything else replaces it.
-        const ins = key && user[key] === undefined ? MATH_PALETTE[key] : undefined;
-        const node = ins && 'node' in ins ? ins.node() : null;
-        if (node?.k === 'cmd' && node.slots.length) {
-          M.wrapRange(item.root, this.mc, range.s, range.e, node, node.name === 'root' ? 1 : ((ins as { enter?: number }).enter ?? 0));
-          return;
-        }
-        M.takeRange(item.root, this.mc, range.s, range.e);
-      }
-      M.settleAuto(item.root, this.mc, '\\');
-      this.learned('sub-names');
-      if (key && user[key] !== undefined) M.insertParsed(item.root, this.mc, parseLatex(user[key]));
-      else if (key && MATH_PALETTE[key]) M.applyInserter(item.root, this.mc, MATH_PALETTE[key]);
-      else if (q) M.insertNode(item.root, this.mc, sym('\\' + q));
-      return;
-    }
-    const c = this.textCommands().find((c) => c.name === (this.textCommands().some((c) => c.name === q) ? q : name));
-    // Drawing commands act on the selection, if any, and styles and kinds on it; everything else drops it.
-    this.cmdSel = this.selection;
-    if (!c?.keep) this.anchor = null;
-    if (c) picks(c.name), c.run();
-    else if (q) this.flash(`unknown command: ${q}`);
-    this.cmdSel = null;
-  }
-
-  /** Commands available from `\` / `:` outside math. Intended to become user-extensible. */
-  /** Drawing commands: in the text menu, the draw menu (Ctrl+D), and the math menu once you type. */
-  drawCommands(): PaletteEntry[] {
-    return [
-      { name: 'arrow', desc: 'draw an arrow', run: () => this.drawings.startArrow(), draw: true },
-      ...MARK_KINDS.map((k) => ({ name: k, desc: MARK_DESC[k], run: () => this.drawings.startMark(k), draw: true })),
-      { name: 'drawings', desc: 'select a drawing', run: () => this.selectDrawingByHint(), draw: true },
-    ];
-  }
-
-  textCommands(): PaletteEntry[] {
-    // (every paragraph the selection touches)
-    // (every paragraph the selection touches; headings by their #s, code by fences around)
-    const setKind = (kind: BlockKind) => () => {
-      this.checkpoint();
-      const sel = this.selection;
-      const first = sel ? sel.s.b : this.b, last = sel ? sel.e.b : this.b;
-      if (kind === 'code') {
-        this.doc.blocks.splice(last + 1, 0, block(chars('```')));
-        this.doc.blocks.splice(first, 0, block(chars('```')));
-        this.b++;
-        if (this.anchor) this.anchor = { ...this.anchor, b: this.anchor.b + 1 };
-        this.derive(first, last + 2);
-        return;
-      }
-      for (let b = first; b <= last; b++) {
-        const blk = this.doc.blocks[b];
-        if (isFigure(blk.kind) || blk.kind === 'code' || blk.kind === 'fence') continue;
-        const had = headingOf(plainText(blk.items))?.prefix ?? 0;
-        const want = /^h[1-3]$/.test(kind) ? '#'.repeat(+kind[1]) + ' ' : '';
-        blk.items.splice(0, had, ...chars(want));
-        if (b === this.b) this.o = Math.max(0, this.o - had + want.length);
-        if (this.anchor?.b === b) this.anchor = { b, o: Math.max(0, this.anchor.o - had + want.length) };
-        blk.kind = kind === 'li' || kind === 'ol' ? kind : 'p';
-        if (blk.kind !== 'li') delete blk.check;
-        this.forget(blk);
-      }
-      this.derive(first, last);
-    };
-    return [
-      ...this.drawCommands(),
-      { name: 'math', desc: 'inline math', run: () => this.insertMath(false) },
-      { name: 'display', desc: 'display math block', run: () => this.insertMath(true) },
-      { name: 'h1', desc: 'heading 1', run: setKind('h1'), keep: true },
-      { name: 'h2', desc: 'heading 2', run: setKind('h2'), keep: true },
-      { name: 'h3', desc: 'heading 3', run: setKind('h3'), keep: true },
-      { name: 'p', desc: 'paragraph', run: setKind('p'), keep: true },
-      { name: 'li', desc: 'list item', run: setKind('li'), keep: true },
-      { name: 'ol', desc: 'numbered list item', run: setKind('ol'), keep: true },
-      { name: 'bold', desc: 'bold  ctrl+b', run: () => this.toggleStyle('b'), keep: true },
-      { name: 'italic', desc: 'italic  ctrl+i', run: () => this.toggleStyle('i'), keep: true },
-      { name: 'code', desc: 'code block  ```', run: setKind('code'), keep: true },
-      { name: 'table', desc: 'insert a table (tab: next cell, enter: new row)', run: () => this.tables.insertTable() },
-      // (characters that typed would make something else)
-      { name: 'dollar', desc: 'type a $ (not a formula)', run: () => this.typeText('$') },
-      { name: 'backslash', desc: 'type a \\ (not the palette)', run: () => this.typeText('\\') },
-      { name: 'diagram', desc: 'insert a diagram: boxes, arrows, pen  ctrl+shift+d in one', run: () => this.sketch.insertDiagram() },
-      { name: 'graph', desc: 'insert a graph of functions: y = sin x, a line each (g in a diagram)', run: () => this.sketch.insertGraph() },
-      { name: 'sketch', desc: `${this.sketch.on?.kind === 'free' ? 'stop drawing' : 'draw'} on the note (a pen draws on it anyway)  ctrl+shift+d`, run: () => this.sketch.toggleFree() },
-      ...(this.tables.tableRow() ? TABLE_ACTIONS.map(([what, name, desc]) => ({ name, desc, run: () => this.tables.tableCommand(what), tags: 'table' })) : []),
-      { name: 'image', desc: 'insert an image (or paste / drop one)', run: () => void this.chooseImages() },
-      { name: 'inlinecode', desc: 'inline code  ctrl+e', run: () => this.toggleStyle('c'), keep: true },
-      { name: 'strikethrough', desc: 'strike text out ~~…~~  ctrl+shift+x', run: () => this.toggleStyle('s'), keep: true },
-      { name: 'texthighlight', desc: 'highlight text ==…==  ctrl+shift+h', run: () => this.toggleStyle('h'), keep: true },
-      { name: 'todo', desc: 'a box to tick: [ ] at a line’s start  ctrl+enter ticks it', run: () => this.toggleTasks(), keep: true },
-      ...BOX_KINDS.map((k): PaletteEntry => ({ name: k, desc: BOX_DESC[k], run: () => this.setBox(k), keep: true, tags: 'box environment structure' })),
-      { name: 'number', desc: 'number the display formula here: (1), (2)…', run: () => this.toggleEqNumber() },
-      { name: 'ref', desc: 'refer to a numbered formula or theorem: (3), Theorem 2', run: () => this.openPalette('ref') },
-      { name: 'link', desc: 'link to a note: [[its name]]; a web address links by itself', run: () => this.typeText('[[]]', 2) },
-      { name: 'fold', desc: 'fold or unfold the section under this heading  ctrl+.', run: () => this.toggleFold() },
-      { name: 'foldall', desc: 'fold every section', run: () => this.foldAll(true) },
-      { name: 'unfoldall', desc: 'unfold every section', run: () => this.foldAll(false) },
-      { name: 'outline', desc: `${this.showOutline ? 'hide' : 'show'} the outline: headings and theorems  ctrl+shift+o`, run: () => this.toggleOutline() },
-      { name: 'replace', desc: 'find and replace  ctrl+h', run: () => this.finder.openFind(true) },
-      { name: 'zoom', desc: `back to 100% (now ${Math.round(this.zoom * 100)}%)  ctrl+0`, run: () => this.setZoom(1) },
-      { name: 'theme', desc: `next theme (${this.config.theme})`, run: () => this.cycleTheme() },
-      { name: 'settings', desc: 'settings  ctrl+,', run: () => (this.showSettings = true) },
-      { name: 'toolbar', desc: `${this.config.ui.toolbar ? 'hide' : 'show'} the toolbar`, run: () => this.toggleBar('toolbar') },
-      { name: 'statusbar', desc: `${this.config.ui.statusBar ? 'hide' : 'show'} the status bar`, run: () => this.toggleBar('statusBar') },
-      { name: 'substitutions', desc: 'edit substitutions', run: () => ((this.settingsView = 'subs'), (this.showSettings = true)) },
-      { name: 'config', desc: 'edit the config file', run: () => this.editConfig() },
-      { name: 'export', desc: 'copy document as LaTeX', run: () => this.copyText(docToLatex($state.snapshot(this.doc) as Doc), 'LaTeX') },
-      { name: 'markdown', desc: 'save a copy as markdown (.md), for Obsidian and the like', run: () => void this.saveMarkdownCopy() },
-      { name: 'copymarkdown', desc: 'copy document as markdown', run: () => this.copyText(docToMarkdown($state.snapshot(this.doc) as Doc).text, 'markdown') },
-      { name: 'pdf', desc: 'save as a PDF file  ctrl+p', run: () => this.paper.exportPdf() },
-      { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
-      { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },
-      { name: 'new', desc: 'new note  ctrl+n', run: () => this.files.newNote() },
-      { name: 'open', desc: 'open a note  ctrl+o', run: () => this.files.openNote() },
-      ...(F.isDesktop()
-        ? []
-        : [
-            { name: 'notes', desc: 'your notes  ctrl+o', run: () => this.files.openNote() },
-            { name: 'backup', desc: 'save every note kept in this browser to a zip file', run: () => void this.files.backupNotes() },
-            { name: 'restore', desc: 'bring back notes from a backup (or .ntx and .md files)', run: () => void this.files.restoreNotes() },
-          ]),
-      { name: 'save', desc: 'save  ctrl+s', run: () => this.files.saveNote() },
-      { name: 'saveas', desc: 'save as…  ctrl+shift+s', run: () => this.files.saveNoteAs() },
-      { name: 'welcome', desc: 'open the welcome note', run: () => this.openWelcome() },
-      { name: 'forget', desc: 'forget which commands you use most', run: () => (U.forget(), this.flash('the palette is back to its first order')) },
-      { name: 'help', desc: 'keyboard shortcuts  F1', run: () => (this.showHelp = !this.showHelp) },
-    ];
-  }
-
   // ── config ──
 
   /** (Re)load the config from disk and apply it. */
@@ -4000,7 +3694,7 @@ export class Editor {
     this.flash(`theme: ${theme}`);
   }
 
-  private async copyText(s: string, what: string) {
+  async copyText(s: string, what: string) {
     try {
       await navigator.clipboard.writeText(s);
       this.flash(`copied ${what} to clipboard`);
@@ -4009,7 +3703,7 @@ export class Editor {
     }
   }
 
-  private async importJSON() {
+  async importJSON() {
     try {
       const d = JSON.parse(await navigator.clipboard.readText());
       if (!Array.isArray(d.blocks)) throw 0;
@@ -4024,12 +3718,10 @@ export class Editor {
     }
   }
 
-  drawings = new Drawings(this);
-
-  finder = new Finder(this);
+  /** The draw menu (ctrl+d), from text or math: at the caret, or under `under` (a button). Whether it opened. */
   openDrawMenu(under?: DOMRect): boolean {
     if ((this.mode !== 'text' && this.mode !== 'math') || this.noteEd.note) return false;
-    this.openPalette('draw');
+    this.commands.openPalette('draw');
     if (under && this.page) {
       const pr = this.page.getBoundingClientRect();
       this.paletteAt = { x: under.left - pr.left, y: under.bottom - pr.top - 4, w: under.width, h: 0 };
@@ -4037,7 +3729,7 @@ export class Editor {
     return true;
   }
 
-  tables = new Tables(this);
+  /** The welcome note, as it comes (a new copy: one made your own is kept as it is). */
   async openWelcome() {
     if (!(await this.files.okToReplace())) return;
     this.load(welcomeDoc(), { path: null, name: 'welcome', ...(F.isDesktop() ? {} : { id: uid() }) });
@@ -4054,7 +3746,7 @@ export class Editor {
 
   /** Close every menu and panel (a toolbar button was clicked: it acts instead). */
   closeMenus() {
-    if (this.mode === 'palette') this.closePalette();
+    if (this.mode === 'palette') this.commands.closePalette();
     this.menus.menu = null;
     this.showSettings = false;
     this.settingsEditing = false;
@@ -4067,8 +3759,6 @@ export class Editor {
     this.updateConfig({ ui: { ...this.config.ui, [bar]: !this.config.ui[bar] } });
   }
 
-  menus = new Menus(this);
-  noteEd = new NoteTyping(this);
   // ───────────────────────── hints ─────────────────────────
 
   private showHints(targets: { rect: Rect; act: () => void }[]) {
@@ -4212,7 +3902,7 @@ function keyName(e: KeyboardEvent): string | null {
   return mods + (base.length === 1 ? base.toLowerCase() : base);
 }
 
-function describeInserter(name: string): string {
+export function describeInserter(name: string): string {
   const ins = MATH_PALETTE[name];
   const nodes = 'node' in ins ? [ins.node()] : ins.nodes();
   const n = nodes[0];
@@ -4247,7 +3937,7 @@ export function hintLabels(n: number): string[] {
 }
 
 /** The groups commands are found by, besides their names and descriptions (style finds bold…). */
-const TAGS: Record<string, string> = Object.fromEntries([
+export const TAGS: Record<string, string> = Object.fromEntries([
   ...['bold', 'italic', 'inlinecode', 'strikethrough', 'texthighlight'].map((n) => [n, 'style format text']),
   ...['h1', 'h2', 'h3', 'p', 'li', 'ol', 'code', 'todo'].map((n) => [n, 'kind block line format']),
   ...['fold', 'foldall', 'unfoldall', 'outline'].map((n) => [n, 'fold section outline']),
@@ -4256,7 +3946,7 @@ const TAGS: Record<string, string> = Object.fromEntries([
   ...['diagram', 'graph', 'sketch', 'image', 'table'].map((n) => [n, 'insert']),
 ]);
 
-const BOX_DESC: Record<BoxKind, string> = {
+export const BOX_DESC: Record<BoxKind, string> = {
   theorem: 'a theorem: a numbered box (again: out of it)',
   lemma: 'a lemma: a numbered box',
   proposition: 'a proposition: a numbered box',
@@ -4268,7 +3958,7 @@ const BOX_DESC: Record<BoxKind, string> = {
   quote: 'a quote: > at a line’s start',
 };
 
-const MARK_DESC: Record<MarkKind, string> = {
+export const MARK_DESC: Record<MarkKind, string> = {
   box: 'draw a box around something',
   circle: 'circle something',
   underline: 'underline something',

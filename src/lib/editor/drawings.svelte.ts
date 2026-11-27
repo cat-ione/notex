@@ -647,7 +647,7 @@ export class Drawings {
       case 'Escape': case 'Enter': this.endDrawing(); return true;
       case 'C-z': this.ed.styling = null; this.ed.undo(); return true;
       case 'C-y': case 'C-S-z': this.ed.styling = null; this.ed.redo(); return true;
-      case '\\': case ':': this.ed.openPalette('style'); return true;
+      case '\\': case ':': this.ed.commands.openPalette('style'); return true;
     }
     acts.find((x) => x.keys.includes(k))?.run(k);
     return true;
