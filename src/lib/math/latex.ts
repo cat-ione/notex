@@ -94,19 +94,20 @@ function row(r: MRow, path: Step[], o: Opts, text: boolean): string {
     if (i === off) out += isScript(n) && i > 0 ? '' : CARET;
     out += o.wraps?.before.get(n.id) ?? '';
 
-    if (n.k === 'sym' && BIG_OPS.has(n.v) && o.anchors && !text) {
+    if (n.k === 'sym' && BIG_OPS.has(n.v) && (o.anchors || n.big) && !text) {
       // Keep big operators and their limits in one group so limits stay attached.
       // A caret among the limits goes after them (anything between the operator and
       // its limits would take the limits from it); the overlay puts it in place.
       let j = i + 1;
-      let inner = symLatex(n.v);
+      // (at display size: in its own group with its limits, as {\displaystyle \int_0^1})
+      let inner = (n.big ? '\\displaystyle ' : '') + symLatex(n.v);
       let caret = false;
       while (j < r.length && isScript(r[j])) {
         if (j === off) caret = true;
         inner += cmdLatex(r[j] as MCmd, path, j, o, false);
         j++;
       }
-      out += `\\htmlData{nx=${n.id}}{${inner}}` + (caret ? CARET_PRE_SCRIPT : '');
+      out += (o.anchors ? `\\htmlData{nx=${n.id}}{${inner}}` : `{${inner}}`) + (caret ? CARET_PRE_SCRIPT : '');
       i = j;
       continue;
     }

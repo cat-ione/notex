@@ -457,3 +457,28 @@ describe('matrices', () => {
     expect(M.gridEdit(one.root, one.cur, 'col-')).toBe(false);
   });
 });
+
+describe('display-size operators (\\dint, \\dsum, \\dlim…)', () => {
+  it.each([
+    ['dint', String.raw`{\displaystyle \int _{0}^{1}}`],
+    ['dsum', String.raw`{\displaystyle \sum _{0}^{1}}`],
+    ['dlim', String.raw`{\displaystyle \lim _{0}}1`],
+  ])('\\%s: the operator at display size with its limits, as LaTeX writes it', (name, want) => {
+    const root: MRow = [];
+    const cur: MCursor = { path: [], off: 0 };
+    M.applyInserter(root, cur, MATH_PALETTE[name]);
+    M.typeChar(root, cur, '0');
+    M.space(root, cur);
+    M.typeChar(root, cur, '1');
+    expect(toLatex(root).replace(/\s+/g, ' ').trim()).toBe(want);
+  });
+
+  it('on the page: in its own group with its limits, at display size', () => {
+    const root: MRow = [];
+    const cur: MCursor = { path: [], off: 0 };
+    M.applyInserter(root, cur, MATH_PALETTE.dsum);
+    const shown = toLatex(root, true);
+    expect(shown).toContain(String.raw`\displaystyle \sum`);
+    expect(() => katex.renderToString(shown, { trust: true, strict: 'ignore', throwOnError: true })).not.toThrow();
+  });
+});

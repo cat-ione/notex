@@ -10,7 +10,8 @@ import type { Placed, Shape } from './sketch/shapes';
 export type Id = string;
 
 /** A symbol; `ref`: a reference to a numbered equation or box (its `v` the label shown, kept up to date). */
-export type MSym = { k: 'sym'; id: Id; v: string; src?: string; ref?: Id };
+/** `big`: a big operator (\int, \sum, \lim…) at display size wherever it is, limits under and over it. */
+export type MSym = { k: 'sym'; id: Id; v: string; src?: string; ref?: Id; big?: true };
 export type MCmd = { k: 'cmd'; id: Id; name: string; slots: MRow[]; cols?: number };
 export type MNode = MSym | MCmd;
 export type MRow = MNode[];

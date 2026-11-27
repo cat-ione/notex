@@ -55,3 +55,12 @@ describe('parseLatex', () => {
     expect(looksLikeLatex('just words')).toBe(false);
   });
 });
+
+describe('big operators at display size', () => {
+  it('\\displaystyle before one makes it display size, its limits kept with it, and back', () => {
+    expect(tex(String.raw`\displaystyle\int_0^1 f\,dx`)).toBe(String.raw`{\displaystyle \int _{0}^{1}}f\,dx`);
+    expect(tex(String.raw`{\displaystyle \sum_{n=1}^{\infty}} a_n`)).toBe(String.raw`{\displaystyle \sum _{n=1}^{\infty }}a_{n}`);
+    // (before anything else, still ignored)
+    expect(tex(String.raw`\displaystyle x+1`)).toBe('x+1');
+  });
+});

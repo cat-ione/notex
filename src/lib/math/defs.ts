@@ -105,8 +105,8 @@ const grid = (name: string, rows: number, cols: number): Inserter => ({
   node: () => cmd(name, Array.from({ length: rows * cols }, () => []), cols),
   enter: 0,
 });
-const withScript = (v: string, script: 'sub' | 'subsup'): Inserter => ({
-  nodes: () => [sym(v), cmd(script, script === 'sub' ? [[]] : [[], []])],
+const withScript = (v: string, script: 'sub' | 'subsup', big = false): Inserter => ({
+  nodes: () => [{ ...sym(v), ...(big ? { big: true as const } : {}) }, cmd(script, script === 'sub' ? [[]] : [[], []])],
   enterLast: 0,
 });
 
@@ -168,6 +168,14 @@ export const MATH_PALETTE: Record<string, Inserter> = {
   limop: s('\\lim'),
   bigcup: withScript('\\bigcup', 'subsup'),
   bigcap: withScript('\\bigcap', 'subsup'),
+  // at display size anywhere (in a sentence too), limits under and over: as \dfrac is to \frac
+  dsum: withScript('\\sum', 'subsup', true),
+  dprod: withScript('\\prod', 'subsup', true),
+  dint: withScript('\\int', 'subsup', true),
+  doint: withScript('\\oint', 'subsup', true),
+  dlim: withScript('\\lim', 'sub', true),
+  dbigcup: withScript('\\bigcup', 'subsup', true),
+  dbigcap: withScript('\\bigcap', 'subsup', true),
   R: { node: () => cmd('mathbb', [[sym('R')]]) },
   N: { node: () => cmd('mathbb', [[sym('N')]]) },
   Z: { node: () => cmd('mathbb', [[sym('Z')]]) },

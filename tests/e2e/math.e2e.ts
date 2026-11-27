@@ -91,3 +91,25 @@ test('LaTeX export has the formulas', async ({ page }) => {
   const tex = await page.evaluate(() => (window as any).__nx.tex());
   expect(tex).toContain('$E=mc^{2}$');
 });
+
+test('\\dsum, \\dint, \\dlim: big operators at display size in a sentence, limits under and over', async ({ page }) => {
+  const B = String.fromCharCode(92);
+  await type(page, 'big $');
+  await type(page, B + 'dsum');
+  await page.keyboard.press('Enter');
+  await type(page, 'n=1 N a_n');
+  await type(page, '$ in a sentence');
+  expect(await formulas(page)).toEqual([String.raw`{\displaystyle \sum _{n=1}^{N}}a_{n}`]);
+  // the lower limit under the sign, not beside it
+  const at = await page.evaluate(() => {
+    const els = [...document.querySelectorAll('.math [data-nx]')].filter((e) => !e.querySelector('[data-nx]'));
+    const r = (t: string) => els.find((e) => e.textContent!.replace(/[\u200b\u2060]/g, '') === t)!.getBoundingClientRect();
+    const sum = document.querySelector('.math .mop')!.getBoundingClientRect();
+    return { sum: [sum.left, sum.right, sum.bottom], n: [r('n').left, r('n').top] };
+  });
+  expect(at.n[1]).toBeGreaterThan(at.sum[2] - 4);
+  expect(at.n[0]).toBeLessThan(at.sum[1]);
+  // kept, and written as LaTeX does
+  const tex: string = await page.evaluate(() => (window as any).__nx.tex());
+  expect(tex).toContain(String.raw`{\displaystyle \sum _{n=1}^{N}}`);
+});

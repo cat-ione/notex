@@ -33,7 +33,7 @@
       ['\\name', 'LaTeX command: \\sqrt, \\in, \\sin, \\int_0^1'],
       ['\\int  \\sum  \\lim', 'with empty limits: space goes from the lower to the upper one, then on (\\intop, \\sumop…: bare)'], ['-> => <= != +-', '→ ⇒ ≤ ≠ ±'],
       ['space / tab', 'exit box / next box'],
-      ['ctrl+← →', 'move by word (shift: select)'], ['& enter', 'matrix: new column / row'], ['\\pmatrix3x3 …', 'a matrix of that size (2 to 4 rows and columns; bmatrix, vmatrix, matrix too)'], ['\\addrow \\deleterow \\addcolumn \\deletecolumn', 'in a matrix (or right-click it); backspace in an empty row or column takes it away'], ['shift+← → / ctrl+a', 'select'], ['/  (  \\cmd', 'wrap the selection'], ['$  →  esc', 'exit math'],
+      ['ctrl+← →', 'move by word (shift: select)'], ['& enter', 'matrix: new column / row'], ['\\dsum \\dint \\dlim …', 'a big operator at display size in a sentence, limits under and over (as \\dfrac)'], ['\\pmatrix3x3 …', 'a matrix of that size (2 to 4 rows and columns; bmatrix, vmatrix, matrix too)'], ['\\addrow \\deleterow \\addcolumn \\deletecolumn', 'in a matrix (or right-click it); backspace in an empty row or column takes it away'], ['shift+← → / ctrl+a', 'select'], ['/  (  \\cmd', 'wrap the selection'], ['$  →  esc', 'exit math'],
     ]],
     ['drawing  (\\arrow  \\circle  \\box …)', [
       ['ctrl+d', 'draw menu'],

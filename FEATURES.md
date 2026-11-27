@@ -28,7 +28,8 @@ point at, and a pen and touch screen that work as well as a keyboard.
   `(a+b)/2` takes the brackets as the numerator.
 - `\name` gives any LaTeX command, with a searchable palette; `;a` → α.
 - `\int`, `\sum`, `\prod`, `\lim` come with empty limits to fill (space moves on);
-  `\intop`, `\sumop`… give the bare symbol.
+  `\intop`, `\sumop`… give the bare symbol. In a display formula they're big, limits under
+  and over; `\dint`, `\dsum`, `\dlim`… make them so in a sentence too (as `\dfrac`).
 - Greek names, functions, `<=`, `!=`, `oo` and more become symbols (each group can be switched
   on or off).
 - Matrices, cases and aligned equations: `&` for a new column, Enter for a new row; a click

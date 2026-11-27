@@ -6,7 +6,7 @@
 // where the caret should land.
 
 import { cmd, sym, type MRow } from '../model';
-import { CMDS } from './defs';
+import { BIG_OPS, CMDS } from './defs';
 import type { MCursor, Step } from './latex';
 
 /** LaTeX command → [editor cmd name, number of braced args]. */
@@ -114,6 +114,12 @@ export function parseLatex(src: string): Parsed {
       if (t === ' ') continue;
       if (stops.includes(t)) return r;
       if (t === '#') { cursor = { path, off: r.length }; continue; }
+      // \displaystyle before a big operator: the operator at display size (else ignored)
+      if (t === '\\displaystyle') {
+        while (toks[p] === ' ') p++;
+        if (BIG_OPS.has(toks[p])) r.push({ ...sym(toks[p++]), big: true });
+        continue;
+      }
       if (IGNORED.has(t)) continue;
       if (t === '{') { r.push(...row(path, ['}'])); continue; }
 
