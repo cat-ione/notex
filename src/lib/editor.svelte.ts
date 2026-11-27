@@ -283,6 +283,21 @@ export class Editor {
    * padding (px) of a display formula.
    */
   spacers = $state<Record<Id, Spacer>>({});
+  /**
+   * The same room as a plain object, for reading it all: the page looks up every
+   * character in `spacers`, and the reactive object then keeps a key for each of them,
+   * which listing its keys walks every time. Changed only through setRoom.
+   */
+  private room: Record<Id, Spacer> = {};
+  private setRoom(next: Record<Id, Spacer>) {
+    for (const k of Object.keys(this.room)) if (!(k in next)) delete this.spacers[k];
+    for (const [k, v] of Object.entries(next)) {
+      const cur = this.room[k];
+      // (a copy: the page's object keeps its values apart from the one it was given)
+      if (!cur || cur.above !== v.above || cur.below !== v.below) this.spacers[k] = { ...v };
+    }
+    this.room = next;
+  }
   private spacerPasses = 0;
   private spacerVersion = -1;
   /** Text selection captured when a command was run from the palette. */
@@ -813,8 +828,8 @@ export class Editor {
     this.printing = true;
     // the room made for notes, settled afresh for paper (from none: settling from the screen's
     // room, a pixel either way counting as settled, would come out a little differently each time)
-    const screenRoom = $state.snapshot(this.spacers);
-    for (const k of Object.keys(this.spacers)) delete this.spacers[k];
+    const screenRoom = this.room;
+    this.setRoom({});
     const settle = () => {
       // notes placed properly at once (not provisionally, as while typing), and room made
       // for them, which changes heights and moves drawings further down: till that stops
@@ -823,12 +838,12 @@ export class Editor {
       this.quickLabels = false;
       try {
         for (let i = 0; i < 12; i++) {
-          const room = JSON.stringify(this.spacers);
+          const room = JSON.stringify(this.room);
           this.spacerPasses = 0;
           flushSync();
           this.relayoutAll();
           flushSync();
-          if (i >= 2 && JSON.stringify(this.spacers) === room) break;
+          if (i >= 2 && JSON.stringify(this.room) === room) break;
         }
       } finally {
         this.quickLabels = true;
@@ -862,8 +877,7 @@ export class Editor {
     }
     this.endPrinting = () => {
       spacers.forEach((x) => x.remove());
-      for (const k of Object.keys(this.spacers)) delete this.spacers[k];
-      Object.assign(this.spacers, screenRoom);
+      this.setRoom(screenRoom);
       root.classList.remove('nx-print');
       this.cullScreens = cull;
       C.applyConfig(this.config);
@@ -3002,18 +3016,18 @@ export class Editor {
 
     const next: Record<Id, Spacer> = {};
     // lines that weren't looked at keep their room
-    for (const [k, v] of Object.entries(this.spacers)) {
+    for (const [k, v] of Object.entries(this.room)) {
       const bi = this.blockOf(k);
-      if (bi >= 0 && !view.has(bi)) next[k] = v;
+      if (bi >= 0 && !view.has(bi)) next[k] = { ...v };
     }
     for (const key of unmeasured) {
       const [id, side] = key.split(':') as [Id, 'above' | 'below'];
-      (next[id] ??= {})[side] = this.spacers[id]?.[side] ?? 0;
+      (next[id] ??= {})[side] = this.room[id]?.[side] ?? 0;
     }
     for (const [id, n] of Object.entries(need)) {
       const el = this.el(id);
       if (!el) continue;
-      const cur = this.spacers[id] ?? {};
+      const cur = this.room[id] ?? {};
       const out: Spacer = next[id] ?? {};
       for (const side of ['below', 'above'] as const) {
         const v = n[side];
@@ -3046,16 +3060,12 @@ export class Editor {
     if (this.spacerVersion !== this.version) (this.spacerVersion = this.version), (this.spacerPasses = 0);
     // A note below one line and a note above the next both move the same gap: correcting
     // both at once overshoots. Settle the "below" spacers first, then the "above" ones.
-    const moved = (k: Id) => Math.abs((next[k].below ?? 0) - (this.spacers[k]?.below ?? 0)) > 1;
+    const moved = (k: Id) => Math.abs((next[k].below ?? 0) - (this.room[k]?.below ?? 0)) > 1;
     if (Object.keys(next).some(moved))
-      for (const [k, v] of Object.entries(next)) if (v.above !== undefined && this.spacers[k]?.above !== undefined) v.above = this.spacers[k].above;
-    if (same(next, this.spacers)) return;
+      for (const [k, v] of Object.entries(next)) if (v.above !== undefined && this.room[k]?.above !== undefined) v.above = this.room[k].above;
+    if (same(next, this.room)) return;
     if (++this.spacerPasses > 8) return; // never loop forever on odd layouts
-    for (const k of Object.keys(this.spacers)) if (!(k in next)) delete this.spacers[k];
-    for (const [k, v] of Object.entries(next)) {
-      const cur = this.spacers[k];
-      if (!cur || cur.above !== v.above || cur.below !== v.below) this.spacers[k] = v;
-    }
+    this.setRoom(next);
     tick().then(() => this.layout());
   }
 
