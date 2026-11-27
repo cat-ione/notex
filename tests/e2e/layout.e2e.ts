@@ -166,3 +166,43 @@ test("notes moved by typing are placed properly once typing pauses, and then the
   await page.waitForTimeout(1000);
   expect(await page.evaluate(() => (window as any).layouts)).toBe(n);
 });
+
+test('enter in a line with notes under it makes room for them at once, not some and none by turns till it gives up', async ({ page }) => {
+  await open(page);
+  // a line with a note under it that would run into the heading under the line
+  await page.evaluate(() =>
+    (window as any).__nx.load([
+      { title: 'first', parts: ['some words to put a note under, here'], marks: [{ kind: 'brace', at: { words: [1, 3] }, label: 'a note under these words' }] },
+      { title: 'a heading right under it, wide enough to be in the way', parts: ['more'], marks: [] },
+    ]),
+  );
+  await settle(page);
+  // the caret just after the first character of the line with room made under it
+  const found = await ed(page, (e) => {
+    const id = Object.keys(e.spacers).find((k) => e.spacers[k].below > 0);
+    if (!id) return false;
+    e.b = e.doc.blocks.findIndex((b: any) => b.items.some((it: any) => it.id === id));
+    e.o = 1;
+    e.anchor = null;
+    e.touch();
+    return true;
+  });
+  expect(found).toBe(true);
+  await page.waitForTimeout(500);
+  // each change of the spacers on the page (and spacers added or taken away)
+  await page.evaluate(() => {
+    const w = window as any;
+    w.roomChanges = 0;
+    new MutationObserver((ms) => {
+      if (ms.some((m) => (m.target as Element).matches?.('.nx-sp') || [...m.addedNodes, ...m.removedNodes].some((n) => (n as Element).matches?.('.nx-sp:not(.nx-probe)')))) w.roomChanges++;
+    }).observe(document.querySelector('.page')!, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
+  });
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1000);
+  const n = await page.evaluate(() => (window as any).roomChanges);
+  expect(n).toBeLessThan(3);
+  // and it's the room the line needs: laid out afresh, nothing changes
+  await ed(page, (e) => e.relayoutAll());
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => (window as any).roomChanges)).toBe(n);
+});

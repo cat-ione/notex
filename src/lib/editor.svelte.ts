@@ -300,6 +300,8 @@ export class Editor {
   }
   private spacerPasses = 0;
   private spacerVersion = -1;
+  /** A layout waiting for blocks to be drawn (see makeRoom). */
+  private drawQueued = false;
   /** Text selection captured when a command was run from the palette. */
   private cmdSel: { s: Pos; e: Pos } | null = null;
   /** Where to go back to after a drawing started from inside a formula. */
@@ -2982,10 +2984,25 @@ export class Editor {
       const r = e?.getBoundingClientRect();
       return r ? r.top + r.height / 2 : null;
     };
+    // A block put on the page just now (by enter, a paste) is drawn from the next frame on
+    // (content-visibility): till then it stands in at a guessed height, and what's under it
+    // doesn't move for the room made in it, so the room asked for would swing between some
+    // and none, pass after pass. Its lines keep their room till it's drawn, then are measured.
+    const shown = page.parentElement!.getBoundingClientRect();
+    let undrawn = false;
+    const drawn = (el: Element) => {
+      if (!el.checkVisibility || el.checkVisibility({ contentVisibilityAuto: true })) return true;
+      // (off the screen it isn't drawn either, but that lasts: measured as it is)
+      const r = el.getBoundingClientRect();
+      if (r.bottom < shown.top || r.top > shown.bottom) return true;
+      undrawn = true;
+      return false;
+    };
     // The anchor's line: its edges from the probes (prose) or the formula's box (display).
     // Only ink beyond these edges is in the way; ink on the same line moves with it.
     const edges = (id: Id): { top: number; bottom: number } | null => {
       const el = this.el(id);
+      if (el && !drawn(el)) return null;
       if (el?.classList.contains('display')) {
         const r = el.getBoundingClientRect();
         return { top: r.top, bottom: r.bottom };
@@ -3008,6 +3025,7 @@ export class Editor {
       const r = it.r;
       const e = edges(it.anchor);
       // no probes yet: create the spacer (at rest) so the line can be measured next pass
+      // (or, not drawn yet, once it is)
       if (!e) { unmeasured.add(`${it.anchor}:${it.side}`); continue; }
       const ink = inkNear(it.anchor);
       if (it.side === 'below') {
@@ -3021,6 +3039,16 @@ export class Editor {
         ];
         add(it.anchor, 'above', over.length ? Math.max(...over.map((q) => q.y + q.h)) + GAP - r.y : -Infinity);
       }
+    }
+
+    // (blocks are drawn as a frame is: laid out again after the next one)
+    if (undrawn && !this.drawQueued) {
+      this.drawQueued = true;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        this.drawQueued = false;
+        this.spacerPasses = 0;
+        this.layout();
+      }));
     }
 
     const next: Record<Id, Spacer> = {};
