@@ -1,131 +1,79 @@
 # notex
 
-Math notes at lecture speed. Type prose and math in one flow, without reaching for the mouse,
-and draw arrows and boxes *between parts of equations*.
+A note-taking app for math. You type text and formulas together, fast enough to keep up
+with a lecture, and you can draw arrows, boxes and notes directly on parts of an equation.
 
 ![notex](docs/screenshot.png)
 
-**Try it in the browser:** https://cat-ione.github.io/notex/
+**Try it in your browser:** https://cat-ione.github.io/notex/
 
-## What it does
+## Features
 
-- **Math the way you say it.** `$` starts a formula. `a/b` is a fraction, `x^2` and `a_n` are
-  scripts, `e^(-x^2/2)` groups, and `\name` gives any LaTeX symbol. Typing `x^2` or `a_n` in a
-  sentence turns it into math by itself. `\dsum`, `\dint`, `\dlim`… make an operator big in a
-  sentence, limits under and over (as `\dfrac` does a fraction). Didn't mean it? Backspace
-  right after puts back what you typed (`a/` stays a slash, `xx` stays xx).
-- **Matrices.** `\pmatrix` (or `\pmatrix3x3`, `\pmatrix4x4`; `bmatrix`, `vmatrix` too), `&` for a
-  new column and Enter for a new row. A click goes into any cell; `\addrow`, `\deleterow`,
-  `\addcolumn`, `\deletecolumn` or a right-click change its rows and columns, and Backspace in
-  an empty row or column takes it away.
-- **Draw on your notes.** Alt+drag from one word or symbol to another draws an arrow;
-  Alt+Shift+drag draws a shape: a box, circle, underline, highlight, brace or strike (the kind
-  drawn last). Click one to change it (a highlight by its edge) and drag its ends to cover more
-  or less; press `L` to write a note on it. Drawings stay attached to what they point at as you
-  keep editing.
-- **Markdown, like Obsidian.** `# ` headings, `- ` and `1. ` lists, `- [ ]` lists to tick,
-  `**bold**`, `*italic*`, `~~struck~~`, `==highlighted==`, `> ` quotes, `---` lines, `[[links]]`
-  to other notes and web addresses, `` `code` `` and code blocks, coloured by their language (Python,
-  C++, Julia, R, MATLAB and more). The markers hide once the caret moves on.
-- **Structured like a textbook.** `\theorem`, `\definition`, `\lemma`, `\proof`… put lines in a
-  box, numbered as in a book. `\number` numbers a display formula and `\ref` refers to it or to
-  a theorem, and the number follows along as things move. Fold a section under its heading
-  (Ctrl+.), see the outline (Ctrl+Shift+O), find and replace (Ctrl+H), and find a note by what
-  it says from the notes list.
-- **Tables**, as in markdown (`| a | b |` with a `| --- |` line under the header), or `\table`.
-  Cells work as in a word processor: Tab moves between them, Enter adds a row, ↓ from the last
-  row leaves the table, selecting across cells selects whole cells, and a right-click in one
-  adds or removes rows and columns and aligns them. `\deletetable` (or all its cells selected
-  and Delete) takes it away. Formulas and drawings work inside them; files keep them as markdown.
-- **Diagrams, and the pen.** `\diagram` makes one: boxes, ellipses, diamonds and text with
-  `$math$` in their labels, lines and arrows that stay attached to the boxes they join, and
-  pen strokes. Ctrl+arrow on a box adds the next one, joined to it, so a flowchart needs no
-  mouse. Ctrl+Shift+D draws in it, or anywhere on top of the note, where a drawing stays with
-  the line under it. A pen just draws (its width follows the pressure, its eraser end erases);
-  a finger draws too, until a pen has been used, then it scrolls and a resting palm does
-  nothing. Diagrams export to LaTeX as TikZ.
-- **Graphs.** `\graph` plots what you type: `y = sin x`, a line each, `x: -pi..pi` for the range.
-- **On a tablet, from where the pen is.** Tap the pen's side button (or hold a finger still, or
-  long-press) for a ring of tools, colours and undo round the pen; on a selection, the ring
-  has what can be done to it. The side button dragged is a lasso. Two fingers tapped undo,
-  three redo; pinch to zoom.
-- **Zoom.** Ctrl+wheel, a pinch on a trackpad or touch screen, or Ctrl+= / Ctrl+- / Ctrl+0: the
-  text, images, diagrams and what's drawn on the page grow together.
-- **Images.** Paste or drop them in; they're kept inside the note.
-- **Yours to change.** Themes, text size, fonts, snippets, which substitutions happen as you
-  type, and your own CSS (Ctrl+,).
-- **PDF, LaTeX and markdown.** `\pdf` (or Ctrl+P) saves the note as a PDF file, drawings and
-  all, its text selectable and its links working; `\export` copies it as LaTeX, drawings, theorems and references included (tikz,
-  amsthm); `\markdown` saves it as markdown, and `.md` files open as notes.
+- **Math as you type.** Press `$` to start a formula. Fractions, exponents and subscripts work
+  the way you'd write them (`a/b`, `x^2`, `a_n`), and any LaTeX command is available with `\`.
+  Formulas are rendered with KaTeX as you type.
+- **Drawings that stay attached.** Draw arrows between symbols, or circle, box, underline and
+  annotate parts of your notes. Drawings stay attached to what they point at while you keep
+  editing.
+- **Markdown.** Headings, lists, checklists, bold, italic, links, quotes and code blocks with
+  syntax highlighting, written as plain markdown.
+- **Built for lecture notes.** Theorem, definition and proof boxes, numbered equations, and
+  references that keep their numbers up to date. Fold sections, see an outline, and search
+  across all your notes.
+- **Tables, diagrams and graphs.** Markdown tables that work like a spreadsheet, simple
+  diagrams and flowcharts, and plots of functions you type in.
+- **Pen and touch.** Write and draw with a pen on a tablet, with a tool menu that opens where
+  the pen is.
+- **Export.** Save a note as a PDF, copy it as LaTeX (drawings included), or save it as
+  markdown.
+- **Make it yours.** Themes, fonts, text size, your own snippets and custom CSS.
 
-Press **F1** in the app for every shortcut.
+## Getting started
 
-## Keys worth knowing
+The quickest way is the [browser version](https://cat-ione.github.io/notex/). Notes are saved
+in your browser as you type, and once loaded it also works offline and can be installed as an
+app.
 
-| | |
+There are no desktop releases yet. To run the desktop app, build it from source (see
+[Development](#development)).
+
+## Basics
+
+| Key | What it does |
 |---|---|
-| `$` / `$$` | inline / display math |
-| `\` or Ctrl+K | command palette |
-| `/` `^` `_` | fraction, superscript, subscript |
-| space / Tab | leave a box / next box |
-| `$`, → or Esc | back to text |
-| `&` / Enter | in a matrix: new column / row |
-| Alt+drag, Alt+Shift+drag | arrow, shape |
-| Ctrl+D | draw menu |
-| Ctrl+Shift+D | draw in a diagram, or on the note (`\diagram` makes one) |
-| `v p h l a r o d t g e` | while drawing: select, pen, highlighter, line, arrow, box, ellipse, diamond, text, graph, eraser |
-| Ctrl+B / Ctrl+I | bold / italic |
-| Ctrl+Shift+X / Ctrl+Shift+H | strike out / highlight |
-| `[ ]` then space, Ctrl+Enter | a box to tick, tick it |
-| `\theorem` `\proof` `\ref` | a theorem, a proof, a reference |
-| Ctrl+. / Ctrl+Shift+O | fold a section / the outline |
-| Ctrl+click | open a link, go to what a reference points at |
-| Tab / Shift+Tab | indent / outdent a list item |
-| Ctrl+F / Ctrl+H | find / find and replace |
-| Ctrl+wheel, a pinch, Ctrl+= / Ctrl+- / Ctrl+0 | zoom |
-| Ctrl+S / Ctrl+O / Ctrl+N | save / open / new |
-| `\pdf` / Ctrl+P | save as a PDF file |
+| `$` / `$$` | Start an inline / display formula |
+| `\` or Ctrl+K | Command palette |
+| Esc | Leave a formula |
+| Alt+drag | Draw an arrow |
+| Alt+Shift+drag | Draw a shape |
+| Ctrl+B / Ctrl+I | Bold / italic |
+| Ctrl+F / Ctrl+H | Find / find and replace |
+| Ctrl+S / Ctrl+O / Ctrl+N | Save / open / new note |
+| Ctrl+P | Save as PDF |
+| Ctrl+, | Settings |
+| F1 | Help, with every shortcut |
 
 ## Files
 
-In the browser, every note is kept there as you type: Ctrl+O lists them (type to filter, F2
-renames, Shift+Del deletes) and Ctrl+N starts a new one. Ctrl+S also saves the note to a
-`.ntx` file and keeps saving to it (in Chrome and Edge; other browsers download it). Once
-opened, the site works offline and can be installed as an app.
+In the browser, every note is kept automatically; Ctrl+O lists them. Ctrl+S also saves the
+note to a file. Notes are saved as `.ntx` files (compact JSON), and `.md` files can be opened
+too.
 
-Notes are `.ntx` files: compact JSON (see `src/lib/format.ts`).
+## Settings
 
-## Customizing
-
-The toolbar along the top has notes, saving, math, drawing, images, find and PDF, each
-showing its keys when hovered; it fades while you type. It and the status bar can be hidden
-(settings, `\toolbar`, `\statusbar`), and everything stays on its keys.
-
-The palette (`\`) and the right-click menu start with what fits where the caret is: a
-table's rows and columns in a table, styles on selected text, math in a formula; in a table,
-the toolbar's table button opens the table's menu. The palette also remembers what you pick
-most (and lately) and puts that first; `\forget` clears it, and the setting `remember
-commands` turns it off.
-
-Ctrl+, opens settings and an editor for the config file. On desktop the file is `config.json`
-in the app's config directory; you can also open it in your own editor, and changes load when
-you switch back to notex.
+Ctrl+, opens the settings and the config file. On the desktop app, the file is `config.json`
+in the app's config folder, and you can edit it in any editor. For example:
 
 ```jsonc
 {
-  "theme": "ember",                       // built-in: midnight, phosphor, paper
+  "theme": "midnight",                  // or phosphor, paper, or your own
   "fontSize": 16,
-  "pageWidth": 820,
-  "fonts": { "prose": "", "mono": "" },   // any CSS font-family
-  "typing": { "pairBrackets": true, "autoMath": true },
+  "fonts": { "prose": "", "mono": "" },
   "snippets": {
-    "math": {                             // expand while typing in math; # = caret
-      "norm": "\\left\\| # \\right\\|",
-      "pd": "\\frac{\\partial #}{\\partial }"
-    },
-    "text": { "->": "→" }                 // text may contain $math$
+    "math": { "norm": "\\left\\| # \\right\\|" },   // # is where the cursor goes
+    "text": { "->": "→" }
   },
-  "themes": {                             // CSS variable overrides on a base theme
+  "themes": {
     "ember": { "base": "midnight", "colors": { "accent": "#ff9e64" } }
   },
   "css": ".block.h1 { letter-spacing: 0.02em; }"
@@ -134,50 +82,29 @@ you switch back to notex.
 
 ## Development
 
-Svelte 5 + SvelteKit (SPA) + Tauri 2, KaTeX for rendering, pnpm.
+Built with Svelte 5, SvelteKit and Tauri 2, using KaTeX for math and pnpm for packages.
 
 ```sh
 pnpm install
+pnpm dev           # browser version at http://localhost:1420
 pnpm tauri dev     # desktop app
-pnpm dev           # browser only, http://localhost:1420
 pnpm check         # type-check
 pnpm test          # unit tests
-pnpm test:e2e      # browser tests (builds the site; CHROME=<path> to use your own Chrome)
-pnpm tauri build   # desktop installer for this system
+pnpm test:e2e      # browser tests (set CHROME=<path> to use your own Chrome)
+pnpm tauri build   # desktop installer
 ```
 
-With `pnpm dev` running (or a production build served with `?lab` in the URL):
+`AGENTS.md` explains how the code is organised and how to work on it.
 
-```sh
-node tools/perf/perf.mjs [--profile[=action]] [--file=note.ntx]   # editing speed on large notes
-node tools/label-lab/lab.mjs <name>             # note layout scenarios + typing check
-```
+**Performance tools.** `node tools/perf/perf.mjs` measures editing speed on large notes, and
+`node tools/label-lab/lab.mjs` checks how notes on drawings are laid out. Run them against a
+production build (`pnpm build && pnpm preview`, then `URL=http://127.0.0.1:4173/?lab`) for
+realistic numbers.
 
-Both use `playwright-core`; set `CHROME` to a Chrome/Chromium executable if it can't find one.
-For speed, measure a build (`pnpm build && pnpm preview`, then `URL=http://127.0.0.1:4173/?lab`):
-the dev server's numbers include Svelte's own checks, which a build leaves out.
-
-**Branches.** Work happens on `dev`, where every push runs the unit and browser tests and the type-check. Merge
-into `main` once it works: `main` is what the site and releases are built from.
-
-**Releasing.** Every push to `main` rebuilds the browser version on GitHub Pages. There are no
-desktop releases yet; when there are, pushing a tag like `v0.1.0` builds the installers for all
-three systems into a draft release to publish from the Releases page (bump the version in
+**Branches and releases.** Work happens on `dev`, where every push runs the tests. `main` is
+what the website is built from: every push to it updates the browser version. Pushing a tag
+like `v0.1.0` will build desktop installers into a draft release (bump the version in
 `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` first).
-
-### How it works
-
-- **Document model** (`src/lib/model.ts`): blocks of items; an item is a character or a
-  math item. Math is a tree of `sym`s and slot-bearing `cmd`s (frac, sqrt, scripts,
-  delimiters, matrices…). Every node has a stable id.
-- **Rendering** (`src/lib/math/latex.ts`): the tree is turned into LaTeX where each node is
-  wrapped in `\htmlData{nx=<id>}`. KaTeX treats these as transparent for spacing, so the
-  output looks normal but every glyph maps back to a node. That mapping drives the caret,
-  jump labels and arrow endpoints.
-- **Arrows and shapes** anchor to *ids*, not to positions, so they follow their endpoints as you edit.
-  Geometry is recomputed from the DOM after each render (`src/lib/arrows.ts`).
-- **Editor** (`src/lib/editor.svelte.ts`): ordinary text editing by default; focused modes only
-  for math, choosing arrow endpoints and styling drawings.
 
 ## License
 

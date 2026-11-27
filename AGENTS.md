@@ -1,7 +1,7 @@
 # AGENTS.md
 
 How to work on notex, for coding agents (and anyone new to the code). What it does is in
-`README.md` and `FEATURES.md`; this is the how.
+`README.md` and the F1 help; this is the how.
 
 ## The project
 
@@ -85,7 +85,7 @@ browser tests drive the app through real keys and pointer events and read the st
 - **Small, focused commits** as work goes on; the message says what changed for the user.
 - **Tests with every change**: a unit test for logic in a plain module, a browser test for
   anything you'd check by using the app. Test names read as a sentence of what happens.
-- **Docs move with features**: F1 help (`Help.svelte`), `README.md`, `FEATURES.md`, the
+- **Docs move with features**: F1 help (`Help.svelte`), `README.md` (core features only), the
   welcome note, and the status bar's hints (`StatusLine.svelte`).
 - **No new dependency** without a good reason; load heavy ones only when used (`import()`).
 - **Don't break files**: `format.ts` must keep opening notes saved by older versions.
