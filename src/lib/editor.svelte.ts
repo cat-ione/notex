@@ -801,13 +801,25 @@ export class Editor {
     const cull = this.cullScreens;
     this.cullScreens = Infinity;
     this.printing = true;
+    // the room made for notes, settled afresh for paper (from none: settling from the screen's
+    // room, a pixel either way counting as settled, would come out a little differently each time)
+    const screenRoom = $state.snapshot(this.spacers);
+    for (const k of Object.keys(this.spacers)) delete this.spacers[k];
     const settle = () => {
       // notes placed properly at once (not provisionally, as while typing), and room made
-      // for them, which changes heights and moves drawings further down
+      // for them, which changes heights and moves drawings further down: till that stops
+      // (a later pass, as the screen leaves for after a tick, would change the sheets as
+      // they're drawn)
       this.quickLabels = false;
       try {
-        for (let i = 0; i < 3; i++) flushSync(), this.relayoutAll();
-        flushSync();
+        for (let i = 0; i < 12; i++) {
+          const room = JSON.stringify(this.spacers);
+          this.spacerPasses = 0;
+          flushSync();
+          this.relayoutAll();
+          flushSync();
+          if (i >= 2 && JSON.stringify(this.spacers) === room) break;
+        }
       } finally {
         this.quickLabels = true;
         clearTimeout(this.settleTimer);
@@ -840,6 +852,8 @@ export class Editor {
     }
     this.endPrinting = () => {
       spacers.forEach((x) => x.remove());
+      for (const k of Object.keys(this.spacers)) delete this.spacers[k];
+      Object.assign(this.spacers, screenRoom);
       root.classList.remove('nx-print');
       this.cullScreens = cull;
       C.applyConfig(this.config);
@@ -2719,7 +2733,10 @@ export class Editor {
         const mine = new Set(row.map((i) => i.m.id));
         const ink = row[0].line >= 0 ? inkLines(row[0].blockEl)[row[0].line] : [];
         const others = infos.filter((i) => !mine.has(i.m.id)).map((i) => i.g.bounds);
-        const res = layoutRow(notes, { below, left, right, obstacles: [...ink, ...others, ...placed], quick: this.quickLabels || performance.now() > this.solveUntil });
+        // (laid out for paper, always solved: a layout coming after beginPrint's, as the page's
+        // narrowing makes, mustn't move notes the page breaks were measured with)
+        const quick = !this.printing && (this.quickLabels || performance.now() > this.solveUntil);
+        const res = layoutRow(notes, { below, left, right, obstacles: [...ink, ...others, ...placed], quick });
         res.forEach((r, k) => {
           const { g } = row[k];
           const b = r.box;
