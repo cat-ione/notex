@@ -124,6 +124,25 @@ export function cloneRow(row: MRow): MRow {
   return row.map((n) => (n.k === 'sym' ? { ...n, id: uid() } : { ...n, id: uid(), slots: n.slots.map(cloneRow) }));
 }
 
+/**
+ * A deep copy of plain data (objects, arrays, strings, numbers: what a note is made of), as
+ * `$state.snapshot` makes of the live document but a few times quicker: reading through the
+ * live document's proxies is most of the cost, and this asks them the least.
+ */
+export function plainCopy<T>(v: T): T {
+  if (Array.isArray(v)) {
+    const n = v.length, out = new Array(n);
+    for (let i = 0; i < n; i++) out[i] = plainCopy(v[i]);
+    return out as T;
+  }
+  if (v !== null && typeof v === 'object') {
+    const out: Record<string, unknown> = {}, keys = Object.keys(v);
+    for (let i = 0; i < keys.length; i++) out[keys[i]] = plainCopy((v as Record<string, unknown>)[keys[i]]);
+    return out as T;
+  }
+  return v;
+}
+
 /** Collect every id present in the document (used to prune dangling arrows). */
 export function allIds(doc: Doc): Set<Id> {
   const ids = new Set<Id>();

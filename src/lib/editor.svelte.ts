@@ -38,7 +38,7 @@ import { slotPath, toLatex, type MCursor, type MSelRange, type Step } from './ma
 import { Sketcher, type Tool } from './sketch/sketcher.svelte';
 import { labelled } from './sketch/shapes';
 import type { Placed } from './sketch/shapes';
-import { allIds, block, BOX_KINDS, BOX_NAME, ch, chars, cloneRow, cmd, isFigure, isListKind, isRefItem, MAX_INDENT, math, NUMBERED_BOX, sym, uid, type BoxKind, type MSym, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
+import { allIds, block, BOX_KINDS, BOX_NAME, ch, chars, cloneRow, cmd, isFigure, isListKind, isRefItem, MAX_INDENT, math, plainCopy, NUMBERED_BOX, sym, uid, type BoxKind, type MSym, type Attach, type NoteAt, type Char, type Arrow, type Block, type Mark, type MarkKind, type BlockKind, type Doc, type Id, type Item, type MathItem, type MCmd, type MNode, type MRow } from './model';
 
 export type Mode = 'text' | 'math' | 'pick' | 'style' | 'hint' | 'palette' | 'sketch';
 
@@ -416,7 +416,7 @@ export class Editor {
     let snap = this.blockSnaps.get(blk);
     // (a changed length always means a change, as a safety net)
     if (!snap || snap.items.length !== blk.items.length) {
-      snap = $state.snapshot(blk) as Block;
+      snap = plainCopy(blk);
       this.blockSnaps.set(blk, snap);
     }
     return snap;
@@ -454,9 +454,9 @@ export class Editor {
   snapshot(): Doc {
     return {
       blocks: this.doc.blocks.map((b) => this.snapBlock(b)),
-      arrows: $state.snapshot(this.doc.arrows) as Arrow[],
-      marks: $state.snapshot(this.doc.marks) as Mark[],
-      ...(this.doc.ink?.length ? { ink: $state.snapshot(this.doc.ink) as Placed[] } : {}),
+      arrows: plainCopy(this.doc.arrows),
+      marks: plainCopy(this.doc.marks),
+      ...(this.doc.ink?.length ? { ink: plainCopy(this.doc.ink) } : {}),
     };
   }
 
@@ -2553,7 +2553,7 @@ export class Editor {
         if (old && kept(id, near.at(bi))) mgeos[id] = old;
         continue;
       }
-      const m = $state.snapshot(pm) as Mark;
+      const m = plainCopy(pm);
       // a label being typed is laid out as typed
       if (this.note?.id === m.id) m.label = noteText(this.note.blk.items);
       act.push(m);
@@ -2610,7 +2610,7 @@ export class Editor {
         if (old && kept(pa.id, ends.flatMap(near.at))) geos[pa.id] = old;
         continue;
       }
-      const a = $state.snapshot(pa) as Arrow;
+      const a = plainCopy(pa);
       if (ends.every((bi) => bi >= 0)) this.geoTops.set(a.id, { epoch: this.geoEpoch, tops: ends.flatMap(near.at) });
       const fa = rel(this.rectOfIds(a.from));
       const ta = rel(this.rectOfIds(a.to));
