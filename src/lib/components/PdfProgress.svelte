@@ -4,67 +4,85 @@
 
   // The PDF being made, shown as it's made: a sheet of paper for each of its pages, blank to
   // start with, a line running down the ones being drawn, and each one's picture dropping in
-  // as it's done. Over the page while it's laid out for paper (Editor.pdfInBrowser).
+  // as it's done. A panel like the others (settings, help), over the page while it's laid out
+  // for paper (Editor.pdfInBrowser).
   let { ed }: { ed: Editor } = $props();
 
   const m = $derived(ed.pdfMaking!);
   const done = $derived(m.pictures.filter(Boolean).length);
   // (fewer sheets, bigger: all of them in view)
-  const size = $derived(m.count <= 3 ? 168 : m.count <= 8 ? 124 : m.count <= 18 ? 92 : m.count <= 40 ? 64 : 44);
+  const size = $derived(m.count <= 3 ? 112 : m.count <= 8 ? 80 : m.count <= 18 ? 60 : m.count <= 40 ? 42 : 30);
 </script>
 
-<!-- (in the screen's theme: the page under it has the PDF's for now) -->
+<!-- (in the screen's theme; the page under it, which has the PDF's for now, hidden) -->
 <div class="making" role="status" aria-live="polite" style={m.theme} transition:fade={{ duration: 120 }}>
-  <div class="head">
-    <span class="what">making the PDF</span>
-    <span class="count">{m.count ? `${done} / ${m.count}` : '…'} {m.count === 1 ? 'sheet' : 'sheets'}</span>
+  <div class="panel">
+    <div class="head">
+      <span class="what">making the PDF</span>
+      <span class="count">{m.count ? `${done} / ${m.count}` : '…'} {m.count === 1 ? 'sheet' : 'sheets'}</span>
+    </div>
+    <div class="bar"><div class="fill" style:transform="scaleX({m.count ? done / m.count : 0})"></div></div>
+    <div class="sheets" style:--w="{size}px">
+      {#each { length: m.count } as _, i (i)}
+        <div
+          class="sheet"
+          class:drawing={!m.pictures[i] && m.drawing.includes(i)}
+          class:done={!!m.pictures[i]}
+          style:aspect-ratio={m.paper}
+          style:background={m.bg}
+          style:padding="{m.margin * size}px"
+        >
+          {#if m.pictures[i]}
+            <img src={m.pictures[i]} alt="sheet {i + 1}" />
+          {:else}
+            <div class="lines"></div>
+          {/if}
+        </div>
+      {/each}
+    </div>
+    <div class="hint"><kbd>esc</kbd> stops it</div>
   </div>
-  <div class="bar"><div class="fill" style:transform="scaleX({m.count ? done / m.count : 0})"></div></div>
-  <div class="sheets" style:--w="{size}px">
-    {#each { length: m.count } as _, i (i)}
-      <div
-        class="sheet"
-        class:drawing={!m.pictures[i] && m.drawing.includes(i)}
-        class:done={!!m.pictures[i]}
-        style:aspect-ratio={m.paper}
-        style:background={m.bg}
-        style:padding="{m.margin * size}px"
-      >
-        {#if m.pictures[i]}
-          <img src={m.pictures[i]} alt="sheet {i + 1}" />
-        {:else}
-          <div class="lines"></div>
-        {/if}
-      </div>
-    {/each}
-  </div>
-  <div class="hint">esc cancels</div>
 </div>
 
 <style>
+  /* (the screen's page dimmed, as under settings: the page itself is hidden) */
   .making {
     position: fixed;
     inset: 0;
     z-index: 50;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    padding: 24px 16px;
-    overflow: auto;
-    background: color-mix(in srgb, var(--fg) 7%, var(--bg));
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: linear-gradient(var(--scrim), var(--scrim)), var(--bg);
     color: var(--muted);
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: 12.5px;
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-sizing: border-box;
+    width: min(460px, 92vw);
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 16px 18px 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+    animation: pop 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
   }
   .head {
     display: flex;
+    justify-content: space-between;
     gap: 16px;
     align-items: baseline;
   }
   .what {
-    color: var(--fg);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 14px;
   }
   .what::after {
     content: '▌';
@@ -76,7 +94,6 @@
     font-variant-numeric: tabular-nums;
   }
   .bar {
-    width: min(420px, 80vw);
     height: 2px;
     background: color-mix(in srgb, var(--fg) 12%, transparent);
     border-radius: 1px;
@@ -94,7 +111,7 @@
     flex-wrap: wrap;
     justify-content: center;
     gap: calc(var(--w) * 0.12);
-    max-width: min(1100px, 92vw);
+    padding: 4px 0;
   }
   /* a sheet: an outline to fill, the paper's colour once it's being drawn */
   .sheet {
@@ -145,8 +162,18 @@
     animation: settle 320ms ease-out;
   }
   .hint {
-    font-size: 11px;
-    opacity: 0.7;
+    font-size: 11.5px;
+    text-align: right;
+  }
+  kbd {
+    font: inherit;
+    color: var(--fg);
+  }
+  @keyframes pop {
+    from {
+      transform: scale(0.96) translateY(6px);
+      opacity: 0;
+    }
   }
   @keyframes scan {
     to {

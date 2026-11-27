@@ -203,9 +203,11 @@ test('while the PDF is made, its sheets show as they are made: each one’s pict
   });
   const { download, made } = await startPdf(page);
   await expect(page.locator('.making')).toBeVisible();
-  // in the screen's theme (midnight: dark), not the PDF's (paper: light)
-  const bg = await page.locator('.making').evaluate((el) => getComputedStyle(el).backgroundColor.match(/[\d.]+/g)!.slice(0, 3).map(Number));
+  // a panel, as settings is, in the screen's theme (midnight: dark), not the PDF's (paper: light)
+  const panel = page.locator('.making .panel');
+  const bg = await panel.evaluate((el) => getComputedStyle(el).backgroundColor.match(/[\d.]+/g)!.slice(0, 3).map(Number));
   expect(bg[0] + bg[1] + bg[2]).toBeLessThan(200);
+  expect((await panel.boundingBox())!.width).toBeLessThan(page.viewportSize()!.width / 2);
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('paper');
   // every sheet there from the start, filling in
   await expect.poll(() => page.locator('.making .sheet').count(), { timeout: 60_000 }).toBeGreaterThan(2);

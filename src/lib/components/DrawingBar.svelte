@@ -14,6 +14,10 @@
   // middle moved in from the window's edges by half of it
   let width = $state(0);
   const left = $derived(at ? Math.max(8 + width / 2 - at.pageLeft, Math.min((innerWidth.current ?? window.innerWidth) - 8 - width / 2 - at.pageLeft, at.x)) : 0);
+  // (above the drawing, its bottom there: wrapped onto more rows, it's taller than the room
+  // made for it, and kept from going over the window's top)
+  let height = $state(0);
+  const top = $derived(at ? (at.below ? at.y : Math.max(at.y, 4 + height - at.pageTop)) : 0);
   const id = $derived(ed.styling);
   const mark = $derived(id ? ed.doc.marks.find((m) => m.id === id) : undefined);
   const arrow = $derived(id ? ed.doc.arrows.find((a) => a.id === id) : undefined);
@@ -49,7 +53,8 @@
     class="dbar"
     class:below={at.below}
     bind:offsetWidth={width}
-    style="left: {left}px; top: {at.y}px;"
+    bind:offsetHeight={height}
+    style="left: {left}px; top: {top}px;"
     onmousedown={down}
     oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(id, e.clientX, e.clientY); }}
     transition:fly={{ y: at?.below ? -4 : 4, duration: 120, easing: cubicOut }}

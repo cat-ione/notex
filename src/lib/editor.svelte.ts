@@ -997,7 +997,7 @@ export class Editor {
     if (!save || !this.page) return;
     // (the screen's colours, for showing it being made: the page takes the PDF's theme)
     const cs = getComputedStyle(document.documentElement);
-    const theme = ['--bg', '--fg', '--muted', '--accent'].map((v) => `${v}: ${cs.getPropertyValue(v).trim()}`).join('; ');
+    const theme = ['--bg', '--fg', '--muted', '--accent', '--panel', '--border', '--scrim'].map((v) => `${v}: ${cs.getPropertyValue(v).trim()}`).join('; ');
     this.beginPrint();
     this.pdfCancel = false;
     try {
@@ -2175,7 +2175,7 @@ export class Editor {
    * or below them when there's no room above.
    */
   /** Where the selected drawing's bar goes (page coordinates: its middle), and where the page is in the window. */
-  get barAt(): { x: number; y: number; below: boolean; pageLeft: number } | null {
+  get barAt(): { x: number; y: number; below: boolean; pageLeft: number; pageTop: number } | null {
     if (this.mode !== 'style' || !this.styling || this.menu || this.dragBusy) return null;
     // (measured again when the window changes size: the page may have moved in it)
     void innerWidth.current, innerHeight.current;
@@ -2206,7 +2206,7 @@ export class Editor {
     }
     best ??= fits(r.y - 8 - H) ? { y: r.y - 8, below: false, d: 0 } : { y: r.y + r.h + 8, below: true, d: 0 };
     // (kept in the window by its own width: see DrawingBar)
-    return { x: cx, y: best.y, below: best.below, pageLeft: o.left };
+    return { x: cx, y: best.y, below: best.below, pageLeft: o.left, pageTop: o.top };
   }
 
   /**

@@ -81,6 +81,10 @@ test('a drawing’s bar near the window’s edge is moved in, on one row while t
   await page.setViewportSize({ width: 300, height: 600 });
   await expect.poll(() => barRows(page)).toBeGreaterThan(1);
   expect(await inWindow(page, '.dbar')).toBe(true);
+  // (narrower still: rows enough to go over the window's top, from above the drawing)
+  await page.setViewportSize({ width: 200, height: 600 });
+  await expect.poll(() => barRows(page)).toBeGreaterThan(2);
+  await expect.poll(() => inWindow(page, '.dbar')).toBe(true);
 });
 
 test('the right-click menu is as wide near the window’s right edge as anywhere', async ({ page }) => {
