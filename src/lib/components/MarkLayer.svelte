@@ -51,7 +51,7 @@
             d={g.d}
             onmousedown={(e) => { if (e.button > 1) return; e.stopPropagation(); e.preventDefault(); ed.drawingDown(m.id, e); }}
             onpointerdown={(e) => press(e, () => ed.drawingDown(m.id, e))}
-            oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(m.id, e.clientX, e.clientY); }}
+            oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.menus.openDrawingMenu(m.id, e.clientX, e.clientY); }}
             ondblclick={(e) => { e.stopPropagation(); ed.editNoteOf(m.id); }}
             onpointerenter={() => ed.hover(m.id, true)}
             onpointerleave={() => ed.hover(m.id, false)}
@@ -75,7 +75,7 @@
           d={g.d}
           onmousedown={(e) => { if (e.button > 1) return; e.stopPropagation(); e.preventDefault(); ed.drawingDown(m.id, e); }}
           onpointerdown={(e) => press(e, () => ed.drawingDown(m.id, e))}
-          oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(m.id, e.clientX, e.clientY); }}
+          oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.menus.openDrawingMenu(m.id, e.clientX, e.clientY); }}
           ondblclick={(e) => { e.stopPropagation(); ed.editNoteOf(m.id); }}
           onpointerenter={() => ed.hover(m.id, true)}
           onpointerleave={() => ed.hover(m.id, false)}

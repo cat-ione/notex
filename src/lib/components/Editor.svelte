@@ -351,10 +351,10 @@
     // (what it was made with: drawing may stop it before the window hears of it)
     ed.pointer = e.pointerType === 'pen' || e.pointerType === 'touch' ? e.pointerType : 'mouse';
     // while drawing, a press outside an open menu just closes it
-    if (ed.menu && ed.sketch.active && e.button !== 2) {
+    if (ed.menus.menu && ed.sketch.active && e.button !== 2) {
       e.preventDefault();
       e.stopPropagation();
-      ed.closeMenu();
+      ed.menus.closeMenu();
       return;
     }
     const grip = t.closest?.('[data-dgrip]') as HTMLElement | null;
@@ -514,7 +514,7 @@
     class:pen-ready={!ed.sketch.active && ed.config.sketch.penDraws && (ed.sketch.penNear || ed.sketch.penSeen)}
     onpointerdowncapture={pointerDown}
     onmousedown={(e) => ed.mouseDown(e)}
-    oncontextmenu={(e) => ed.openPageMenu(e)}
+    oncontextmenu={(e) => ed.menus.openPageMenu(e)}
     onscroll={() => ed.scrolled()}
     ondragover={(e) => e.dataTransfer?.types.includes('Files') && e.preventDefault()}
     ondrop={(e) => ed.dropFiles(e)}

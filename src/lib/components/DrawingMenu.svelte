@@ -12,14 +12,14 @@
   let el = $state<HTMLDivElement>();
   // kept inside the window
   const pos = $derived.by(() => {
-    const m = ed.menu;
+    const m = ed.menus.menu;
     if (!m) return { x: 0, y: 0 };
     const w = el?.offsetWidth ?? 240, h = el?.offsetHeight ?? 300;
     return { x: Math.max(4, Math.min(m.x, window.innerWidth - w - 4)), y: Math.max(4, Math.min(m.y, window.innerHeight - h - 4)) };
   });
 </script>
 
-{#if ed.menu}
+{#if ed.menus.menu}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="dmenu"
@@ -29,17 +29,17 @@
     oncontextmenu={(e) => e.preventDefault()}
     transition:fly={{ y: -4, duration: 120, easing: cubicOut }}
   >
-    {#each ed.menuItems as a, i (a.name)}
+    {#each ed.menus.menuItems as a, i (a.name)}
       {#if a.sep && i > 0}<div class="rule"></div>{/if}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <div
         class="opt"
-        class:sel={i === ed.menu.sel}
+        class:sel={i === ed.menus.menu.sel}
         class:off={a.off}
         class:danger={a.name === 'delete'}
         data-tip={a.more}
-        onmousemove={(e) => mouseMoved(e) && ed.menu && !a.off && ed.menu.sel !== i && (ed.menu.sel = i)}
-        onclick={() => ed.runMenu(i)}
+        onmousemove={(e) => mouseMoved(e) && ed.menus.menu && !a.off && ed.menus.menu.sel !== i && (ed.menus.menu.sel = i)}
+        onclick={() => ed.menus.runMenu(i)}
       >
         <span class="name">{a.desc}</span><kbd>{keyLabel(a.keys[0])}</kbd>
       </div>

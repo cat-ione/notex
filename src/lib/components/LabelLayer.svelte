@@ -58,7 +58,7 @@
     class:hover={ed.hovered === l.id}
     onmousedown={(e) => { if (e.button > 1) return; e.stopPropagation(); e.preventDefault(); ed.noteDown(l.id, e); }}
     ondblclick={(e) => { e.stopPropagation(); ed.noteDblClick(l.id, e); }}
-    oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(l.id, e.clientX, e.clientY); }}
+    oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.menus.openDrawingMenu(l.id, e.clientX, e.clientY); }}
     onpointerenter={() => ed.hover(l.id, true)}
     onpointerleave={() => ed.hover(l.id, false)}
     style="left: {l.x}px; top: {l.y}px; --ink: {inkVar(l.color)};{l.maxW ? ` max-width: ${l.maxW}px;` : ''}"

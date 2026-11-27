@@ -190,7 +190,7 @@ export class Drawings {
     this.ed.anchor = null;
     this.ed.hints = null;
     this.ed.palette = null;
-    this.ed.menu = null;
+    this.ed.menus.menu = null;
     this.ed.message = '';
     this.ed.styling = id;
     this.ed.setMode('style');
@@ -588,7 +588,7 @@ export class Drawings {
           ...(d.note ? [{ name: 'autonote', desc: 'reset note position', keys: ['A-0'], run: () => { this.ed.checkpoint(); delete d.note; } }] : []),
         ]
       : [];
-    const menu: DrawingAction = { name: 'menu', desc: 'show menu', keys: ['S-F10', 'ContextMenu'], run: () => this.ed.openDrawingMenu(id), menu: false };
+    const menu: DrawingAction = { name: 'menu', desc: 'show menu', keys: ['S-F10', 'ContextMenu'], run: () => this.ed.menus.openDrawingMenu(id), menu: false };
     if (a) {
       const dir = () => this.ed.arrowGeos[a.id]?.dir ?? 1;
       return [

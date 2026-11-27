@@ -37,6 +37,7 @@ import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from '
 import { parseLatex } from './math/parse';
 import { slotPath, toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { Sketcher, type Tool } from './sketch/sketcher.svelte';
+import { Menus } from './editor/menus.svelte';
 import { Drawings } from './editor/drawings.svelte';
 import { Finder } from './editor/find.svelte';
 import { Tables } from './editor/tables.svelte';
@@ -104,7 +105,7 @@ const MATH_COMMON = ['frac', 'sqrt', 'sum', 'int', 'lim', 'pmatrix', 'cases', 'i
 const MATH_WRAP = ['frac', 'sqrt', 'hat', 'bar', 'vec', 'boxed', 'cancel', 'abs'];
 
 /** What can be done to a table (the palette, and the right-click menu in a table). */
-const TABLE_ACTIONS = [
+export const TABLE_ACTIONS = [
   ['row+', 'addrow', 'add a row under this one'],
   ['row-', 'deleterow', 'delete this row'],
   ['col+', 'addcolumn', 'add a column after this one'],
@@ -115,7 +116,7 @@ const TABLE_ACTIONS = [
   ['table-', 'deletetable', 'delete this table'],
 ] as const;
 /** What can be done to a matrix (or cases, aligned…) the caret is in: the palette, and the right-click menu. */
-const MATRIX_ACTIONS = [
+export const MATRIX_ACTIONS = [
   ['row+', 'addrow', 'add a row under this one'],
   ['row-', 'deleterow', 'delete this row'],
   ['col+', 'addcolumn', 'add a column after this one'],
@@ -194,7 +195,7 @@ export class Editor {
   openRadial(x: number, y: number, pointer?: number) {
     const sk = this.sketch;
     if (this.palette) this.closePalette();
-    this.menu = null;
+    this.menus.menu = null;
     const el = document.elementFromPoint(x, y);
     this.radialCanvas = (el?.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null;
     const sel = sk.active ? sk.selected : [];
@@ -1682,7 +1683,7 @@ export class Editor {
   }
 
   /** Paste text at the caret (into the formula or note being edited, if any). */
-  private pasteText(text: string) {
+  pasteText(text: string) {
     // a note is one line
     if (this.note) text = text.replace(/\s*\r?\n\s*/g, ' ');
     if (this.mode === 'math') {
@@ -1737,7 +1738,7 @@ export class Editor {
     return document.elementsFromPoint(x, y).find((e) => !e.closest('svg.marks, svg.arrows, .dlabel'));
   }
 
-  private hitTest(x: number, y: number): { pos: Pos; math?: { item: MathItem; id: Id | null; after: boolean } } | null {
+  hitTest(x: number, y: number): { pos: Pos; math?: { item: MathItem; id: Id | null; after: boolean } } | null {
     if (!this.page) return null;
     const hit = this.under(x, y);
     const mel = hit?.closest('.math');
@@ -1851,8 +1852,8 @@ export class Editor {
     // highlighted, Ctrl+F to go back to it)
     const a = document.activeElement;
     if (a instanceof HTMLInputElement && a.closest('.findbar')) a.blur();
-    if (this.menu) {
-      this.menu = null;
+    if (this.menus.menu) {
+      this.menus.menu = null;
       e.preventDefault();
       return;
     }
@@ -1976,7 +1977,7 @@ export class Editor {
   }
 
   /** The caret position inside a formula for a hit. */
-  private mathPos(m: { item: MathItem; id: Id | null; after: boolean; slot?: Step[] }): MCursor {
+  mathPos(m: { item: MathItem; id: Id | null; after: boolean; slot?: Step[] }): MCursor {
     if (m.slot && M.rowAt(m.item.root, m.slot)) return { path: m.slot.map((p) => ({ ...p })), off: 0 };
     const found = m.id ? findNode(m.item.root, m.id) : null;
     if (!found) return { path: [], off: m.after ? m.item.root.length : 0 };
@@ -2048,7 +2049,7 @@ export class Editor {
   noteDown(id: Id, e: MouseEvent) {
     if (e.button === 1) return this.deleteDrawing(id);
     this.withFrame(() => {
-      this.menu = null;
+      this.menus.menu = null;
       if (this.note?.id === id) {
         // in the note being typed: as a click on the page's text would
         const h = this.noteHit(e.clientX, e.clientY);
@@ -2102,7 +2103,7 @@ export class Editor {
     if (e.button === 1) return this.deleteDrawing(id);
     if (e.button !== 0) return;
     this.withFrame(() => {
-      this.menu = null;
+      this.menus.menu = null;
       if (this.styling !== id || this.mode !== 'style') this.drawings.selectDrawing(id);
       // which of the shape's pieces was grabbed: it stays under the mouse
       const m = this.doc.marks.find((x) => x.id === id);
@@ -2177,7 +2178,7 @@ export class Editor {
       this.checkpoint();
       if (ai >= 0) this.doc.arrows.splice(ai, 1);
       else this.doc.marks.splice(mi, 1);
-      this.menu = null;
+      this.menus.menu = null;
       if (this.styling === id) this.drawings.endDrawing();
       this.touch();
     });
@@ -2257,7 +2258,7 @@ export class Editor {
    */
   /** Where the selected drawing's bar goes (page coordinates: its middle), and where the page is in the window. */
   get barAt(): { x: number; y: number; below: boolean; pageLeft: number; pageTop: number } | null {
-    if (this.mode !== 'style' || !this.styling || this.menu || this.dragBusy) return null;
+    if (this.mode !== 'style' || !this.styling || this.menus.menu || this.dragBusy) return null;
     // (measured again when the window changes size: the page may have moved in it)
     void innerWidth.current, innerHeight.current;
     const o = this.page?.getBoundingClientRect();
@@ -2386,7 +2387,7 @@ export class Editor {
     if (this.note) this.commitNote();
     if (this.mode === 'style') this.setMode('text');
     this.styling = null;
-    this.menu = null;
+    this.menus.menu = null;
     this.drawings.noteDrawReturn();
     this.anchor = null;
     this.msel = null;
@@ -3389,7 +3390,7 @@ export class Editor {
       return;
     }
     const was = this.b;
-    const inText = () => !this.menu && this.mode === 'text' && !this.note;
+    const inText = () => !this.menus.menu && this.mode === 'text' && !this.note;
     // an edit over a selection touching a table: the selection goes first (see clearCells), then
     // the key acts where the caret is, in a cell as in a cell
     const sel = this.selection;
@@ -3410,7 +3411,7 @@ export class Editor {
         }
       }
     }
-    const handled = inText() && (this.tables.tableKey(k) || this.tables.tableEdgeKey(k)) ? true : this.menu ? this.menuKey(k) : this.runKey(k);
+    const handled = inText() && (this.tables.tableKey(k) || this.tables.tableEdgeKey(k)) ? true : this.menus.menu ? this.menus.menuKey(k) : this.menus.runKey(k);
     if (inText()) this.tables.afterTableKey(k);
     // Swallow everything except a few browser/devtools keys.
     if (handled || !/^(C-S-i|F12|C-S-r)$/.test(k)) e.preventDefault();
@@ -3496,7 +3497,7 @@ export class Editor {
     return { b: best.b, o: best.o };
   }
 
-  private textKey(k: string): boolean {
+  textKey(k: string): boolean {
     const blk = this.blk;
     const shift = k.startsWith('S-') || k.startsWith('C-S-');
     const bare = k.replace(/^(C-)?S-/, '$1');
@@ -4458,7 +4459,7 @@ export class Editor {
     this.unfoldTo(b);
     if (this.mode !== 'text') {
       this.palette = null;
-      this.menu = null;
+      this.menus.menu = null;
       if (this.mode === 'sketch') this.sketch.exit();
       this.setMode('text');
     }
@@ -4654,7 +4655,7 @@ export class Editor {
     };
   }
 
-  private mathKey(k: string): boolean {
+  mathKey(k: string): boolean {
     const item = this.mathItem!;
     const root = item.root;
     const cur = this.mc;
@@ -4957,12 +4958,12 @@ export class Editor {
     if (this.palette) this.acceptPalette(this.paletteItems[i]);
   }
 
-  private closePalette() {
+  closePalette() {
     this.palette = null;
     this.mode = this.prevMode;
   }
 
-  private paletteKey(k: string): boolean {
+  paletteKey(k: string): boolean {
     const p = this.palette!;
     const items = this.paletteItems;
     switch (k) {
@@ -4996,7 +4997,7 @@ export class Editor {
         // as in LaTeX, the name ends at the first non-letter: \int_0^1, \alpha^2, \sin(x)
         // (only the name as typed: an unknown one is a raw \name, not the closest suggestion)
         this.acceptPalette(undefined);
-        if (k !== ' ') this.runKey(k);
+        if (k !== ' ') this.menus.runKey(k);
         return true;
       }
       if (p.ctx === 'text' && !p.query && k === '\\') {
@@ -5013,7 +5014,7 @@ export class Editor {
     return true;
   }
 
-  private acceptPalette(picked: PaletteItem | undefined) {
+  acceptPalette(picked: PaletteItem | undefined) {
     const p = this.palette!;
     const name = picked?.name;
     // an exact name as typed wins, unless another item was chosen (arrowed to, clicked)
@@ -5050,7 +5051,7 @@ export class Editor {
       const item = this.mathItem!;
       // a matrix's rows and columns
       const ga = this.mathItem && M.gridAt(item.root, this.mc) ? (MATRIX_ACTIONS.find(([, n]) => n === q) ?? MATRIX_ACTIONS.find(([, n]) => n === name)) : undefined;
-      if (ga) return picks(ga[1]), this.matrixCommand(ga[0]);
+      if (ga) return picks(ga[1]), this.menus.matrixCommand(ga[0]);
       this.checkpoint();
       // Exact names win over the highlighted suggestion; user snippets win over built-ins.
       const user = this.config.snippets.math;
@@ -5289,14 +5290,14 @@ export class Editor {
   /** What's open over the page, by the toolbar button that opens it (null: nothing, or something else). */
   get openByToolbar(): 'draw' | 'table' | 'settings' | 'help' | 'notes' | null {
     if (this.palette?.ctx === 'draw' && this.paletteAt) return 'draw';
-    if (this.menu?.table) return 'table';
+    if (this.menus.menu?.table) return 'table';
     return this.showSettings ? 'settings' : this.showHelp ? 'help' : this.showNotes ? 'notes' : null;
   }
 
   /** Close every menu and panel (a toolbar button was clicked: it acts instead). */
   closeMenus() {
     if (this.mode === 'palette') this.closePalette();
-    this.menu = null;
+    this.menus.menu = null;
     this.showSettings = false;
     this.settingsEditing = false;
     this.showHelp = false;
@@ -5308,225 +5309,7 @@ export class Editor {
     this.updateConfig({ ui: { ...this.config.ui, [bar]: !this.config.ui[bar] } });
   }
 
-  // ── right-click menu ──
-
-  /** The open right-click menu, at a window position: a drawing's (`id`), or the page's. */
-  menu = $state<{ id: Id | null; x: number; y: number; sel: number; table?: true; sketch?: true } | null>(null);
-
-  get menuItems(): DrawingAction[] {
-    if (!this.menu) return [];
-    if (this.menu.table) return this.tableActions();
-    if (this.menu.sketch) return this.sketch.actions();
-    return this.menu.id ? this.drawings.drawingActions(this.menu.id).filter((a) => a.menu !== false && !a.keyOnly) : this.pageActions();
-  }
-
-  /** What the page's menu offers: the clipboard, drawing on the selection, undo. */
-  pageActions(): DrawingAction[] {
-    const sel = !!this.selection || !!this.mathSelRange;
-    const what = sel ? 'the selection' : 'something';
-    const clip = (cmd: 'copy' | 'cut') => () => document.execCommand(cmd);
-    return [
-      { name: 'cut', desc: 'cut', keys: ['C-x'], run: clip('cut'), off: !sel },
-      { name: 'copy', desc: 'copy', keys: ['C-c'], run: clip('copy'), off: !sel },
-      { name: 'paste', desc: 'paste', keys: ['C-v'], run: () => void this.pasteFromClipboard() },
-      { name: 'all', desc: this.mode === 'math' ? 'select the formula' : 'select everything', keys: ['C-a'], run: () => this.runKey('C-a') },
-      // what fits where the caret is: in math, math; in a table, its rows, columns and alignment; on selected text, styles
-      ...(this.mode === 'math' ? this.mathActions() : []),
-      ...(this.mode === 'text' && this.tables.tableRow() ? this.tableActions() : []),
-      ...(this.mode === 'text' && !this.tables.tableRow() && this.selection
-        ? ([['bold', 'bold', 'C-b'], ['italic', 'italic', 'C-i'], ['inlinecode', 'code', 'C-e'], ['strikethrough', 'strike out', 'C-S-x'], ['texthighlight', 'highlight', 'C-S-h']] as const).map(([name, desc, key], i): DrawingAction => ({ name, desc, keys: [key], run: () => this.runKey(key), ...(i === 0 ? { sep: true as const } : {}) }))
-        : []),
-      ...(this.mode === 'text' ? [{ name: 'formula', desc: 'insert math', keys: ['$'], run: () => this.runKey('$'), more: '$$ for display math', sep: true } as DrawingAction] : []),
-      { name: 'arrow', desc: sel ? 'arrow from the selection' : 'draw an arrow', keys: ['\\arrow'], run: () => this.drawings.startArrow(), more: 'or alt+drag', sep: true },
-      ...MARK_KINDS.map((k): DrawingAction => ({ name: k, desc: `${MARK_VERB[k]} ${what}`, keys: [`\\${k}`], run: () => this.drawings.startMark(k), more: k === this.lastMarkKind ? 'or alt+shift+drag' : undefined })),
-      { name: 'undo', desc: 'undo', keys: ['C-z'], run: () => this.runKey('C-z'), sep: true },
-      { name: 'redo', desc: 'redo', keys: ['C-y'], run: () => this.runKey('C-y') },
-    ];
-  }
-
-  /** A table's rows, columns and alignment, as menu entries. */
-  tableActions(): DrawingAction[] {
-    return TABLE_ACTIONS.map(([what, name, desc], i): DrawingAction => ({ name, desc, keys: [`\\${name}`], run: () => this.tables.tableCommand(what), ...(i === 0 ? { sep: true as const } : {}) }));
-  }
-
-  /** In a formula: the commonest structures (wrapping the selection, if any), and the rest of math's commands. */
-  /** A row or column of the matrix the caret is in, added or taken away. */
-  matrixCommand(what: 'row+' | 'row-' | 'col+' | 'col-') {
-    const item = this.mathItem;
-    if (!item || !M.gridAt(item.root, this.mc)) return this.flash('not in a matrix');
-    this.checkpoint();
-    this.msel = null;
-    if (!M.gridEdit(item.root, this.mc, what)) this.flash(what === 'row-' ? 'a matrix keeps one row' : 'a matrix keeps one column');
-  }
-
-  private mathActions(): DrawingAction[] {
-    const put = (name: string) => () => {
-      this.openPalette('math');
-      this.palette!.query = name;
-      this.acceptPalette(undefined);
-    };
-    const acts: [string, string][] = this.mathSelRange
-      ? [['frac', 'a fraction over it'], ['sqrt', 'a square root of it'], ['hat', 'a hat on it'], ['bar', 'a bar over it'], ['boxed', 'a box round it']]
-      : [['frac', 'fraction'], ['sqrt', 'square root'], ['sum', 'sum'], ['int', 'integral'], ['pmatrix', 'matrix']];
-    const grid = this.mathItem && M.gridAt(this.mathItem.root, this.mc)
-      ? MATRIX_ACTIONS.map(([what, name, desc], i): DrawingAction => ({ name, desc, keys: [`\\${name}`], run: () => this.matrixCommand(what), ...(i === 0 ? { sep: true as const } : {}) }))
-      : [];
-    return [
-      ...grid,
-      ...acts.map(([name, desc], i): DrawingAction => ({ name, desc, keys: [`\\${name}`], run: put(name), ...(i === 0 ? { sep: true as const } : {}) })),
-      { name: 'mathcommands', desc: 'every math command', keys: ['\\'], run: () => this.openPalette('math') },
-    ];
-  }
-
-  /** In a table, the toolbar's table button: the table's menu, under it. */
-  openTableMenu(under: DOMRect): boolean {
-    if (!this.inTable) return false;
-    this.menu = { id: null, x: under.left, y: under.bottom + 2, sel: 0, table: true };
-    return true;
-  }
-
-  /** Whether the caret is in a table's cell (as text, not in a formula). */
-  get inTable(): boolean {
-    return this.mode === 'text' && !!this.tables.tableRow();
-  }
-
-  /**
-   * Right-click on the page: its menu. Outside the selection the caret moves to the click
-   * first (inside it, the selection stays, for the menu to act on).
-   */
-  openPageMenu(e: MouseEvent) {
-    e.preventDefault();
-    // (the pen's side button selects: not a right-click)
-    if (this.sketch.barrelClick()) return;
-    // a finger or pen held down (a long press is a right-click to the browser): the ring there
-    const type = (e as PointerEvent).pointerType ?? '';
-    if (type === 'touch' || type === 'pen' || (this.pointer !== 'mouse' && !e.button && !type)) {
-      this.sketch.cancelGesture();
-      // (the press still down: sliding it to an item and lifting chooses)
-      const id = (e as PointerEvent).pointerId;
-      this.openRadial(e.clientX, e.clientY, typeof id === 'number' && id >= 0 ? id : undefined);
-      this.touch();
-      return;
-    }
-    // drawing, or on a diagram: what can be done to the shape there (or what can be drawn)
-    const svg = (e.target as Element | null)?.closest?.('svg.canvas');
-    const canvas = svg ? ((svg.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null) : null;
-    if (this.mode === 'sketch' || canvas) {
-      this.withFrame(() => {
-        if (canvas && !this.sketch.isOn(canvas)) this.sketch.enter({ kind: 'block', id: canvas }, { tool: 'select' });
-        this.sketch.pickAt(e);
-        this.menu = { id: null, x: e.clientX, y: e.clientY, sel: 0, sketch: true };
-        this.touch();
-      });
-      return;
-    }
-    this.withFrame(() => {
-      if (this.note) this.commitNote();
-      if (this.mode === 'style' || this.mode === 'pick' || this.mode === 'hint') this.drawings.endDrawing();
-      if (this.mode === 'palette') this.closePalette();
-      const h = this.hitTest(e.clientX, e.clientY);
-      if (h && !h.math) h.pos = this.tables.snapClick(h.pos, e.clientX, e.clientY);
-      const s = this.selection;
-      const inSel = !!s && !!h && !h.math && cmpPos(h.pos, s.s) >= 0 && cmpPos(h.pos, s.e) <= 0;
-      const inFormula = !!h?.math && this.mode === 'math' && h.pos.b === this.b && h.pos.o === this.o && !!this.mathSelRange;
-      if (h && !inSel && !inFormula) {
-        this.anchor = null;
-        this.msel = null;
-        this.b = h.pos.b;
-        this.o = h.pos.o;
-        if (h.math) (this.mc = this.mathPos(h.math)), this.setMode('math');
-        else this.setMode('text');
-      }
-      this.menu = { id: null, x: e.clientX, y: e.clientY, sel: Math.max(0, this.pageActions().findIndex((a) => !a.off)) };
-      this.touch();
-    });
-  }
-
-  /** Paste from the clipboard (from the menu: there's no paste event to read it from). */
-  private async pasteFromClipboard() {
-    try {
-      const text = await navigator.clipboard.readText();
-      this.withFrame(() => { this.pasteText(text); this.touch(); });
-    } catch {
-      this.flash("can't read the clipboard, use ctrl+v");
-    }
-  }
-
-  /** Run a key as if it had been pressed (in the current mode). */
-  private runKey(k: string): boolean {
-    if (this.note && (this.mode === 'text' || this.mode === 'math')) return this.noteKey(k);
-    switch (this.mode) {
-      case 'text': return this.textKey(k);
-      case 'math': return this.mathKey(k);
-      case 'pick': return this.drawings.pickKey(k);
-      case 'style': return this.drawings.styleKey(k);
-      case 'hint': return this.hintKey(k);
-      case 'palette': return this.paletteKey(k);
-      case 'sketch': return this.sketch.key(k);
-    }
-  }
-
-  /** Select a drawing and open its menu at (x, y), or under the drawing (from the keyboard). */
-  openDrawingMenu(id: Id, x?: number, y?: number) {
-    this.withFrame(() => {
-      if (this.styling !== id || this.mode !== 'style') this.drawings.selectDrawing(id);
-      if (x === undefined || y === undefined) {
-        const r = this.drawings.drawingRect(id), o = this.page?.getBoundingClientRect();
-        if (!r || !o) return;
-        x = o.left + r.x;
-        y = o.top + r.y + r.h + 4;
-      }
-      this.menu = { id, x, y, sel: 0 };
-      this.touch();
-    });
-  }
-
-  closeMenu() {
-    this.menu = null;
-  }
-
-  /** Run a menu entry (it closes first: the action may open something else). */
-  runMenu(i: number) {
-    const a = this.menuItems[i];
-    if (a?.off) return;
-    this.menu = null;
-    this.withFrame(() => {
-      a?.run();
-      this.touch();
-    });
-  }
-
-  private menuKey(k: string): boolean {
-    const mn = this.menu!;
-    const items = this.menuItems;
-    switch (k) {
-      case 'Escape': this.menu = null; return true;
-      // (past entries that can't be used now)
-      case 'Down': case 'j': case 'Tab': case 'C-n': mn.sel = this.menuStep(mn.sel, 1); return true;
-      case 'Up': case 'k': case 'S-Tab': case 'C-p': mn.sel = this.menuStep(mn.sel, -1); return true;
-      case 'Home': mn.sel = this.menuStep(-1, 1); return true;
-      case 'End': mn.sel = this.menuStep(items.length, -1); return true;
-      case 'Enter': case ' ': this.runMenu(mn.sel); return true;
-    }
-    // an entry's own key runs it straight away (any other key closes the menu and does its thing)
-    const i = items.findIndex((a) => a.keys.includes(k));
-    if (i >= 0) this.runMenu(i);
-    else {
-      this.menu = null;
-      return this.runKey(k);
-    }
-    return true;
-  }
-
-  private menuStep(from: number, d: 1 | -1): number {
-    const items = this.menuItems, n = items.length;
-    for (let k = 1; k <= n; k++) {
-      const i = (((from + d * k) % n) + n) % n;
-      if (!items[i].off) return i;
-    }
-    return Math.max(0, from);
-  }
-
+  menus = new Menus(this);
   // ── notes being typed ──
 
   /**
@@ -5598,7 +5381,7 @@ export class Editor {
    * isn't a page: Enter keeps it, Esc (with nothing selected) drops it, ↑ ↓ go to its
    * ends, and nothing leads out of it into the page.
    */
-  private noteKey(k: string): boolean {
+  noteKey(k: string): boolean {
     const n = this.note!;
     if (this.mode === 'math') return this.mathKey(k);
     const end = n.blk.items.length;
@@ -5744,7 +5527,7 @@ export class Editor {
     this.showHints(ts);
   }
 
-  private hintKey(k: string): boolean {
+  hintKey(k: string): boolean {
     const h = this.hints!;
     if (k === 'Escape') { this.hints = null; this.mode = this.prevMode; return true; }
     if (k === 'Backspace') { h.typed = h.typed.slice(0, -1); return true; }

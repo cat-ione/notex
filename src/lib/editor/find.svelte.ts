@@ -170,7 +170,7 @@ export class Finder {
         this.ed.styling = null;
         this.ed.pick = null;
         this.ed.palette = null;
-        this.ed.menu = null;
+        this.ed.menus.menu = null;
         this.ed.setMode('text');
       }
       // (a match in a folded section: unfolded)

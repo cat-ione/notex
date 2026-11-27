@@ -56,7 +56,7 @@
     bind:offsetHeight={height}
     style="left: {left}px; top: {top}px;"
     onmousedown={down}
-    oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(id, e.clientX, e.clientY); }}
+    oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.menus.openDrawingMenu(id, e.clientX, e.clientY); }}
     transition:fly={{ y: at?.below ? -4 : 4, duration: 120, easing: cubicOut }}
   >
     {#if mark}
