@@ -194,13 +194,17 @@
     ed.initLibrary();
     // offline (see src/service-worker.ts): the built site in a browser, not the desktop app
     if (!import.meta.env.DEV && !isDesktop() && 'serviceWorker' in navigator) navigator.serviceWorker.register(`${base}/service-worker.js`).catch(() => {});
-    // Height changes come from content, which lays out after rendering anyway;
-    // only a change of width (window, settings) needs a fresh layout here.
+    // A change of width (window, settings) needs everything laid out afresh. Height changes
+    // mostly come from edits, which lay out after rendering anyway; but a paragraph drawn only
+    // once it nears the screen (content-visibility) stands in at a guessed height until then,
+    // and when it's drawn (scrolled to, after a long paste) what's under it moves: the caret,
+    // the selection and the drawings follow it.
     let width = page.clientWidth;
     const ro = new ResizeObserver(() => {
-      if (page.clientWidth === width) return;
-      width = page.clientWidth;
-      ed.relayoutAll();
+      if (page.clientWidth !== width) {
+        width = page.clientWidth;
+        ed.relayoutAll();
+      } else if (page.offsetHeight !== ed.laidHeight) ed.layout();
     });
     ro.observe(page);
     document.fonts?.ready.then(() => ed.relayoutAll());

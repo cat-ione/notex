@@ -110,3 +110,28 @@ test('every drawing in the welcome note is drawn', async ({ page }) => {
   expect(kinds).toEqual(['box', 'brace', 'circle', 'highlight', 'strike', 'underline']);
   await expect(page.locator('.nx-err')).toHaveCount(0);
 });
+
+test('after a long paste, the caret is drawn where it is, once what was pasted is all drawn', async ({ page }) => {
+  await open(page);
+  // the whole welcome note copied, and pasted at its end
+  const all = await page.evaluate(() => {
+    const e = (window as any).__nx.ed;
+    e.selectAll();
+    let t = '';
+    e.copy({ clipboardData: { setData: (k: string, v: string) => void (k === 'text/plain' && (t = v)) }, preventDefault() {} }, false);
+    return t;
+  });
+  expect(all.length).toBeGreaterThan(2000);
+  await page.keyboard.press('Control+End');
+  await page.evaluate((t) => (window as any).__nx.ed.paste({ clipboardData: { getData: (k: string) => (k === 'text/plain' ? t : ''), types: ['text/plain'], files: [] }, preventDefault() {} }), all);
+  // (the caret glides to where it goes; then it's on the character before it)
+  const off = () =>
+    page.evaluate(() => {
+      const e = (window as any).__nx.ed;
+      const c = document.querySelector('.caret')!.getBoundingClientRect();
+      const prev = e.doc.blocks[e.b].items[e.o - 1];
+      const r = document.querySelector(`[data-nx="${prev.id}"]`)!.getBoundingClientRect();
+      return Math.round(Math.abs(c.top - r.top) + Math.abs(c.left - r.right));
+    });
+  await expect.poll(off, { timeout: 3000 }).toBeLessThan(6);
+});

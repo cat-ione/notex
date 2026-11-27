@@ -2470,8 +2470,11 @@ export class Editor {
       this.layoutFrame();
     } finally {
       this.frame = outer;
+      this.laidHeight = this.page.offsetHeight;
     }
   }
+  /** The page's height when it was last laid out (a change since: see Editor.svelte's ResizeObserver). */
+  laidHeight = 0;
 
   private layoutFrame() {
     const page = this.page!;
