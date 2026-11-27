@@ -14,7 +14,7 @@
     const out: L[] = [];
     const ghost = ed.pick?.edit?.id;
     // The note being typed is drawn as the paragraph it's typed as (below), in place
-    const editing = (id: string) => ed.note?.id === id;
+    const editing = (id: string) => ed.noteEd.note?.id === id;
     const text = (id: string, saved: string) => (editing(id) ? '' : saved);
     const edit = (id: string) => (editing(id) ? true : undefined);
     for (const a of ed.doc.arrows) {
@@ -64,7 +64,7 @@
     style="left: {l.x}px; top: {l.y}px; --ink: {inkVar(l.color)};{l.maxW ? ` max-width: ${l.maxW}px;` : ''}"
     in:fade={{ duration: 200 }}
   >
-    {#if l.noting && ed.note}{#each ed.note.blk.items as it, o (it.id)}{#if it.t === 'c'}<span class="ch" class:b={it.b} class:i={it.i} class:lsel={ed.isSelected(NOTE_B, o)} data-nx={it.id}>{it.ch}</span>{:else}<MathView item={it} cursor={ed.mode === 'math' && ed.o === o ? ed.mc : null} sel={ed.mode === 'math' && ed.o === o ? ed.mathSelRange : null} selected={ed.isSelected(NOTE_B, o)} />{/if}{/each}<span class="eol">&#8203;</span>{:else}{@html render(l.text)}{/if}
+    {#if l.noting && ed.noteEd.note}{#each ed.noteEd.note.blk.items as it, o (it.id)}{#if it.t === 'c'}<span class="ch" class:b={it.b} class:i={it.i} class:lsel={ed.isSelected(NOTE_B, o)} data-nx={it.id}>{it.ch}</span>{:else}<MathView item={it} cursor={ed.mode === 'math' && ed.o === o ? ed.mc : null} sel={ed.mode === 'math' && ed.o === o ? ed.mathSelRange : null} selected={ed.isSelected(NOTE_B, o)} />{/if}{/each}<span class="eol">&#8203;</span>{:else}{@html render(l.text)}{/if}
   </div>
 {/each}
 

@@ -166,7 +166,7 @@ export class Finder {
     }
     this.ed.withFrame(() => {
       if (this.ed.mode !== 'text') {
-        if (this.ed.note) this.ed.commitNote();
+        if (this.ed.noteEd.note) this.ed.noteEd.commitNote();
         this.ed.styling = null;
         this.ed.pick = null;
         this.ed.palette = null;

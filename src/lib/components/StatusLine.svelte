@@ -28,7 +28,7 @@
     sketch: 'drag to draw · a tap with a box tool makes one · double-click to label · right-click for more · esc done',
   };
   // typing a note: NOTE (in its math: MATH, as on the page)
-  const name = $derived(ed.note && ed.mode === 'text' ? 'NOTE' : ed.mode === 'sketch' && ed.sketch.on?.kind === 'block' ? 'DIAGRAM' : LABEL[ed.mode]);
+  const name = $derived(ed.noteEd.note && ed.mode === 'text' ? 'NOTE' : ed.mode === 'sketch' && ed.sketch.on?.kind === 'block' ? 'DIAGRAM' : LABEL[ed.mode]);
   // a drawing's keys, from the same table as its menu
   const styleHint = $derived(
     ed.mode === 'style' && ed.styling
@@ -54,14 +54,14 @@
 
 <footer class="status">
   {#key name}
-    <span class="mode m-{ed.note ? 'label' : ed.mode}" in:fly={{ y: 6, duration: 160 }}>{name}</span>
+    <span class="mode m-{ed.noteEd.note ? 'label' : ed.mode}" in:fly={{ y: 6, duration: 160 }}>{name}</span>
   {/key}
   {#if ed.message}
     <span class="msg" in:fly={{ x: -8, duration: 160 }}>{ed.message}</span>
   {:else if ed.tipText}
     <span class="tip" in:fade={{ duration: 300 }}><span class="tag">tip</span>{ed.tipText}</span>
   {:else}
-    <span class="keys">{ed.note && ed.mode === 'text' ? HINTS.label : ed.input === 'mouse' && MOUSE[ed.mode] ? MOUSE[ed.mode] : ed.mode === 'style' ? styleHint : ed.mode === 'sketch' && ed.sketch.sel.length ? SKETCH_SEL : HINTS[ed.mode]}</span>
+    <span class="keys">{ed.noteEd.note && ed.mode === 'text' ? HINTS.label : ed.input === 'mouse' && MOUSE[ed.mode] ? MOUSE[ed.mode] : ed.mode === 'style' ? styleHint : ed.mode === 'sketch' && ed.sketch.sel.length ? SKETCH_SEL : HINTS[ed.mode]}</span>
   {/if}
   <span class="spacer"></span>
   <!-- (the toolbar shows the note's name) -->

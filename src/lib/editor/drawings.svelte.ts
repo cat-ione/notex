@@ -186,7 +186,7 @@ export class Drawings {
 
   /** Enter style mode for an arrow or mark. */
   selectDrawing(id: Id) {
-    if (this.ed.note) this.ed.commitNote();
+    if (this.ed.noteEd.note) this.ed.noteEd.commitNote();
     this.ed.anchor = null;
     this.ed.hints = null;
     this.ed.palette = null;
@@ -567,7 +567,7 @@ export class Drawings {
     const m = this.ed.doc.marks.find((x) => x.id === id);
     const edit = (f: () => void) => () => { this.ed.checkpoint('style'); f(); };
     const note = (d: Arrow | Mark): DrawingAction =>
-      ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note', keys: ['l', 'i', '"'], run: () => this.ed.editNote(), more: 'or double-click' });
+      ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note', keys: ['l', 'i', '"'], run: () => this.ed.noteEd.editNote(), more: 'or double-click' });
     const remove = (f: () => void): DrawingAction =>
       ({ name: 'delete', desc: 'delete', keys: ['x', 'Delete', 'Backspace'], run: () => { this.ed.checkpoint(); f(); this.endDrawing(); }, more: 'or middle-click', sep: true });
     // a note can be moved by hand: Alt+arrows (Shift: by a pixel), Alt+0 puts it back

@@ -109,7 +109,7 @@ export class Tables {
       }
       this.tablesAt = { edits: this.ed.edits, doc: this.ed.doc };
     }
-    if (this.ed.mode === 'text' && !this.ed.note) {
+    if (this.ed.mode === 'text' && !this.ed.noteEd.note) {
       const p = this.snapPos({ b: this.ed.b, o: this.ed.o });
       this.ed.b = p.b;
       this.ed.o = p.o;
@@ -281,7 +281,7 @@ export class Tables {
 
   /** A table to start from (\table, the toolbar): two columns, the first header selected. */
   insertTable() {
-    if (this.ed.mode !== 'text' || this.ed.note) return;
+    if (this.ed.mode !== 'text' || this.ed.noteEd.note) return;
     this.ed.checkpoint();
     this.ed.anchor = null;
     const head = block(rowItems([chars('column'), chars('column')]), 'tr');

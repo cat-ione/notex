@@ -124,7 +124,7 @@ export class Menus {
       return;
     }
     this.ed.withFrame(() => {
-      if (this.ed.note) this.ed.commitNote();
+      if (this.ed.noteEd.note) this.ed.noteEd.commitNote();
       if (this.ed.mode === 'style' || this.ed.mode === 'pick' || this.ed.mode === 'hint') this.ed.drawings.endDrawing();
       if (this.ed.mode === 'palette') this.ed.closePalette();
       const h = this.ed.hitTest(e.clientX, e.clientY);
@@ -157,7 +157,7 @@ export class Menus {
 
   /** Run a key as if it had been pressed (in the current mode). */
   runKey(k: string): boolean {
-    if (this.ed.note && (this.ed.mode === 'text' || this.ed.mode === 'math')) return this.ed.noteKey(k);
+    if (this.ed.noteEd.note && (this.ed.mode === 'text' || this.ed.mode === 'math')) return this.ed.noteEd.noteKey(k);
     switch (this.ed.mode) {
       case 'text': return this.ed.textKey(k);
       case 'math': return this.ed.mathKey(k);
