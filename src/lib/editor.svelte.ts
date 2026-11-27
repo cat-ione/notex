@@ -37,6 +37,7 @@ import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from '
 import { parseLatex } from './math/parse';
 import { slotPath, toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { Sketcher, type Tool } from './sketch/sketcher.svelte';
+import { Drawings } from './editor/drawings.svelte';
 import { Finder } from './editor/find.svelte';
 import { Tables } from './editor/tables.svelte';
 import { labelled } from './sketch/shapes';
@@ -258,7 +259,7 @@ export class Editor {
     this.touch();
   }
   /** Where the palette opens when it isn't at the caret (the toolbar's draw button); page coordinates. */
-  private paletteAt = $state.raw<Rect | null>(null);
+  paletteAt = $state.raw<Rect | null>(null);
   dirty = $state(false);
   edits = 0;
 
@@ -311,13 +312,13 @@ export class Editor {
   /** A layout waiting for blocks to be drawn (see makeRoom). */
   private drawQueued = false;
   /** Text selection captured when a command was run from the palette. */
-  private cmdSel: { s: Pos; e: Pos } | null = null;
+  cmdSel: { s: Pos; e: Pos } | null = null;
   /** Where to go back to after a drawing started from inside a formula. */
-  private drawReturn: { b: number; o: number; mc: MCursor } | null = null;
+  drawReturn: { b: number; o: number; mc: MCursor } | null = null;
 
   page: HTMLElement | null = null;
 
-  private prevMode: Mode = 'text';
+  prevMode: Mode = 'text';
   private pending = '';
   goalX: number | null = null;
   private undoStack: Snap[] = [];
@@ -562,7 +563,7 @@ export class Editor {
    * what it suggests), another tip was up in the last two minutes, a message is showing,
    * or this is before its `after`-th moment. Tips can be turned off in settings.
    */
-  private tip(id: string, text: string, after = 1) {
+  tip(id: string, text: string, after = 1) {
     const n = (this.tipMoments[id] = (this.tipMoments[id] ?? 0) + 1);
     const rec = this.tipLog[id] ?? {};
     if (!this.config.tips || n < after || rec.learned || (rec.shown ?? 0) >= 2 || this.message || performance.now() - this.lastTip < 120_000) return;
@@ -576,7 +577,7 @@ export class Editor {
   }
 
   /** A tip for right after a message (the message goes first; the tip follows it). */
-  private tipLater(id: string, text: string, after = 1) {
+  tipLater(id: string, text: string, after = 1) {
     setTimeout(() => this.tip(id, text, after), 3600);
   }
 
@@ -1381,7 +1382,7 @@ export class Editor {
     return rs;
   }
 
-  private rectOfIds(ids: Id[]): Rect | null {
+  rectOfIds(ids: Id[]): Rect | null {
     return union(this.rectsOfIds(ids));
   }
 
@@ -1862,10 +1863,10 @@ export class Editor {
     if (e.altKey && (this.mode === 'text' || this.mode === 'math' || this.mode === 'style') && this.beginAltDraw(e)) return;
     if (this.mode === 'pick') {
       const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
-      const loc = id ? this.locFromId(id) : null;
+      const loc = id ? this.drawings.locFromId(id) : null;
       if (loc) {
         this.pick!.loc = loc;
-        this.pickKey('Enter');
+        this.drawings.pickKey('Enter');
       }
       this.touch();
       return;
@@ -2081,7 +2082,7 @@ export class Editor {
         this.touch();
         return;
       }
-      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      if (this.styling !== id || this.mode !== 'style') this.drawings.selectDrawing(id);
       this.noteDrag = { id, x: e.clientX, y: e.clientY, moved: false };
       this.touch();
     });
@@ -2102,16 +2103,16 @@ export class Editor {
     if (e.button !== 0) return;
     this.withFrame(() => {
       this.menu = null;
-      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      if (this.styling !== id || this.mode !== 'style') this.drawings.selectDrawing(id);
       // which of the shape's pieces was grabbed: it stays under the mouse
       const m = this.doc.marks.find((x) => x.id === id);
       let count = 1, grab = 0;
       if (m) {
-        const us = this.unitsOf(this.locForIds(m.at));
+        const us = this.unitsOf(this.drawings.locForIds(m.at));
         count = us.length;
         let best = Infinity;
         us.forEach((u, k) => {
-          const r = this.rectOfIds(this.anchorIds(u));
+          const r = this.rectOfIds(this.drawings.anchorIds(u));
           const d = r ? Math.abs(r.x + r.w / 2 - e.clientX) : Infinity;
           if (d < best) (best = d), (grab = k);
         });
@@ -2123,7 +2124,7 @@ export class Editor {
 
   /** The single targets (words, math groups) a range is made of. */
   private unitsOf(l: Loc): Loc[] {
-    if (l.k === 'word') return this.wordsIn(l.b).filter((w) => w.s >= l.s && w.e <= l.e);
+    if (l.k === 'word') return this.drawings.wordsIn(l.b).filter((w) => w.s >= l.s && w.e <= l.e);
     if (l.k === 'node') {
       const gs = groups(M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path));
       return gs.filter(([i, j]) => i >= l.i && j <= l.j).map(([i, j]) => ({ ...l, i, j }));
@@ -2133,7 +2134,7 @@ export class Editor {
 
   /** The targets alongside one: the words of its paragraph, the groups of its formula row. */
   private unitsAround(l: Loc): Loc[] {
-    if (l.k === 'word') return this.wordsIn(l.b);
+    if (l.k === 'word') return this.drawings.wordsIn(l.b);
     if (l.k === 'node') return groups(M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path)).map(([i, j]) => ({ ...l, i, j }));
     return [l];
   }
@@ -2156,14 +2157,14 @@ export class Editor {
     }
     // the shape lands on what's under the mouse, the grabbed piece there, as many pieces as before
     const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
-    const t = id ? this.locFromId(id) : null;
+    const t = id ? this.drawings.locFromId(id) : null;
     if (!t) return;
     const around = this.unitsAround(t);
-    const ti = Math.max(0, around.findIndex((u) => this.sameLoc(u, t)));
+    const ti = Math.max(0, around.findIndex((u) => this.drawings.sameLoc(u, t)));
     const start = Math.max(0, Math.min(ti - bd.grab, around.length - bd.count));
     const end = Math.min(around.length - 1, start + bd.count - 1);
-    const span = start === end ? around[start] : (this.spanLoc(around[start], around[end]) ?? t);
-    const ids = this.anchorIds(span);
+    const span = start === end ? around[start] : (this.drawings.spanLoc(around[start], around[end]) ?? t);
+    const ids = this.drawings.anchorIds(span);
     if (ids.length && ids.join() !== m!.at.join()) m!.at = ids;
     this.touch();
   }
@@ -2177,7 +2178,7 @@ export class Editor {
       if (ai >= 0) this.doc.arrows.splice(ai, 1);
       else this.doc.marks.splice(mi, 1);
       this.menu = null;
-      if (this.styling === id) this.endDrawing();
+      if (this.styling === id) this.drawings.endDrawing();
       this.touch();
     });
   }
@@ -2198,8 +2199,8 @@ export class Editor {
   /** Run one of a drawing's actions by name (the toolbar). */
   runAction(id: Id, name: string) {
     this.withFrame(() => {
-      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
-      this.drawingActions(id).find((a) => a.name === name)?.run();
+      if (this.styling !== id || this.mode !== 'style') this.drawings.selectDrawing(id);
+      this.drawings.drawingActions(id).find((a) => a.name === name)?.run();
       this.touch();
     });
   }
@@ -2294,7 +2295,7 @@ export class Editor {
    * has one) and what it marks (an arrow: both ends).
    */
   private drawingParts(id: Id): Rect[] {
-    const r0 = this.drawingRect(id), o = this.page?.getBoundingClientRect();
+    const r0 = this.drawings.drawingRect(id), o = this.page?.getBoundingClientRect();
     if (!r0 || !o) return [];
     const parts = [r0];
     const el = this.noteEl(id);
@@ -2317,7 +2318,7 @@ export class Editor {
     if (this.note?.id === id) return; // (a double press in it selects a word: noteDown)
     const at = labelOffsetAt(e.currentTarget as Element, e.clientX, e.clientY);
     this.withFrame(() => {
-      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      if (this.styling !== id || this.mode !== 'style') this.drawings.selectDrawing(id);
       this.editNote(at);
       this.touch();
     });
@@ -2326,7 +2327,7 @@ export class Editor {
   /** Double-click on a drawing: type its note (a new one, or at the end of the one it has). */
   editNoteOf(id: Id) {
     this.withFrame(() => {
-      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      if (this.styling !== id || this.mode !== 'style') this.drawings.selectDrawing(id);
       this.editNote();
       this.touch();
     });
@@ -2337,7 +2338,7 @@ export class Editor {
   }
 
   /** A note's offset from the middle of its drawing as drawn now (placed by hand or not). */
-  private noteOffset(id: Id): NoteAt | null {
+  noteOffset(id: Id): NoteAt | null {
     const d = this.drawing(id);
     if (d?.note) return { ...d.note };
     const el = this.noteEl(id), o = this.page?.getBoundingClientRect();
@@ -2372,7 +2373,7 @@ export class Editor {
   /** An Alt+drag drawing: where it started, and whether it draws a shape (Alt+Shift). */
   private altDraw: { start: Loc; shape: boolean } | null = null;
   /** The shape Alt+Shift+drag draws: the last one drawn. */
-  private lastMarkKind: MarkKind = 'box';
+  lastMarkKind: MarkKind = 'box';
 
   /**
    * Alt+drag from one thing to another draws an arrow; Alt+Shift+drag across a range
@@ -2380,13 +2381,13 @@ export class Editor {
    */
   private beginAltDraw(e: MouseEvent): boolean {
     const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
-    const loc = id ? this.locFromId(id) : null;
+    const loc = id ? this.drawings.locFromId(id) : null;
     if (!loc) return false;
     if (this.note) this.commitNote();
     if (this.mode === 'style') this.setMode('text');
     this.styling = null;
     this.menu = null;
-    this.noteDrawReturn();
+    this.drawings.noteDrawReturn();
     this.anchor = null;
     this.msel = null;
     this.pick = e.shiftKey ? { phase: 'from', loc, purpose: this.lastMarkKind } : { phase: 'to', from: loc, loc, purpose: 'arrow' };
@@ -2400,8 +2401,8 @@ export class Editor {
     const ad = this.altDraw!, pk = this.pick;
     if (!pk) return void (this.altDraw = null);
     const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
-    const loc = id ? this.locFromId(id) : null;
-    if (loc) pk.loc = ad.shape ? (this.spanLoc(ad.start, loc) ?? ad.start) : loc;
+    const loc = id ? this.drawings.locFromId(id) : null;
+    if (loc) pk.loc = ad.shape ? (this.drawings.spanLoc(ad.start, loc) ?? ad.start) : loc;
     this.touch();
   }
 
@@ -2411,11 +2412,11 @@ export class Editor {
     this.learned(ad.shape ? 'alt-shift-drag' : 'alt-drag');
     if (!pk) return;
     // let go where it started: no arrow (a shape around the one thing is fine)
-    if (!ad.shape && this.anchorIds(pk.loc).join() === this.anchorIds(ad.start).join()) {
-      this.endDrawing();
+    if (!ad.shape && this.drawings.anchorIds(pk.loc).join() === this.drawings.anchorIds(ad.start).join()) {
+      this.drawings.endDrawing();
       return;
     }
-    this.withFrame(() => this.pickKey('Enter'));
+    this.withFrame(() => this.drawings.pickKey('Enter'));
   }
 
   /** Put an arrow's middle where `curveThrough` says (no skew left over when it's in the middle). */
@@ -2437,28 +2438,28 @@ export class Editor {
     this.handleDrag = { id, part };
     this.dragBusy = true;
     if (part === 'bend') this.checkpoint();
-    else this.retarget(id, part);
+    else this.drawings.retarget(id, part);
   }
 
   /** Start dragging one end of the selected shape: the other end stays where it is. */
   beginMarkResize(id: Id, end: 'start' | 'end') {
     const m = this.doc.marks.find((x) => x.id === id);
     if (!m) return;
-    const l = this.locForIds(m.at);
+    const l = this.drawings.locForIds(m.at);
     if (l.k !== 'word' && l.k !== 'node') return this.flash("this shape can't be resized");
     this.checkpoint();
     this.dragBusy = true;
-    this.handleDrag = { id, part: end, fixed: this.edgeUnit(l, end === 'end' ? 'start' : 'end') };
+    this.handleDrag = { id, part: end, fixed: this.drawings.edgeUnit(l, end === 'end' ? 'start' : 'end') };
   }
 
   private dragHandle(e: MouseEvent) {
     const hd = this.handleDrag!;
     if (hd.part === 'start' || hd.part === 'end') {
       const m = this.doc.marks.find((x) => x.id === hd.id);
-      const loc = hd.fixed ? this.resizeTargetAt(hd.fixed, e.clientX, e.clientY) : null;
-      const span = m && loc && hd.fixed ? this.spanLoc(hd.fixed, loc) : null;
+      const loc = hd.fixed ? this.drawings.resizeTargetAt(hd.fixed, e.clientX, e.clientY) : null;
+      const span = m && loc && hd.fixed ? this.drawings.spanLoc(hd.fixed, loc) : null;
       if (m && span) {
-        const ids = this.anchorIds(span);
+        const ids = this.drawings.anchorIds(span);
         if (ids.join() !== m.at.join()) m.at = ids;
       }
       this.touch();
@@ -2471,10 +2472,10 @@ export class Editor {
       if (fr && tr) this.setCurve(a, curveThrough(fr, tr, { x: e.clientX, y: e.clientY }, { from: a.fromAt, to: a.toAt }));
     } else if (this.pick) {
       const id = (this.under(e.clientX, e.clientY)?.closest('[data-nx]') as HTMLElement | null)?.dataset.nx;
-      const loc = id ? this.locFromId(id) : null;
+      const loc = id ? this.drawings.locFromId(id) : null;
       if (loc) this.pick.loc = loc;
       // where on that target it would attach (shown in the preview, kept on drop)
-      const r = this.rectOfIds(this.anchorIds(this.pick.loc));
+      const r = this.rectOfIds(this.drawings.anchorIds(this.pick.loc));
       this.dragEnd = { at: r ? attachAt({ x: r.x - 3, y: r.y - 3, w: r.w + 6, h: r.h + 6 }, { x: e.clientX, y: e.clientY }) : undefined };
     }
     this.touch();
@@ -2533,9 +2534,9 @@ export class Editor {
     const drop = this.dragEnd;
     this.dragEnd = null;
     if (hd && hd.part !== 'bend' && this.pick?.edit) {
-      this.finishRetarget(this.pick.edit, this.anchorIds(this.pick.loc), drop ?? undefined);
+      this.drawings.finishRetarget(this.pick.edit, this.drawings.anchorIds(this.pick.loc), drop ?? undefined);
       // dropped somewhere invalid: keep the arrow as it was
-      if (this.pick) (this.pick = null), this.selectDrawing(hd.id);
+      if (this.pick) (this.pick = null), this.drawings.selectDrawing(hd.id);
     }
   }
 
@@ -2587,13 +2588,13 @@ export class Editor {
     this.caret = caret;
     this.selRects = [...this.selectionRects(origin), ...this.mathSelRects(origin)];
     this.findRects = this.find ? this.finder.findHitRects(origin) : this.findRects.length ? [] : this.findRects;
-    this.mathFrame = this.inFormula ? this.mathFrameRect(origin) : null;
+    this.mathFrame = this.drawings.inFormula ? this.mathFrameRect(origin) : null;
 
     // Pick highlights
     if (this.pick) {
       this.pickRects = {
-        cur: rel(this.rectOfIds(this.anchorIds(this.pick.loc))),
-        from: this.pick.from ? rel(this.rectOfIds(this.anchorIds(this.pick.from))) : null,
+        cur: rel(this.rectOfIds(this.drawings.anchorIds(this.pick.loc))),
+        from: this.pick.from ? rel(this.rectOfIds(this.drawings.anchorIds(this.pick.from))) : null,
       };
     } else this.pickRects = { cur: null, from: null };
 
@@ -4890,7 +4891,7 @@ export class Editor {
       return (q ? rank(ts.map((t) => t.name), q, () => 0, (n) => ts.find((t) => t.name === n)!.desc) : ts.map((t) => t.name)).map((n) => ({ name: n, desc: ts.find((t) => t.name === n)!.desc }));
     }
     if (p.ctx === 'style') {
-      const acts = this.styling ? this.drawingActions(this.styling).filter((a) => !a.keyOnly) : [];
+      const acts = this.styling ? this.drawings.drawingActions(this.styling).filter((a) => !a.keyOnly) : [];
       return find(acts.map((c) => c.name), (n) => acts.find((c) => c.name === n)!.desc).map((n) => {
         const c = acts.find((c) => c.name === n)!;
         return { name: c.name, desc: `${c.desc}  ${keyLabel(c.keys[0])}` };
@@ -4945,7 +4946,7 @@ export class Editor {
     return null;
   }
 
-  private openPalette(ctx: PaletteCtx) {
+  openPalette(ctx: PaletteCtx) {
     this.palette = { ctx, query: '', sel: 0 };
     this.paletteAt = null;
     this.setMode('palette');
@@ -5028,7 +5029,7 @@ export class Editor {
       return;
     }
     if (p.ctx === 'style') {
-      const acts = this.styling ? this.drawingActions(this.styling) : [];
+      const acts = this.styling ? this.drawings.drawingActions(this.styling) : [];
       const c = acts.find((c) => c.name === q) ?? acts.find((c) => c.name === name);
       if (c) picks(c.name), c.run();
       else if (q) this.flash(`unknown action: ${q}`);
@@ -5087,8 +5088,8 @@ export class Editor {
   /** Drawing commands: in the text menu, the draw menu (Ctrl+D), and the math menu once you type. */
   drawCommands(): PaletteEntry[] {
     return [
-      { name: 'arrow', desc: 'draw an arrow', run: () => this.startArrow(), draw: true },
-      ...MARK_KINDS.map((k) => ({ name: k, desc: MARK_DESC[k], run: () => this.startMark(k), draw: true })),
+      { name: 'arrow', desc: 'draw an arrow', run: () => this.drawings.startArrow(), draw: true },
+      ...MARK_KINDS.map((k) => ({ name: k, desc: MARK_DESC[k], run: () => this.drawings.startMark(k), draw: true })),
       { name: 'drawings', desc: 'select a drawing', run: () => this.selectDrawingByHint(), draw: true },
     ];
   }
@@ -5264,657 +5265,7 @@ export class Editor {
     }
   }
 
-  // ───────────────────────── arrows ─────────────────────────
-
-  /** Targets at the top level, in reading order: words and top-level math groups. */
-  private level0(): Loc[] {
-    const out: Loc[] = [];
-    this.doc.blocks.forEach((blk, b) => {
-      if (isFigure(blk.kind)) out.push({ k: 'block', b }); // an image, then its caption's words
-      let s = -1;
-      blk.items.forEach((it, o) => {
-        if (it.t === 'c' && !/\s/.test(it.ch)) {
-          if (s < 0) s = o;
-          return;
-        }
-        if (s >= 0) out.push({ k: 'word', b, s, e: o - 1 }), (s = -1);
-        if (it.t === 'm') {
-          if (!it.root.length) out.push({ k: 'item', b, o });
-          for (const [i, j] of groups(it.root)) out.push({ k: 'node', b, o, path: [], i, j });
-        }
-      });
-      if (s >= 0) out.push({ k: 'word', b, s, e: blk.items.length - 1 });
-    });
-    return out;
-  }
-
-  anchorIds(l: Loc): Id[] {
-    const blk = this.doc.blocks[l.b];
-    if (!blk) return [];
-    switch (l.k) {
-      case 'block': return [blk.id];
-      case 'word': return blk.items.slice(l.s, l.e + 1).map((i) => i.id);
-      case 'ids': return l.ids;
-      case 'item': return [blk.items[l.o].id];
-      case 'node': {
-        const m = blk.items[l.o] as MathItem;
-        return M.nodeIds(M.rowAt(m.root, l.path), l.i, l.j);
-      }
-    }
-  }
-
-  private locFromCursor(): Loc {
-    const blk = this.blk;
-    const it = blk.items[this.o];
-    if (it?.t === 'm') return { k: 'item', b: this.b, o: this.o };
-    if (it && !isSpace(it)) {
-      let s = this.o, e = this.o;
-      while (s > 0 && blk.items[s - 1].t === 'c' && !isSpace(blk.items[s - 1])) s--;
-      while (e < blk.items.length - 1 && blk.items[e + 1].t === 'c' && !isSpace(blk.items[e + 1])) e++;
-      return { k: 'word', b: this.b, s, e };
-    }
-    const l0 = this.level0();
-    return l0.find((l) => l.b >= this.b) ?? l0[0] ?? { k: 'block', b: this.b };
-  }
-
-  /** A Loc for a text selection, trimmed of surrounding spaces. */
-  private locFromSelection(r: { s: Pos; e: Pos } | null): Loc | null {
-    if (!r) return null;
-    const ids: Id[] = [];
-    for (let b = r.s.b; b <= r.e.b; b++) {
-      const items = this.doc.blocks[b].items;
-      const from = b === r.s.b ? r.s.o : 0, to = b === r.e.b ? r.e.o : items.length;
-      ids.push(...items.slice(from, to).filter((i) => !isSpace(i)).map((i) => i.id));
-    }
-    if (!ids.length) return null;
-    if (r.s.b === r.e.b) {
-      const items = this.doc.blocks[r.s.b].items;
-      let s = r.s.o, e = r.e.o - 1;
-      while (s < e && isSpace(items[s])) s++;
-      while (e > s && isSpace(items[e])) e--;
-      return { k: 'word', b: r.s.b, s, e };
-    }
-    return { k: 'ids', b: r.s.b, ids };
-  }
-
-  /** True while editing a formula (also with a menu open on top of it). */
-  get inFormula(): boolean {
-    return this.mode === 'math' || ((this.mode === 'palette' || this.mode === 'hint') && this.prevMode === 'math');
-  }
-
-  /** What a drawing command acts on right away: the math selection or the text selection. */
-  private drawTarget(): Loc | null {
-    if (this.prevMode === 'math' && this.mathItem) {
-      const r = this.msel !== null && this.msel !== this.mc.off ? M.alignRange(M.rowAt(this.mathItem.root, this.mc.path), Math.min(this.msel, this.mc.off), Math.max(this.msel, this.mc.off)) : null;
-      this.msel = null;
-      // afterwards, continue typing after the selection
-      if (r && this.drawReturn) this.drawReturn.mc.off = r[1];
-      return r ? { k: 'node', b: this.b, o: this.o, path: [...this.mc.path], i: r[0], j: r[1] - 1 } : null;
-    }
-    return this.locFromSelection(this.cmdSel ?? this.selection);
-  }
-
-  /** Where picking starts: the piece of formula at the caret, or the word at the caret. */
-  private pickStart(): Loc {
-    const item = this.prevMode === 'math' ? this.mathItem : null;
-    if (!item) return this.locFromCursor();
-    const row = M.rowAt(item.root, this.mc.path);
-    const gs = groups(row);
-    const off = this.mc.off;
-    // the thing just typed (left of the caret), else the one after it
-    const g = gs.find(([i, j]) => off - 1 >= i && off - 1 <= j) ?? gs.find(([i]) => i >= off);
-    return g ? { k: 'node', b: this.b, o: this.o, path: [...this.mc.path], i: g[0], j: g[1] } : { k: 'item', b: this.b, o: this.o };
-  }
-
-  /** Remember the formula position so finishing the drawing goes back into it. */
-  private noteDrawReturn() {
-    this.drawReturn = this.prevMode === 'math' && this.mathItem ? { b: this.b, o: this.o, mc: $state.snapshot(this.mc) as MCursor } : null;
-  }
-
-  /** Leave pick/style mode: back into the formula a drawing was started from, or to text. */
-  private endDrawing() {
-    this.styling = null;
-    this.pick = null;
-    const r = this.drawReturn;
-    this.drawReturn = null;
-    const it = r && this.doc.blocks[r.b]?.items[r.o];
-    if (r && it?.t === 'm') {
-      this.b = r.b;
-      this.o = r.o;
-      try {
-        M.rowAt(it.root, r.mc.path);
-        this.mc = r.mc;
-      } catch {
-        this.mc = { path: [], off: it.root.length };
-      }
-      this.setMode('math');
-    } else this.setMode('text');
-  }
-
-  startArrow() {
-    this.noteDrawReturn();
-    const sel = this.drawTarget();
-    this.anchor = null;
-    if (sel) {
-      // Start at the selection and suggest the next thing after it as the end.
-      const ids = this.anchorIds(sel);
-      const l0 = this.level0();
-      const next = l0.find((l) => cmpLoc(l, sel) > 0 && !this.anchorIds(l).some((i) => ids.includes(i)));
-      this.pick = { phase: 'to', from: sel, loc: next ?? l0[0] ?? sel, purpose: 'arrow' };
-      this.setMode('pick');
-      this.flash("choose the arrow's end");
-      return;
-    }
-    this.pick = { phase: 'from', loc: this.pickStart(), purpose: 'arrow' };
-    this.setMode('pick');
-    this.flash("choose the arrow's start");
-  }
-
-  /** Draw a shape around the selection, or choose what to draw it around. */
-  startMark(kind: MarkKind) {
-    this.noteDrawReturn();
-    const sel = this.drawTarget();
-    this.anchor = null;
-    if (sel) return this.addMark(kind, this.anchorIds(sel));
-    this.pick = { phase: 'from', loc: this.pickStart(), purpose: kind };
-    this.setMode('pick');
-    this.flash(`choose what to ${MARK_VERB[kind]}`);
-  }
-
-  private addMark(kind: MarkKind, at: Id[]) {
-    if (!at.length) return;
-    this.checkpoint();
-    const m: Mark = { id: uid(), kind, at, dash: false, label: '' };
-    this.lastMarkKind = kind;
-    this.tip('alt-shift-drag', `alt+shift+drag across text to draw a ${kind}`, 2);
-    this.doc.marks.push(m);
-    this.pick = null;
-    this.selectDrawing(m.id);
-  }
-
-  /** Enter style mode for an arrow or mark. */
-  selectDrawing(id: Id) {
-    if (this.note) this.commitNote();
-    this.anchor = null;
-    this.hints = null;
-    this.palette = null;
-    this.menu = null;
-    this.message = '';
-    this.styling = id;
-    this.setMode('style');
-  }
-
-  /** The mark being styled, if the selected drawing is a mark. */
-  get stylingMark(): Mark | undefined {
-    return this.styling ? this.doc.marks.find((m) => m.id === this.styling) : undefined;
-  }
-
-  private sameLoc(a: Loc, b: Loc) {
-    return JSON.stringify(a) === JSON.stringify(b);
-  }
-
-  private pickKey(k: string): boolean {
-    const pk = this.pick!;
-    const l = pk.loc;
-    const l0 = this.level0();
-    const idx = l0.findIndex((x) => this.sameLoc(x, l));
-    const move = (d: number) => {
-      if (idx >= 0) pk.loc = l0[Math.max(0, Math.min(l0.length - 1, idx + d))];
-      else if (l.k === 'node') {
-        const row = M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path);
-        const gs = groups(row);
-        const gi = gs.findIndex(([i]) => i === l.i);
-        const [i, j] = gs[Math.max(0, Math.min(gs.length - 1, gi + d))];
-        pk.loc = { ...l, i, j };
-      } else if (l.k === 'item' || l.k === 'block') {
-        // jump back to the nearest top-level target
-        const near = l0.find((x) => x.b === l.b && (l.k === 'block' || (x as any).o === l.o));
-        if (near) pk.loc = near;
-      } else {
-        // an arbitrary range (from a selection or a saved drawing): step to the neighbouring target
-        const ids = new Set(this.anchorIds(l));
-        const outside = l0.filter((x) => !this.anchorIds(x).some((i) => ids.has(i)));
-        const next = d > 0 ? outside.find((x) => cmpLoc(x, l) > 0) : outside.findLast((x) => cmpLoc(x, l) < 0);
-        if (next) pk.loc = next;
-      }
-    };
-    switch (k) {
-      case 'Escape':
-        if (pk.edit) return this.selectDrawing(pk.edit.id), (this.pick = null), true;
-        this.endDrawing();
-        return true;
-      case 'Left': case 'h': move(-1); return true;
-      case 'Right': case 'l': move(1); return true;
-      case 'Down': case 'j': this.pickVertical(1); return true;
-      case 'Up': case 'k': this.pickVertical(-1); return true;
-      case 'S-Up': case 'A-Up': case 'K': pk.loc = this.parentLoc(l); return true;
-      case 'S-Down': case 'A-Down': case 'J': pk.loc = this.childLoc(l); return true;
-      case 'S-Left': case 'H': pk.loc = this.extendLoc(l, -1); return true;
-      case 'S-Right': case 'L': pk.loc = this.extendLoc(l, 1); return true;
-      case 'Tab': case 'f': this.hintTargets(); return true;
-      case 'Home': case '0': this.pickLineEdge(-1); return true;
-      case 'End': case '$': this.pickLineEdge(1); return true;
-      case 'C-Home': if (l0.length) pk.loc = l0[0]; return true;
-      case 'C-End': if (l0.length) pk.loc = l0[l0.length - 1]; return true;
-      case 'Enter': case ' ':
-        if (pk.edit) this.finishRetarget(pk.edit, this.anchorIds(l));
-        else if (pk.purpose !== 'arrow') this.addMark(pk.purpose, this.anchorIds(l));
-        else if (pk.phase === 'from') {
-          const next = l0[idx + 1] ?? l;
-          this.pick = { phase: 'to', from: l, loc: idx >= 0 ? next : l, purpose: 'arrow' };
-          this.flash("choose the arrow's end");
-        } else this.finishArrow();
-        return true;
-    }
-    return true;
-  }
-
-  /** Target for a clicked element id: a word, or the math node (grouped with its scripts). */
-  private locFromId(id: Id): Loc | null {
-    const direct = this.level0().find((l) => this.anchorIds(l).includes(id));
-    if (direct) return direct;
-    for (let b = 0; b < this.doc.blocks.length; b++) {
-      const items = this.doc.blocks[b].items;
-      for (let o = 0; o < items.length; o++) {
-        const it = items[o];
-        if (it.t !== 'm') continue;
-        if (it.id === id) return { k: 'item', b, o };
-        const f = findNode(it.root, id);
-        if (!f) continue;
-        const g = groups(M.rowAt(it.root, f.path)).find(([i, j]) => f.i >= i && f.i <= j)!;
-        return { k: 'node', b, o, path: f.path, i: g[0], j: g[1] };
-      }
-    }
-    return null;
-  }
-
-  private parentLoc(l: Loc): Loc {
-    if (l.k === 'node') {
-      if (l.path.length) {
-        const st = l.path[l.path.length - 1];
-        const path = l.path.slice(0, -1);
-        const row = M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, path);
-        const g = groups(row).find(([i, j]) => st.i >= i && st.i <= j)!;
-        return { ...l, path, i: g[0], j: g[1] };
-      }
-      return { k: 'item', b: l.b, o: l.o };
-    }
-    if (l.k === 'block') return l;
-    return { k: 'block', b: l.b };
-  }
-
-  private childLoc(l: Loc): Loc {
-    if (l.k === 'block') return this.level0().find((x) => x.b === l.b) ?? l;
-    if (l.k === 'item') {
-      const m = this.doc.blocks[l.b].items[l.o] as MathItem;
-      const g = groups(m.root)[0];
-      return g ? { k: 'node', b: l.b, o: l.o, path: [], i: g[0], j: g[1] } : l;
-    }
-    if (l.k === 'node') {
-      const m = this.doc.blocks[l.b].items[l.o] as MathItem;
-      const row = M.rowAt(m.root, l.path);
-      if (l.j > l.i && row[l.i].k === 'sym' && l.i === l.j - 0) return l;
-      const cands = [l.i, ...Array.from({ length: l.j - l.i }, (_, n) => l.i + 1 + n)];
-      for (const i of cands) {
-        const n = row[i];
-        if (n.k !== 'cmd') continue;
-        const s = n.slots.findIndex((sl) => sl.length);
-        if (s < 0) continue;
-        const g = groups(n.slots[s])[0];
-        return { ...l, path: [...l.path, { i, s }], i: g[0], j: g[1] };
-      }
-    }
-    return l;
-  }
-
-  /**
-   * Where a dragged shape end is (window point): the piece of the same formula row, or
-   * the word of the same paragraph, nearest to it (on the nearest line, then sideways),
-   * so it follows the mouse along the shape, below or beside the text.
-   */
-  private resizeTargetAt(fixed: Loc, x: number, y: number): Loc | null {
-    let cands: Loc[] = [];
-    if (fixed.k === 'word') cands = this.wordsIn(fixed.b);
-    else if (fixed.k === 'node') {
-      const row = M.rowAt((this.doc.blocks[fixed.b].items[fixed.o] as MathItem).root, fixed.path);
-      cands = groups(row).map(([i, j]) => ({ ...fixed, i, j }));
-    }
-    let best: Loc | null = null, bestD = Infinity;
-    for (const c of cands) {
-      const r = this.rectOfIds(this.anchorIds(c));
-      if (!r) continue;
-      const dy = y < r.y ? r.y - y : y > r.y + r.h ? y - (r.y + r.h) : 0;
-      const dx = x < r.x ? r.x - x : x > r.x + r.w ? x - (r.x + r.w) : 0;
-      // a display formula's pieces share one line: only sideways counts there
-      const d = (fixed.k === 'node' ? 0 : dy * 1000) + dx;
-      if (d < bestD) (bestD = d), (best = c);
-    }
-    return best;
-  }
-
-  /** The words of a block (as pick targets). */
-  private wordsIn(b: number): Extract<Loc, { k: 'word' }>[] {
-    return this.level0().filter((x): x is Extract<Loc, { k: 'word' }> => x.k === 'word' && x.b === b);
-  }
-
-  /** The first / last single target (a word, a math group) of a range. */
-  private edgeUnit(l: Loc, end: 'start' | 'end'): Loc {
-    if (l.k === 'word') {
-      const ws = this.wordsIn(l.b).filter((w) => w.s >= l.s && w.e <= l.e);
-      return (end === 'start' ? ws[0] : ws[ws.length - 1]) ?? l;
-    }
-    if (l.k === 'node') {
-      const gs = groups(M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path));
-      const g = gs.find(([i, j]) => (end === 'start' ? l.i : l.j) >= i && (end === 'start' ? l.i : l.j) <= j);
-      return g ? { ...l, i: g[0], j: g[1] } : l;
-    }
-    return l;
-  }
-
-  /**
-   * The range from one target to another: words of one block (no math between them),
-   * or pieces of one formula (in the deepest row holding both; an end inside a structure
-   * stands for the structure). Null when they can't make one range.
-   */
-  private spanLoc(a: Loc, b: Loc): Loc | null {
-    if (a.k === 'word' && b.k === 'word' && a.b === b.b) {
-      const s = Math.min(a.s, b.s), e = Math.max(a.e, b.e);
-      return this.doc.blocks[a.b].items.slice(s, e + 1).some((i) => i.t === 'm') ? null : { k: 'word', b: a.b, s, e };
-    }
-    if (a.k === 'node' && b.k === 'node' && a.b === b.b && a.o === b.o) {
-      let d = 0;
-      while (d < a.path.length && d < b.path.length && a.path[d].i === b.path[d].i && a.path[d].s === b.path[d].s) d++;
-      const path = a.path.slice(0, d);
-      const gs = groups(M.rowAt((this.doc.blocks[a.b].items[a.o] as MathItem).root, path));
-      const span = (l: typeof a): [number, number] => (l.path.length > d ? [l.path[d].i, l.path[d].i] : [l.i, l.j]);
-      const lo = Math.min(span(a)[0], span(b)[0]), hi = Math.max(span(a)[1], span(b)[1]);
-      const gi = gs.find(([x, y]) => lo >= x && lo <= y), gj = gs.find(([x, y]) => hi >= x && hi <= y);
-      return gi && gj ? { k: 'node', b: a.b, o: a.o, path, i: gi[0], j: gj[1] } : null;
-    }
-    return null;
-  }
-
-  /** Move one end of a shape by one target: out (grow) or in (shrink, down to one target). */
-  private resizeMark(m: Mark, end: 'start' | 'end', d: 1 | -1) {
-    const l = this.locForIds(m.at);
-    let next: Loc | null = null;
-    if (l.k === 'word') {
-      const ws = this.wordsIn(l.b);
-      const free = (s: number, e: number) => !this.doc.blocks[l.b].items.slice(s, e + 1).some((i) => i.t === 'm');
-      if (end === 'end') {
-        const w = d > 0 ? ws.find((w) => w.s > l.e) : ws.findLast((w) => w.e < l.e && w.s >= l.s);
-        if (w && (d < 0 || free(l.e, w.e))) next = { ...l, e: w.e };
-      } else {
-        const w = d < 0 ? ws.findLast((w) => w.e < l.s) : ws.find((w) => w.s > l.s && w.e <= l.e);
-        if (w && (d > 0 || free(w.s, l.s))) next = { ...l, s: w.s };
-      }
-    } else if (l.k === 'node') {
-      const gs = groups(M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path));
-      if (end === 'end') {
-        const g = d > 0 ? gs.find(([i]) => i > l.j) : gs.findLast(([, j]) => j < l.j && j >= l.i);
-        if (g) next = { ...l, j: g[1] };
-      } else {
-        const g = d < 0 ? gs.findLast(([, j]) => j < l.i) : gs.find(([i]) => i > l.i && i <= l.j);
-        if (g) next = { ...l, i: g[0] };
-      }
-    } else return this.flash("this shape can't be resized");
-    if (!next) return;
-    this.checkpoint('style');
-    m.at = this.anchorIds(next);
-  }
-
-  private extendLoc(l: Loc, d: 1 | -1): Loc {
-    if (l.k === 'node') {
-      const row = M.rowAt((this.doc.blocks[l.b].items[l.o] as MathItem).root, l.path);
-      const gs = groups(row);
-      if (d === 1) {
-        const g = gs.find(([i]) => i > l.j);
-        return g ? { ...l, j: g[1] } : l;
-      }
-      const g = [...gs].reverse().find(([, j]) => j < l.i);
-      return g ? { ...l, i: g[0] } : l;
-    }
-    if (l.k === 'word') {
-      const ws = this.level0().filter((x): x is Extract<Loc, { k: 'word' }> => x.k === 'word' && x.b === l.b);
-      if (d === 1) {
-        const w = ws.find((w) => w.s > l.e);
-        const blocked = w && this.doc.blocks[l.b].items.slice(l.e + 1, w.s).some((i) => i.t === 'm');
-        return w && !blocked ? { ...l, e: w.e } : l;
-      }
-      const w = [...ws].reverse().find((w) => w.e < l.s);
-      const blocked = w && this.doc.blocks[l.b].items.slice(w.e + 1, l.s).some((i) => i.t === 'm');
-      return w && !blocked ? { ...l, s: w.s } : l;
-    }
-    return l;
-  }
-
-  /** Jump to the first / last target on the current visual line. */
-  private pickLineEdge(dir: 1 | -1) {
-    const pk = this.pick!;
-    const cur = this.rectOfIds(this.anchorIds(pk.loc));
-    if (!cur) return;
-    const mid = cur.y + cur.h / 2;
-    const onLine = this.level0()
-      .map((l) => ({ l, r: this.rectOfIds(this.anchorIds(l)) }))
-      .filter((c): c is { l: Loc; r: Rect } => !!c.r && c.r.y <= mid && c.r.y + c.r.h >= mid);
-    if (!onLine.length) return;
-    onLine.sort((a, b) => (a.r.x - b.r.x) * dir);
-    pk.loc = onLine[onLine.length - 1].l;
-  }
-
-  private pickVertical(dir: 1 | -1) {
-    const pk = this.pick!;
-    const cur = this.rectOfIds(this.anchorIds(pk.loc));
-    if (!cur) return;
-    const cx = cur.x + cur.w / 2;
-    const cands = this.level0()
-      .map((l) => ({ l, r: this.rectOfIds(this.anchorIds(l)) }))
-      .filter((c): c is { l: Loc; r: Rect } => !!c.r)
-      .filter(({ r }) => (dir === 1 ? r.y + r.h / 2 > cur.y + cur.h : r.y + r.h / 2 < cur.y));
-    if (!cands.length) return;
-    // nearest line first, then nearest horizontally
-    const lineY = dir === 1 ? Math.min(...cands.map((c) => c.r.y)) : Math.max(...cands.map((c) => c.r.y + c.r.h));
-    const onLine = cands.filter(({ r }) => (dir === 1 ? r.y <= lineY + r.h / 2 : r.y + r.h >= lineY - r.h / 2));
-    onLine.sort((a, b) => Math.abs(a.r.x + a.r.w / 2 - cx) - Math.abs(b.r.x + b.r.w / 2 - cx));
-    pk.loc = onLine[0].l;
-  }
-
-  private finishArrow() {
-    const pk = this.pick!;
-    const from = this.anchorIds(pk.from!);
-    const to = this.anchorIds(pk.loc);
-    const fr = this.rectOfIds(from), tr = this.rectOfIds(to);
-    if (!fr || !tr || from.join() === to.join()) {
-      this.flash("an arrow can't start and end on the same thing");
-      return;
-    }
-    this.checkpoint();
-    const a: Arrow = { id: uid(), from, to, bend: defaultBend(fr, tr), head: 'end', dash: false, boxed: false, label: '' };
-    this.doc.arrows.push(a);
-    this.pick = null;
-    this.tip('alt-drag', 'alt+drag between two things to draw an arrow');
-    this.styling = a.id;
-    this.setMode('style');
-  }
-
-  /** The best Loc for a set of anchor ids (so re-picking starts where the drawing is). */
-  private locForIds(ids: Id[]): Loc {
-    const key = ids.join();
-    const exact = this.level0().find((l) => this.anchorIds(l).join() === key);
-    if (exact) return exact;
-    const first = ids.length ? this.locFromId(ids[0]) : null;
-    if (first && this.anchorIds(first).join() === key) return first;
-    // several pieces of one formula (or words of one line): the range they make
-    if (first && ids.length > 1) {
-      let span: Loc | null = first;
-      for (const id of ids.slice(1)) {
-        const l = this.locFromId(id);
-        span = span && l ? this.spanLoc(span, l) : null;
-      }
-      if (span && this.anchorIds(span).join() === key) return span;
-    }
-    const pos = ids.map((id) => this.findItem(id));
-    if (pos.length && pos.every((p) => p && p.b === pos[0]!.b)) {
-      const os = pos.map((p) => p!.o);
-      return { k: 'word', b: pos[0]!.b, s: Math.min(...os), e: Math.max(...os) };
-    }
-    return first ?? { k: 'ids', b: pos.find((p) => p)?.b ?? this.b, ids };
-  }
-
-  /** Re-pick one end of an arrow, or the target of a mark. */
-  private retarget(id: Id, end: 'from' | 'to' | 'at') {
-    const a = this.doc.arrows.find((x) => x.id === id);
-    const m = this.doc.marks.find((x) => x.id === id);
-    if (end === 'at' && m) {
-      this.tipLater('drag-shape', 'drag a shape to move it');
-      this.pick = { phase: 'from', loc: this.locForIds(m.at), purpose: m.kind, edit: { id, end } };
-    } else if (a && end !== 'at') {
-      const other = end === 'from' ? a.to : a.from;
-      this.pick = { phase: 'to', loc: this.locForIds(a[end]), from: this.locForIds(other), purpose: 'arrow', edit: { id, end } };
-    } else return;
-    this.setMode('pick');
-    this.flash(end === 'at' ? 'choose the new target' : `choose the arrow's new ${end === 'from' ? 'start' : 'end'}`);
-  }
-
-  /**
-   * Put a re-picked end in place. `drop`: it was dragged there, and attaches where it was
-   * let go (near the target's middle: automatically); picked with the keys, a new target
-   * starts out automatic.
-   */
-  private finishRetarget(edit: { id: Id; end: 'from' | 'to' | 'at' }, ids: Id[], drop?: { at?: Attach }) {
-    const a = this.doc.arrows.find((x) => x.id === edit.id);
-    const m = this.doc.marks.find((x) => x.id === edit.id);
-    if (a && edit.end !== 'at') {
-      if ((edit.end === 'from' ? a.to : a.from).join() === ids.join()) return this.flash("an arrow can't start and end on the same thing");
-      const key = edit.end === 'from' ? 'fromAt' : 'toAt';
-      const same = a[edit.end].join() === ids.join();
-      const at = drop ? drop.at : same ? a[key] : undefined;
-      if (same && JSON.stringify(at) === JSON.stringify(a[key])) {
-        this.pick = null;
-        return this.selectDrawing(edit.id);
-      }
-      this.checkpoint();
-      a[edit.end] = ids;
-      if (at) a[key] = at;
-      else delete a[key];
-    } else if (m) {
-      this.checkpoint();
-      m.at = ids;
-    }
-    this.pick = null;
-    this.selectDrawing(edit.id);
-  }
-
-  /**
-   * What can be done to a drawing: one table for its keys in style mode, the right-click
-   * menu, the style palette (`\`) and the key hints, so they always agree. `menu: false`
-   * keeps an entry out of the menu (a step that only makes sense repeated from the keys).
-   */
-  drawingActions(id: Id): DrawingAction[] {
-    const a = this.doc.arrows.find((x) => x.id === id);
-    const m = this.doc.marks.find((x) => x.id === id);
-    const edit = (f: () => void) => () => { this.checkpoint('style'); f(); };
-    const note = (d: Arrow | Mark): DrawingAction =>
-      ({ name: 'note', desc: d.label ? 'edit the note' : 'add a note', keys: ['l', 'i', '"'], run: () => this.editNote(), more: 'or double-click' });
-    const remove = (f: () => void): DrawingAction =>
-      ({ name: 'delete', desc: 'delete', keys: ['x', 'Delete', 'Backspace'], run: () => { this.checkpoint(); f(); this.endDrawing(); }, more: 'or middle-click', sep: true });
-    // a note can be moved by hand: Alt+arrows (Shift: by a pixel), Alt+0 puts it back
-    const d = a ?? m;
-    const placing: DrawingAction[] = d?.label
-      ? [
-          {
-            name: 'nudge', desc: 'move the note', keys: ['A-Left', 'A-Right', 'A-Up', 'A-Down', 'A-S-Left', 'A-S-Right', 'A-S-Up', 'A-S-Down'], keyOnly: true,
-            run: (k) => {
-              const dir = k && /(Left|Right|Up|Down)$/.exec(k)?.[1];
-              const o = dir && this.noteOffset(id);
-              if (!o) return;
-              const step = k!.includes('S-') ? 1 : 4;
-              this.checkpoint('style');
-              d.note = { dx: o.dx + (dir === 'Left' ? -step : dir === 'Right' ? step : 0), dy: o.dy + (dir === 'Up' ? -step : dir === 'Down' ? step : 0) };
-            },
-          },
-          ...(d.note ? [{ name: 'autonote', desc: 'reset note position', keys: ['A-0'], run: () => { this.checkpoint(); delete d.note; } }] : []),
-        ]
-      : [];
-    const menu: DrawingAction = { name: 'menu', desc: 'show menu', keys: ['S-F10', 'ContextMenu'], run: () => this.openDrawingMenu(id), menu: false };
-    if (a) {
-      const dir = () => this.arrowGeos[a.id]?.dir ?? 1;
-      return [
-        { name: 'bend', desc: 'bend', keys: ['Up', 'k'], run: edit(() => (a.bend = round(a.bend + 0.1 * dir()))), menu: false },
-        { name: 'unbend', desc: 'bend opposite way', keys: ['Down', 'j'], run: edit(() => (a.bend = round(a.bend - 0.1 * dir()))), menu: false },
-        {
-          name: 'along', desc: 'shift the curve along the arrow', keys: ['Left', 'Right'], menu: false, more: 'or drag the middle handle',
-          run: (k) => edit(() => {
-            const s = round((a.skew ?? 0) + (k === 'Right' ? 0.1 : -0.1) * dir());
-            if (Math.abs(s) < 0.03) delete a.skew;
-            else a.skew = s;
-          })(),
-        },
-        { name: 'straight', desc: 'straighten', keys: ['0', '='], run: edit(() => { a.bend = 0; delete a.skew; }) },
-        { name: 'heads', desc: `arrowheads (${a.head === 'end' ? 'tip' : a.head})`, keys: ['t'], run: edit(() => (a.head = a.head === 'end' ? 'both' : a.head === 'both' ? 'none' : 'end')) },
-        { name: 'reverse', desc: 'reverse', keys: ['r'], run: edit(() => { [a.from, a.to] = [a.to, a.from]; [a.fromAt, a.toAt] = [a.toAt, a.fromAt]; a.bend = -a.bend; if (a.skew) a.skew = -a.skew; if (!a.fromAt) delete a.fromAt; if (!a.toAt) delete a.toAt; }) },
-        { name: 'dash', desc: a.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (a.dash = !a.dash)) },
-        { name: 'boxes', desc: a.boxed ? 'unbox endpoints' : 'box endpoints', keys: ['b'], run: edit(() => (a.boxed = !a.boxed)) },
-        { name: 'colour', desc: `colour (${a.color || 'default'})`, keys: ['c'], run: edit(() => (a.color = nextInk(a.color))), more: 'or shift+scroll over it' },
-        note(a),
-        { name: 'start', desc: 'move start', keys: ['s'], run: () => this.retarget(a.id, 'from'), more: 'or drag the start handle', sep: true },
-        { name: 'tip', desc: 'move end', keys: ['e'], run: () => this.retarget(a.id, 'to'), more: 'or drag the end handle' },
-        { name: 'startside', desc: `start anchor: ${sideName(a.fromAt)}`, keys: ['S'], run: edit(() => { const n = nextSide(a.fromAt); if (n) a.fromAt = n; else delete a.fromAt; }), menu: false, more: 'or drag the start handle' },
-        { name: 'tipside', desc: `end anchor: ${sideName(a.toAt)}`, keys: ['E'], run: edit(() => { const n = nextSide(a.toAt); if (n) a.toAt = n; else delete a.toAt; }), menu: false, more: 'or drag the end handle' },
-        ...placing,
-        remove(() => this.doc.arrows.splice(this.doc.arrows.indexOf(a), 1)),
-        menu,
-      ];
-    }
-    if (m) {
-      const shape = (d: number) => edit(() => (m.kind = MARK_KINDS[(MARK_KINDS.indexOf(m.kind) + d + MARK_KINDS.length) % MARK_KINDS.length]));
-      return [
-        { name: 'shape', desc: `next shape (${m.kind})`, keys: ['t', 'Right', 'Down'], run: (k) => { shape(1)(); if (k) this.tip('wheel', 'scroll over a selected drawing to change it', 2); }, more: 'or scroll over it' },
-        { name: 'prevshape', desc: 'previous shape', keys: ['S-t', 'T', 'Left', 'Up'], run: shape(-1), menu: false },
-        { name: 'dash', desc: m.dash ? 'solid line' : 'dashed line', keys: ['d'], run: edit(() => (m.dash = !m.dash)) },
-        { name: 'colour', desc: `colour (${m.color || 'default'})`, keys: ['c'], run: edit(() => (m.color = nextInk(m.color))), more: 'or shift+scroll over it' },
-        note(m),
-        { name: 'target', desc: 'change target', keys: ['e', 'm'], run: () => this.retarget(m.id, 'at'), more: 'or drag the shape', sep: true },
-        {
-          name: 'resize', desc: 'resize', keys: ['S-Right', 'S-Left', 'C-S-Left', 'C-S-Right'], keyOnly: true,
-          run: (k) => k && this.resizeMark(m, k.startsWith('C-') ? 'start' : 'end', /Right$/.test(k) ? 1 : -1),
-        },
-        ...placing,
-        remove(() => this.doc.marks.splice(this.doc.marks.indexOf(m), 1)),
-        menu,
-      ];
-    }
-    return [];
-  }
-
-  private styleKey(k: string): boolean {
-    const id = this.styling;
-    const acts = id ? this.drawingActions(id) : [];
-    if (!acts.length) { this.setMode('text'); return true; }
-    switch (k) {
-      case 'Escape': case 'Enter': this.endDrawing(); return true;
-      case 'C-z': this.styling = null; this.undo(); return true;
-      case 'C-y': case 'C-S-z': this.styling = null; this.redo(); return true;
-      case '\\': case ':': this.openPalette('style'); return true;
-    }
-    acts.find((x) => x.keys.includes(k))?.run(k);
-    return true;
-  }
-
-  /** A drawing's box on the page (page coordinates): a shape's bounds, an arrow's middle. */
-  drawingRect(id: Id): Rect | null {
-    const g = this.markGeos[id];
-    if (g) return g.bounds;
-    const a = this.arrowGeos[id];
-    return a ? { x: a.mid.x - 6, y: a.mid.y - 6, w: 12, h: 12 } : null;
-  }
-
-  /** Where the palette opens (page coordinates): at the caret, or under the selected drawing. */
-  get paletteAnchor(): Rect | null {
-    if (this.palette && this.paletteAt) return this.paletteAt;
-    if (this.caret) return this.caret.r;
-    return this.styling ? this.drawingRect(this.styling) : null;
-  }
+  drawings = new Drawings(this);
 
   finder = new Finder(this);
   openDrawMenu(under?: DOMRect): boolean {
@@ -5966,7 +5317,7 @@ export class Editor {
     if (!this.menu) return [];
     if (this.menu.table) return this.tableActions();
     if (this.menu.sketch) return this.sketch.actions();
-    return this.menu.id ? this.drawingActions(this.menu.id).filter((a) => a.menu !== false && !a.keyOnly) : this.pageActions();
+    return this.menu.id ? this.drawings.drawingActions(this.menu.id).filter((a) => a.menu !== false && !a.keyOnly) : this.pageActions();
   }
 
   /** What the page's menu offers: the clipboard, drawing on the selection, undo. */
@@ -5986,8 +5337,8 @@ export class Editor {
         ? ([['bold', 'bold', 'C-b'], ['italic', 'italic', 'C-i'], ['inlinecode', 'code', 'C-e'], ['strikethrough', 'strike out', 'C-S-x'], ['texthighlight', 'highlight', 'C-S-h']] as const).map(([name, desc, key], i): DrawingAction => ({ name, desc, keys: [key], run: () => this.runKey(key), ...(i === 0 ? { sep: true as const } : {}) }))
         : []),
       ...(this.mode === 'text' ? [{ name: 'formula', desc: 'insert math', keys: ['$'], run: () => this.runKey('$'), more: '$$ for display math', sep: true } as DrawingAction] : []),
-      { name: 'arrow', desc: sel ? 'arrow from the selection' : 'draw an arrow', keys: ['\\arrow'], run: () => this.startArrow(), more: 'or alt+drag', sep: true },
-      ...MARK_KINDS.map((k): DrawingAction => ({ name: k, desc: `${MARK_VERB[k]} ${what}`, keys: [`\\${k}`], run: () => this.startMark(k), more: k === this.lastMarkKind ? 'or alt+shift+drag' : undefined })),
+      { name: 'arrow', desc: sel ? 'arrow from the selection' : 'draw an arrow', keys: ['\\arrow'], run: () => this.drawings.startArrow(), more: 'or alt+drag', sep: true },
+      ...MARK_KINDS.map((k): DrawingAction => ({ name: k, desc: `${MARK_VERB[k]} ${what}`, keys: [`\\${k}`], run: () => this.drawings.startMark(k), more: k === this.lastMarkKind ? 'or alt+shift+drag' : undefined })),
       { name: 'undo', desc: 'undo', keys: ['C-z'], run: () => this.runKey('C-z'), sep: true },
       { name: 'redo', desc: 'redo', keys: ['C-y'], run: () => this.runKey('C-y') },
     ];
@@ -6071,7 +5422,7 @@ export class Editor {
     }
     this.withFrame(() => {
       if (this.note) this.commitNote();
-      if (this.mode === 'style' || this.mode === 'pick' || this.mode === 'hint') this.endDrawing();
+      if (this.mode === 'style' || this.mode === 'pick' || this.mode === 'hint') this.drawings.endDrawing();
       if (this.mode === 'palette') this.closePalette();
       const h = this.hitTest(e.clientX, e.clientY);
       if (h && !h.math) h.pos = this.tables.snapClick(h.pos, e.clientX, e.clientY);
@@ -6107,8 +5458,8 @@ export class Editor {
     switch (this.mode) {
       case 'text': return this.textKey(k);
       case 'math': return this.mathKey(k);
-      case 'pick': return this.pickKey(k);
-      case 'style': return this.styleKey(k);
+      case 'pick': return this.drawings.pickKey(k);
+      case 'style': return this.drawings.styleKey(k);
       case 'hint': return this.hintKey(k);
       case 'palette': return this.paletteKey(k);
       case 'sketch': return this.sketch.key(k);
@@ -6118,9 +5469,9 @@ export class Editor {
   /** Select a drawing and open its menu at (x, y), or under the drawing (from the keyboard). */
   openDrawingMenu(id: Id, x?: number, y?: number) {
     this.withFrame(() => {
-      if (this.styling !== id || this.mode !== 'style') this.selectDrawing(id);
+      if (this.styling !== id || this.mode !== 'style') this.drawings.selectDrawing(id);
       if (x === undefined || y === undefined) {
-        const r = this.drawingRect(id), o = this.page?.getBoundingClientRect();
+        const r = this.drawings.drawingRect(id), o = this.page?.getBoundingClientRect();
         if (!r || !o) return;
         x = o.left + r.x;
         y = o.top + r.y + r.h + 4;
@@ -6197,7 +5548,7 @@ export class Editor {
   }
 
   /** Start typing the selected drawing's note, the caret at character `at` of its text (or at the end). */
-  private editNote(at?: number) {
+  editNote(at?: number) {
     const d = this.drawing(this.styling ?? '');
     if (!d) return;
     const { items, index } = noteItems(d.label);
@@ -6363,12 +5714,12 @@ export class Editor {
     this.setMode('hint');
   }
 
-  private hintTargets() {
+  hintTargets() {
     const view = this.page?.parentElement?.getBoundingClientRect();
-    const ts = this.level0()
+    const ts = this.drawings.level0()
       // punctuation-only words just add noise
       .filter((l) => l.k !== 'word' || this.doc.blocks[l.b].items.slice(l.s, l.e + 1).some((i) => i.t === 'c' && /[\p{L}\p{N}]/u.test(i.ch)))
-      .map((l) => ({ l, r: this.rectOfIds(this.anchorIds(l)) }))
+      .map((l) => ({ l, r: this.rectOfIds(this.drawings.anchorIds(l)) }))
       .filter((t): t is { l: Loc; r: Rect } => !!t.r && (!view || (t.r.y + t.r.h > view.top && t.r.y < view.bottom)))
       .map(({ l, r }) => ({ rect: r, act: () => (this.pick!.loc = l) }));
     this.showHints(ts);
@@ -6379,7 +5730,7 @@ export class Editor {
     const origin = this.page.getBoundingClientRect();
     const at = (p: { x: number; y: number }, id: Id) => ({
       rect: { x: p.x + origin.left - 6, y: p.y + origin.top - 8, w: 12, h: 16 },
-      act: () => this.selectDrawing(id),
+      act: () => this.drawings.selectDrawing(id),
     });
     const ts = [
       ...this.doc.arrows.filter((a) => this.arrowGeos[a.id]).map((a) => at(this.arrowGeos[a.id].mid, a.id)),
@@ -6431,7 +5782,7 @@ export class Editor {
 /** Spacing commands in math (no ink, so no height to size the caret by). */
 const SPACES = new Set(['\\,', '\\:', '\\;', '\\!', '\\ ', '\\quad', '\\qquad', '\\enspace']);
 
-const isSpace = (it: { t: string; ch?: string }) => it.t === 'c' && /\s/.test(it.ch!);
+export const isSpace = (it: { t: string; ch?: string }) => it.t === 'c' && /\s/.test(it.ch!);
 export const cmpPos = (a: Pos, b: Pos) => a.b - b.b || a.o - b.o;
 
 const cloneItem = (it: Item): Item => (it.t === 'c' ? { ...it, id: uid() } : { ...it, id: uid(), root: cloneRow(it.root) });
@@ -6560,17 +5911,17 @@ const MARK_DESC: Record<MarkKind, string> = {
   brace: 'brace under something',
   strike: 'strike something out',
 };
-const MARK_VERB: Record<MarkKind, string> = {
+export const MARK_VERB: Record<MarkKind, string> = {
   box: 'box', circle: 'circle', underline: 'underline', highlight: 'highlight', brace: 'put a brace under', strike: 'strike out',
 };
 
-const nextInk = (c: string | undefined) => INKS[(INKS.indexOf((c ?? '') as (typeof INKS)[number]) + 1) % INKS.length] || undefined;
+export const nextInk = (c: string | undefined) => INKS[(INKS.indexOf((c ?? '') as (typeof INKS)[number]) + 1) % INKS.length] || undefined;
 
 /** Order-independent key for a set of anchor ids. */
 const idKey = (ids: Id[]) => [...ids].sort().join(' ');
 
 /** Reading order of two locations (block, then first offset). */
-function cmpLoc(a: Loc, b: Loc): number {
+export function cmpLoc(a: Loc, b: Loc): number {
   const off = (l: Loc) => (l.k === 'word' ? l.s : l.k === 'item' || l.k === 'node' ? l.o : 0);
   return a.b - b.b || off(a) - off(b);
 }

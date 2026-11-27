@@ -118,9 +118,9 @@
   let paletteBox = $state<HTMLDivElement>();
   let paletteShift = $state(0);
   $effect(() => {
-    void ed.paletteAnchor?.x, void ed.paletteItems.length, void ed.palette?.query;
+    void ed.drawings.paletteAnchor?.x, void ed.paletteItems.length, void ed.palette?.query;
     if (!paletteBox || !page) return;
-    const w = paletteBox.offsetWidth, x = ed.paletteAnchor?.x ?? 0;
+    const w = paletteBox.offsetWidth, x = ed.drawings.paletteAnchor?.x ?? 0;
     paletteShift = Math.max(0, Math.min(x, page.clientWidth - 8 - w)) - x;
   });
   $effect(() => {
@@ -253,7 +253,7 @@
   });
 
 
-  const editingMath = (b: number, o: number) => ed.inFormula && ed.b === b && ed.o === o;
+  const editingMath = (b: number, o: number) => ed.drawings.inFormula && ed.b === b && ed.o === o;
   // the markdown shown at the caret: markers of the spans it's at, a heading's #s, code fences
   const reveal = $derived(ed.reveal);
   // inline code's text (not its backticks): its first / last character has the rounded end
@@ -619,8 +619,8 @@
         {/each}
       {/if}
 
-      {#if ed.palette && ed.paletteAnchor}
-        {@const at = ed.paletteAnchor}
+      {#if ed.palette && ed.drawings.paletteAnchor}
+        {@const at = ed.drawings.paletteAnchor}
         <!-- (below the caret, or above when there's more room there; its list shrinks to fit between the bars) -->
         {@const y = (ed.page?.getBoundingClientRect().top ?? 0) + at.y}
         {@const below = window.innerHeight - (ed.config.ui.statusBar ? 30 : 8) - (y + at.h + 6)}

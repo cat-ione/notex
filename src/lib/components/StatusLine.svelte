@@ -33,9 +33,9 @@
   const styleHint = $derived(
     ed.mode === 'style' && ed.styling
       ? [
-          ...(ed.stylingMark ? [] : ['↑↓←→ bend']),
+          ...(ed.drawings.stylingMark ? [] : ['↑↓←→ bend']),
           // (what the menu shows; the step-by-step keys are in the menu's tooltips and F1)
-          ...ed.drawingActions(ed.styling).filter((a) => a.menu !== false && !a.keyOnly).map((a) => `${keyLabel(a.keys[0])} ${a.name}`),
+          ...ed.drawings.drawingActions(ed.styling).filter((a) => a.menu !== false && !a.keyOnly).map((a) => `${keyLabel(a.keys[0])} ${a.name}`),
           'enter done',
           'shift+f10 more',
         ].join(' · ')

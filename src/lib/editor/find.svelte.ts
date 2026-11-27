@@ -154,9 +154,9 @@ export class Finder {
     if (m.note) {
       const id = m.note;
       return this.ed.withFrame(() => {
-        this.ed.selectDrawing(id);
+        this.ed.drawings.selectDrawing(id);
         // scroll it into view
-        const r = this.ed.drawingRect(id), sc = this.ed.page?.parentElement, o = this.ed.page?.getBoundingClientRect();
+        const r = this.ed.drawings.drawingRect(id), sc = this.ed.page?.parentElement, o = this.ed.page?.getBoundingClientRect();
         if (r && sc && o) {
           const y = o.top + r.y, v = sc.getBoundingClientRect();
           if (y < v.top + 60 || y > v.bottom - 80) sc.scrollTop += y - (v.top + v.height / 3);

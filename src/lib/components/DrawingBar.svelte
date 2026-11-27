@@ -21,7 +21,7 @@
   const id = $derived(ed.styling);
   const mark = $derived(id ? ed.doc.marks.find((m) => m.id === id) : undefined);
   const arrow = $derived(id ? ed.doc.arrows.find((a) => a.id === id) : undefined);
-  const acts = $derived(id && at ? ed.drawingActions(id) : []);
+  const acts = $derived(id && at ? ed.drawings.drawingActions(id) : []);
   // tooltip for an action (see Tooltip): what it does, its key, how else to do it
   const tip = (name: string, more = '') => {
     const a = acts.find((x) => x.name === name);
