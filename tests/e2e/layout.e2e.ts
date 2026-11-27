@@ -135,3 +135,34 @@ test('after a long paste, the caret is drawn where it is, once what was pasted i
     });
   await expect.poll(off, { timeout: 3000 }).toBeLessThan(6);
 });
+
+test("notes moved by typing are placed properly once typing pauses, and then the page is left alone, however long measuring it takes", async ({ page }) => {
+  await open(page);
+  await settle(page);
+  await ed(page, (e) => {
+    const w = window as any;
+    w.layouts = 0;
+    const layout = e.layout.bind(e);
+    e.layout = () => (w.layouts++, layout());
+    // measuring the page before its notes are placed, as slow as in a long note (it once
+    // used up the time for placing them, every time: they were never placed properly, and
+    // the page was laid out again and again for good)
+    const near = e.nearScreen.bind(e);
+    e.nearScreen = (o: DOMRect) => {
+      const t = performance.now();
+      while (performance.now() - t < 15);
+      return near(o);
+    };
+    // the caret at the start of a paragraph with notes on it
+    const noted = new Set(e.doc.marks.filter((m: any) => m.label).flatMap((m: any) => m.at));
+    e.b = e.doc.blocks.findIndex((b: any) => b.items.some((it: any) => noted.has(it.id)));
+    e.o = 0;
+    e.anchor = null;
+    e.touch();
+  });
+  await page.keyboard.type('ab');
+  await page.waitForTimeout(1500);
+  const n = await page.evaluate(() => (window as any).layouts);
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(() => (window as any).layouts)).toBe(n);
+});

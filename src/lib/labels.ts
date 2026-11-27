@@ -389,6 +389,9 @@ export function provisional() {
   provisionals = 0;
   return n;
 }
+let solved = 0;
+/** How many rows have been solved (not remembered or moved) so far. */
+export const solves = () => solved;
 
 /**
  * Lay out the notes of one line and side (memoised: rows are laid out again on
@@ -438,6 +441,7 @@ export function layoutRow(notes: RowNote[], o: Opts): Placed[] {
     );
   }
   const res = solveRow(notes, { ...o, obstacles });
+  solved++;
   if (key !== null) {
     if (memo.size > 400) memo.clear();
     memo.set(key, shift(res, -ox, -oy));

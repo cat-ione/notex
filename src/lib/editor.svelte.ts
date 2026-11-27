@@ -17,7 +17,7 @@ import { arrowGeo, attachAt, curveThrough, defaultBend, nextSide, sideName, type
 import { INKS, MARK_KINDS, markGeo, type MarkGeo } from './marks';
 import { rank } from './match';
 import * as U from './usage';
-import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, type RowNote } from './labels';
+import { besideNote, labelOffsetAt, layoutRow, measureLabel, noteItems, noteText, pinnedLeader, provisional, solves, type RowNote } from './labels';
 import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
 import { docToMarkdown } from './mdfile';
@@ -2570,18 +2570,21 @@ export class Editor {
       // rows moved by typing kept their last layout; solve them properly once typing
       // pauses, a few at a time (each pass solves for up to 8ms)
       const settling = !this.quickLabels;
+      // (passes in a row: a safety net, as each one solves at least a row)
+      this.settlePasses = settling ? this.settlePasses + 1 : 0;
       clearTimeout(this.settleTimer);
-      this.settleTimer = setTimeout(() => {
-        this.quickLabels = false;
-        this.solveUntil = performance.now() + 8;
-        this.spacerPasses = 0;
-        try {
-          this.layout();
-        } finally {
-          this.quickLabels = true;
-          this.solveUntil = Infinity;
-        }
-      }, settling ? 16 : 200);
+      if (this.settlePasses < 100)
+        this.settleTimer = setTimeout(() => {
+          this.quickLabels = false;
+          this.solveMs = 8;
+          this.spacerPasses = 0;
+          try {
+            this.layout();
+          } finally {
+            this.quickLabels = true;
+            this.solveMs = Infinity;
+          }
+        }, settling ? 16 : 200);
     }
     for (const m of this.doc.marks) if (mgeos[m.id]?.outline) outlines.set(idKey(m.at), mgeos[m.id].outline!);
     // the selected shape's ends, for its resize handles: on the shape itself (a brace's
@@ -2647,7 +2650,9 @@ export class Editor {
   private followUntil = 0;
   /** Rows of notes that change while typing follow their shapes; see placeLabels. */
   private quickLabels = true;
-  private solveUntil = Infinity;
+  /** How long placing notes may spend solving rows, while settling them. */
+  private solveMs = Infinity;
+  private settlePasses = 0;
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Where each drawing's blocks were (top, height; page coordinates) when it was last laid out. */
@@ -2756,6 +2761,10 @@ export class Editor {
     const cs = getComputedStyle(page);
     const left = parseFloat(cs.paddingLeft) || 0, right = page.clientWidth - (parseFloat(cs.paddingRight) || 0);
     const UNDER = new Set<MarkKind>(['brace', 'underline']);
+    // the time for solving rows counts from here, not from the layout's start (measuring
+    // the page could use it all up, and then no row would ever be solved), and at least
+    // one row is solved, so settling gets somewhere each pass
+    const until = performance.now() + this.solveMs, solvedBefore = solves();
 
     // Ink of each block grouped into lines (rects overlapping vertically, transitively),
     // so a sum's limits belong to the sum's line.
@@ -2879,7 +2888,7 @@ export class Editor {
         const others = infos.filter((i) => !mine.has(i.m.id)).map((i) => i.g.bounds);
         // (laid out for paper, always solved: a layout coming after beginPrint's, as the page's
         // narrowing makes, mustn't move notes the page breaks were measured with)
-        const quick = !this.printing && (this.quickLabels || performance.now() > this.solveUntil);
+        const quick = !this.printing && (this.quickLabels || (solves() > solvedBefore && performance.now() > until));
         const res = layoutRow(notes, { below, left, right, obstacles: [...ink, ...others, ...placed], quick });
         res.forEach((r, k) => {
           const { g } = row[k];
