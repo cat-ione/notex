@@ -103,6 +103,11 @@ site and releases are built from: merge into it only when asked.
 - Playwright counts zero-size elements as hidden: the ring menu's root is 0×0, so check one
   of its parts (`.radial .middle`).
 - An SVG captured for the browser PDF loses the page's stylesheet; `pdf.ts` writes the
-  computed styles onto it for the capture.
+  computed styles onto it for the capture. The capture (html-to-image) lays a copy of the page
+  out again, and anything that moves it moves the text away from the drawings: it shrinks
+  font sizes, fixes every box's height (so margins don't collapse through it) and rounds
+  borders to another pixel ratio. `pdf.ts` works round these; prefer padding to margins and
+  avoid inset shadows in the paper layout (`html.nx-print`). `tests/e2e/pdfpages.e2e.ts`
+  reads the PDF back (`pdfread.ts`) and compares each sheet with the screen.
 - Pointer tests send synthetic `PointerEvent`s; real pens and touch screens differ (a long
   press is also a `contextmenu`, the side button a right-click), so handle both.

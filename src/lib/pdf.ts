@@ -21,22 +21,26 @@ export async function pdfOf(page: HTMLElement, sheet: Sheet, ratio = 2.5): Promi
   sliceAt.height = Math.round(ph * ratio);
   const sc = sliceAt.getContext('2d')!;
   const restore = inlineSvgStyles(page);
+  const real = faithfulCopy();
   try {
     for (let first = 0; first < count; first += per) {
       const n = Math.min(per, count - first);
+      // the part of the page these sheets show: moved up by whole pixels (a part of one puts
+      // every box between pixels, where a box's line and corners come out with a seam; as does
+      // a transform), the rest left over the top of the first
+      const top = Math.floor(first * ph), over = first * ph - top;
       const canvas = await toCanvas(page, {
         pixelRatio: ratio,
         width,
-        height: n * ph,
+        height: Math.ceil(over + n * ph),
         backgroundColor: sheet.bg,
         fontEmbedCSS,
-        // (the part of the page these sheets show)
-        style: { transform: `translateY(${-first * ph}px)`, transformOrigin: '0 0', margin: '0' },
+        style: { margin: `${-top}px 0 0 0` },
       });
       for (let k = 0; k < n; k++) {
         sc.fillStyle = sheet.bg;
         sc.fillRect(0, 0, sliceAt.width, sliceAt.height);
-        sc.drawImage(canvas, 0, Math.round(k * ph * ratio), sliceAt.width, sliceAt.height, 0, 0, sliceAt.width, sliceAt.height);
+        sc.drawImage(canvas, 0, Math.round((over + k * ph) * ratio), sliceAt.width, sliceAt.height, 0, 0, sliceAt.width, sliceAt.height);
         if (first + k > 0) pdf.addPage([sheet.w, sheet.h], sheet.w > sheet.h ? 'landscape' : 'portrait');
         pdf.setFillColor(sheet.bg);
         pdf.rect(0, 0, sheet.w, sheet.h, 'F');
@@ -44,9 +48,52 @@ export async function pdfOf(page: HTMLElement, sheet: Sheet, ratio = 2.5): Promi
       }
     }
   } finally {
+    real();
     restore();
   }
   return pdf.output('blob');
+}
+
+/**
+ * html-to-image copies each element's computed styles onto its copy, which is laid out again
+ * inside an image, and that copy must come out where the original is (the drawings are placed
+ * by the original). Two things move it, so while it copies, getComputedStyle answers otherwise:
+ *
+ * - A font size in pixels it rounds down and takes 0.1px off (17.92px comes out 16.9px): the
+ *   text narrower, its lines wrapping elsewhere. A font size reads as `calc(…px)`, left alone.
+ * - Borders are a whole number of device pixels, and the copy isn't laid out at the screen's
+ *   pixel ratio: a border comes out a little thicker or thinner, and everything after it moves
+ *   (a pixel or so for each, adding up down a sheet). Every box reads as its whole size
+ *   (`border-box`), so a border that differs moves only what's inside its own box, a little.
+ *
+ * Returns what puts getComputedStyle back.
+ */
+function faithfulCopy(): () => void {
+  const real = window.getComputedStyle;
+  const px = (v: string) => parseFloat(v) || 0;
+  window.getComputedStyle = ((el: Element, pseudo?: string | null) => {
+    const cs = real.call(window, el, pseudo);
+    const whole = (t: CSSStyleDeclaration, v: string, a: string, b: string) =>
+      `${px(v) + px(t.getPropertyValue(`padding-${a}`)) + px(t.getPropertyValue(`padding-${b}`)) + px(t.getPropertyValue(`border-${a}-width`)) + px(t.getPropertyValue(`border-${b}-width`))}px`;
+    return new Proxy(cs, {
+      get(t, k) {
+        if (k === 'getPropertyValue')
+          return (name: string) => {
+            const v = t.getPropertyValue(name);
+            if (name === 'font-size' && v.endsWith('px')) return `calc(${v})`;
+            // (a border-box's sizes are already its whole size)
+            if (!(el instanceof HTMLElement) || t.getPropertyValue('box-sizing') === 'border-box') return v;
+            if (name === 'box-sizing') return 'border-box';
+            if (/^(min-|max-)?height$/.test(name) && v.endsWith('px')) return whole(t, v, 'top', 'bottom');
+            if (/^(min-|max-)?width$/.test(name) && v.endsWith('px')) return whole(t, v, 'left', 'right');
+            return v;
+          };
+        const v = Reflect.get(t, k, t);
+        return typeof v === 'function' ? v.bind(t) : v;
+      },
+    });
+  }) as typeof window.getComputedStyle;
+  return () => void (window.getComputedStyle = real);
 }
 
 /** What decides how an SVG's shapes look. */

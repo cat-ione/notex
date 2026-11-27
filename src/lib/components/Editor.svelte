@@ -1474,6 +1474,24 @@
     border-bottom: 0.3em solid transparent;
     background-clip: padding-box;
   }
+  /* (and a display formula's margins would reach out through its block's, which the PDF's
+     copy of the page, every box its height fixed, doesn't do: the text after it would rise) */
+  :global(html.nx-print) .block :global(.math.display) {
+    margin: 0;
+    border-block: 0.4em solid transparent;
+    background-clip: padding-box;
+  }
+  /* a box's line down its side as a background (an inset shadow, drawn into the PDF's
+     pictures, can leave a hairline of it along the box's top edge) */
+  :global(html.nx-print) .block.boxed {
+    box-shadow: none;
+    background:
+      linear-gradient(var(--box-c), var(--box-c)) 0 0 / 2px 100% no-repeat,
+      color-mix(in srgb, var(--box-c) 6%, transparent);
+  }
+  :global(html.nx-print) .block.boxed:is([data-box='remark'], [data-box='proof'], [data-box='quote']) {
+    background: linear-gradient(var(--box-c), var(--box-c)) 0 0 / 2px 100% no-repeat;
+  }
   :global(html.nx-print) .block::before,
   :global(html.nx-print) :is(.caret, .selrect, .findhit, .mathframe, .pick, .hint, .palette, .grip),
   :global(html.nx-print) .foldbtn,
