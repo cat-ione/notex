@@ -75,7 +75,7 @@ export function welcomeDoc(): Doc {
   const eq = square.root.findIndex((x) => x.k === 'sym' && x.v === '=');
   marks.push(mark('strike', square.root.slice(eq).map((x) => x.id), { color: 'red', label: '+2ab' }));
 
-  const how = P('Hold Alt and drag from one thing to another to draw an arrow; Alt+Shift+drag draws a shape (a box at first, then the kind you drew last). Click a drawing to change it: C colour, D dashes, L a note. Drawings stay on what they point at while you edit.');
+  const how = P('Hold Alt and drag from one thing to another to draw an arrow; Alt+Shift+drag draws a shape (a box at first, then the kind you drew last). Click a drawing (a highlight by its edge) to change it, and drag its ends to cover more or less: C colour, D dashes, L a note. Drawings stay on what they point at while you edit.');
   marks.push(mark('highlight', word(how, 'stay on what they point at'), { color: 'blue' }));
 
   // ── a diagram ──
@@ -156,7 +156,9 @@ export function welcomeDoc(): Doc {
       T(['`a/b` gives ', M('\\frac{a}{b}'), ', `x^2` gives ', M('x^2'), ', `x_1` gives ', M('x_1'), ' and `e^(-x^2/2)` gives ', M('e^{-x^2/2}')], 'li'),
       T(['`\\int_0^1 f(x) dx` gives ', M('\\int_0^1 f(x)\\,dx'), ' and `\\sum_(n=1)^\\infty 1/n^2` gives ', M('\\sum_{n=1}^{\\infty}\\frac{1}{n^2}=\\frac{\\pi^2}{6}')], 'li'),
       T(['Any LaTeX command by name: `\\alpha` ', M('\\alpha'), ', `\\sqrt` ', M('\\sqrt{x}'), ', `\\in` ', M('\\in'), ', `\\to` ', M('\\to'), ', and `->` ', M('\\to'), ' or `<=` ', M('\\le'), ' as you type them'], 'li'),
-      T(['Matrices: `\\pmatrix`, then & for a new column and Enter for a new row: ', M('\\begin{pmatrix}a & b\\\\ c & d\\end{pmatrix}')], 'li'),
+      T(['`\\dsum`, `\\dint`, `\\dlim`… make an operator big in a sentence, limits under and over: ', M('\\displaystyle\\sum_{k=0}^{n}\\binom{n}{k}=2^n')], 'li'),
+      T(['Matrices: `\\pmatrix` (or `\\pmatrix3x3`, `\\pmatrix4x4`), then & for a new column and Enter for a new row: ', M('\\begin{pmatrix}a & b\\\\ c & d\\end{pmatrix}')], 'li'),
+      P('Click into any cell; \\addrow, \\deleterow, \\addcolumn, \\deletecolumn or a right-click change its rows and columns, and Backspace in an empty row or column takes it away.', 'li', 1),
       P('Space or Tab moves on to the next box; brackets close themselves.', 'li'),
       P('In a sentence, typing x^2 or a_n turns into math by itself, with no $ needed.', 'li'),
 
@@ -169,7 +171,7 @@ export function welcomeDoc(): Doc {
       P('- starts a bullet list, # a heading, ``` a code block, coloured by its language:', 'ol'),
       { ...P('def mean(xs):', 'code'), lang: 'py' },
       P('    return sum(xs) / len(xs)', 'code'),
-      P('Tables as in markdown (or \\table): Tab goes to the next cell, Enter adds a row, ↓ from the last row leaves it, right-click a cell for rows and columns.'),
+      P('Tables as in markdown (or \\table): Tab goes to the next cell, Enter adds a row, ↓ from the last row leaves it, right-click a cell for rows and columns, and \\deletetable takes it away.'),
       P('| test | the series converges when |'),
       P('| --- | --- |'),
       T(['| ratio | ', M('\\lim_{n\\to\\infty} \\left|\\frac{a_{n+1}}{a_n}\\right| < 1'), ' |']),

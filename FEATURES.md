@@ -66,6 +66,8 @@ point at, and a pen and touch screen that work as well as a keyboard.
 - Alt+drag from one word or symbol to another draws an arrow; Alt+Shift+drag draws a box,
   circle, underline, highlight, brace or strike.
 - Drawings are attached to what they point at and follow it as you edit.
+- A click selects one (a highlight, under the text, by its edge); drag its ends to cover more
+  or less.
 - Notes on any drawing (`L`), colours, dashes, bends, arrowheads; all by keys or the mouse.
 - Ctrl+D opens the draw menu; with a selection, `\box`, `\circle`… draw on it.
 

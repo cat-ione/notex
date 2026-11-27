@@ -11,13 +11,20 @@ and draw arrows and boxes *between parts of equations*.
 
 - **Math the way you say it.** `$` starts a formula. `a/b` is a fraction, `x^2` and `a_n` are
   scripts, `e^(-x^2/2)` groups, and `\name` gives any LaTeX symbol. Typing `x^2` or `a_n` in a
-  sentence turns it into math by itself.
+  sentence turns it into math by itself. `\dsum`, `\dint`, `\dlim`… make an operator big in a
+  sentence, limits under and over (as `\dfrac` does a fraction).
+- **Matrices.** `\pmatrix` (or `\pmatrix3x3`, `\pmatrix4x4`; `bmatrix`, `vmatrix` too), `&` for a
+  new column and Enter for a new row. A click goes into any cell; `\addrow`, `\deleterow`,
+  `\addcolumn`, `\deletecolumn` or a right-click change its rows and columns, and Backspace in
+  an empty row or column takes it away.
 - **Draw on your notes.** Alt+drag from one word or symbol to another draws an arrow;
-  Alt+Shift+drag draws a shape: a box, circle, underline or brace (the kind drawn last). Press `L` to write a note on it.
-  Drawings stay attached to what they point at as you keep editing.
+  Alt+Shift+drag draws a shape: a box, circle, underline, highlight, brace or strike (the kind
+  drawn last). Click one to change it (a highlight by its edge) and drag its ends to cover more
+  or less; press `L` to write a note on it. Drawings stay attached to what they point at as you
+  keep editing.
 - **Markdown, like Obsidian.** `# ` headings, `- ` and `1. ` lists, `- [ ]` lists to tick,
-  `**bold**`, `*italic*`, `~~struck~~`, `==highlighted==`, `> ` quotes, `[[links]]` to other
-  notes and web addresses, `` `code` `` and code blocks, coloured by their language (Python,
+  `**bold**`, `*italic*`, `~~struck~~`, `==highlighted==`, `> ` quotes, `---` lines, `[[links]]`
+  to other notes and web addresses, `` `code` `` and code blocks, coloured by their language (Python,
   C++, Julia, R, MATLAB and more). The markers hide once the caret moves on.
 - **Structured like a textbook.** `\theorem`, `\definition`, `\lemma`, `\proof`… put lines in a
   box, numbered as in a book. `\number` numbers a display formula and `\ref` refers to it or to
@@ -25,9 +32,10 @@ and draw arrows and boxes *between parts of equations*.
   (Ctrl+.), see the outline (Ctrl+Shift+O), find and replace (Ctrl+H), and find a note by what
   it says from the notes list.
 - **Tables**, as in markdown (`| a | b |` with a `| --- |` line under the header), or `\table`.
-  Cells work as in a word processor: Tab moves between them, Enter adds a row, selecting
-  across cells selects whole cells, and a right-click in one adds or removes rows and columns
-  and aligns them. Formulas and drawings work inside them; files keep them as markdown.
+  Cells work as in a word processor: Tab moves between them, Enter adds a row, ↓ from the last
+  row leaves the table, selecting across cells selects whole cells, and a right-click in one
+  adds or removes rows and columns and aligns them. `\deletetable` (or all its cells selected
+  and Delete) takes it away. Formulas and drawings work inside them; files keep them as markdown.
 - **Diagrams, and the pen.** `\diagram` makes one: boxes, ellipses, diamonds and text with
   `$math$` in their labels, lines and arrows that stay attached to the boxes they join, and
   pen strokes. Ctrl+arrow on a box adds the next one, joined to it, so a flowchart needs no
@@ -60,10 +68,11 @@ Press **F1** in the app for every shortcut.
 | `/` `^` `_` | fraction, superscript, subscript |
 | space / Tab | leave a box / next box |
 | `$`, → or Esc | back to text |
+| `&` / Enter | in a matrix: new column / row |
 | Alt+drag, Alt+Shift+drag | arrow, shape |
 | Ctrl+D | draw menu |
 | Ctrl+Shift+D | draw in a diagram, or on the note (`\diagram` makes one) |
-| `v p l a r o d t g e` | while drawing: select, pen, line, arrow, box, ellipse, diamond, text, graph, eraser |
+| `v p h l a r o d t g e` | while drawing: select, pen, highlighter, line, arrow, box, ellipse, diamond, text, graph, eraser |
 | Ctrl+B / Ctrl+I | bold / italic |
 | Ctrl+Shift+X / Ctrl+Shift+H | strike out / highlight |
 | `[ ]` then space, Ctrl+Enter | a box to tick, tick it |
