@@ -130,7 +130,9 @@ point at, and a pen and touch screen that work as well as a keyboard.
 
 - `\pdf`, Ctrl+P or the toolbar's pdf saves the note as a PDF file, drawings and all, laid
   out for paper (A4 or Letter, a theme of its own); made right there, no print dialog. Its
-  sheets show as they're made, each one's picture dropping in; Esc stops it.
+  sheets show as they're made, each one's picture dropping in; Esc stops it. Its text is real
+  text (selected, copied and searched as in any PDF; formulas copy as their LaTeX), web
+  addresses open, and a reference goes to the page of what it refers to.
 - `\export` copies it as LaTeX: drawings as TikZ, theorems as `amsthm`, references as
   `\eqref` / `\ref`, links as `\href`, graphs and diagrams as figures, the packages listed.
 

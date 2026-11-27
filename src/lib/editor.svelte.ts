@@ -25,7 +25,7 @@ import { withMarkdown } from './format';
 import { welcomeDoc } from './welcome';
 import { imageSrc, pickImageFiles } from './images';
 import * as F from './files';
-import { hexColour, pdfOf } from './pdf';
+import { hexColour, pdfOf, type PdfLink, type PdfRun } from './pdf';
 import * as L from './library';
 import { cellSpans, emptyRow, findTables, isSeparator, isWall, markdownCells, rowItems, rowLike, rowMarkdown, separatorLine, structureTables, tableRowAt, wall } from './tables';
 import * as C from './config';
@@ -895,6 +895,96 @@ export class Editor {
     }
   }
 
+  /**
+   * The note's text as laid out for paper, for the PDF to have real text over its pictures
+   * (selectable, searchable): a run for each line of each block (page coordinates, CSS px;
+   * a formula its LaTeX, in $…$, as copying gives it), each drawing's note; and its links, web
+   * addresses to open and references to go to (the y of what they refer to).
+   */
+  private paperText(): { runs: PdfRun[]; links: PdfLink[] } {
+    const runs: PdfRun[] = [], links: PdfLink[] = [];
+    const page = this.page;
+    if (!page) return { runs, links };
+    const o = page.getBoundingClientRect();
+    const rel = (r: DOMRect) => ({ x: r.left - o.left, y: r.top - o.top, w: r.width, h: r.height });
+    const size = (el: Element) => parseFloat(getComputedStyle(el).fontSize) || 16;
+    return this.withFrame(() => {
+      this.doc.blocks.forEach((blk, b) => {
+        let run: PdfRun | null = null;
+        const flush = () => {
+          if (run && run.text.trim()) runs.push(run);
+          run = null;
+        };
+        // where each item is (nothing for what isn't shown: a marker, a table's wall)
+        const boxes = blk.items.map((it) => {
+          const el = this.el(it.id, b);
+          const r = el?.getBoundingClientRect();
+          return el && r && (r.width || r.height) && !(it.t === 'c' && it.cell) ? { el, r } : null;
+        });
+        blk.items.forEach((it, i) => {
+          const at = boxes[i];
+          if (!at) return flush();
+          const q = rel(at.r);
+          if (it.t === 'm') {
+            flush();
+            // (a display formula's box is the whole line: where its ink is, rather)
+            const ink = it.display ? [...at.el.querySelectorAll('.katex-html > .katex-base, .katex-html > .base')].map((e) => e.getBoundingClientRect()).filter((r) => r.width) : [];
+            const box = ink.length
+              ? (() => {
+                  const l = Math.min(...ink.map((r) => r.left)), t = Math.min(...ink.map((r) => r.top));
+                  return rel(new DOMRect(l, t, Math.max(...ink.map((r) => r.right)) - l, Math.max(...ink.map((r) => r.bottom)) - t));
+                })()
+              : q;
+            runs.push({ ...box, size: size(at.el), text: isRefItem(it) ? it.root[0].v : `$${toLatex(it.root)}$` });
+            // its number, (1)
+            const eqn = at.el.querySelector('.eqn');
+            if (eqn?.textContent) runs.push({ ...rel(eqn.getBoundingClientRect()), size: size(eqn), text: eqn.textContent });
+            return;
+          }
+          const sz = size(at.el);
+          // (on the run's line, after it: the same run; else a new one)
+          if (run && Math.abs(q.y - run.y) < 3 && q.x >= run.x + run.w - 2 && sz === run.size) {
+            run.text += it.ch;
+            run.xs!.push(q.x);
+            run.w = q.x + q.w - run.x;
+            run.h = Math.max(run.h, q.h);
+          } else {
+            flush();
+            run = { ...q, size: sz, text: it.ch, xs: [q.x] };
+          }
+        });
+        flush();
+        // web addresses, a box over each line of one (not [[a note]]: there's nowhere to go)
+        if (blk.kind !== 'code' && blk.kind !== 'fence')
+          for (const l of parseInline(plainText(blk.items)).links) {
+            if (l.note) continue;
+            const lines: PdfLink[] = [];
+            for (let i = l.start; i < l.end; i++) {
+              const at = boxes[i];
+              if (!at) continue;
+              const q = rel(at.r), line = lines.find((x) => Math.abs(x.y - q.y) < 3);
+              if (line) line.w = Math.max(line.w, q.x + q.w - line.x);
+              else lines.push({ ...q, url: l.to });
+            }
+            links.push(...lines);
+          }
+        // references: to what they refer to
+        blk.items.forEach((it, i) => {
+          if (!isRefItem(it) || !boxes[i]) return;
+          const target = this.el(it.root[0].ref!);
+          if (target) links.push({ ...rel(boxes[i]!.r), to: rel(target.getBoundingClientRect()).y });
+        });
+      });
+      // the notes on drawings, as they're written
+      for (const el of page.querySelectorAll<HTMLElement>('.dlabel[data-id]')) {
+        const d = this.drawing(el.dataset.id!);
+        const r = el.getBoundingClientRect();
+        if (d?.label && (r.width || r.height)) runs.push({ ...rel(r), size: size(el), text: d.label.replace(/\s+/g, ' ') });
+      }
+      return { runs, links };
+    });
+  }
+
   /** The PDF made here: laid out for paper, each sheet drawn into a page of it. */
   private async pdfInBrowser() {
     const name = this.file.name.replace(/\.[^.]+$/, '') || 'note';
@@ -924,6 +1014,7 @@ export class Editor {
             else m.pictures[p.done] = p.picture;
           },
           cancelled: () => this.pdfCancel,
+          text: this.paperText(),
         },
       );
       const name = await save(blob);

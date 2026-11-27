@@ -2,6 +2,11 @@
 // note laid out as it prints (see Editor.beginPrint), each sheet's worth of it drawn into an
 // image, the images the PDF's pages. Its libraries are loaded only when it's wanted.
 
+import mainFont from 'katex/dist/fonts/KaTeX_Main-Regular.ttf?url';
+import mathFont from 'katex/dist/fonts/KaTeX_Math-Italic.ttf?url';
+import amsFont from 'katex/dist/fonts/KaTeX_AMS-Regular.ttf?url';
+import bigFont from 'katex/dist/fonts/KaTeX_Size1-Regular.ttf?url';
+
 /** What a sheet is: its size and margin (inches), its text's height in CSS pixels, its colour. */
 export type Sheet = { w: number; h: number; margin: number; textHeight: number; bg: string };
 
@@ -12,13 +17,26 @@ export type Sheet = { w: number; h: number; margin: number; textHeight: number; 
 export type PdfProgress = { count: number } | { drawing: number[] } | { done: number; picture: string };
 
 /**
+ * A line of the note's text, where it is on the page laid out for paper (CSS px) and its size;
+ * `xs`, where each of its characters starts (when known).
+ */
+export type PdfRun = { x: number; y: number; w: number; h: number; size: number; text: string; xs?: number[] };
+/** A link's box (CSS px, as runs): a web address to open, or the y of what it goes to. */
+export type PdfLink = { x: number; y: number; w: number; h: number; url?: string; to?: number };
+
+/**
  * The page element, as laid out for print, as a PDF (pixels per CSS pixel: `ratio`).
  * `progress` hears how it's going; once `cancelled` says so, it stops (an AbortError).
  */
 export async function pdfOf(
   page: HTMLElement,
   sheet: Sheet,
-  { ratio = 2.5, progress, cancelled }: { ratio?: number; progress?: (p: PdfProgress) => void; cancelled?: () => boolean } = {},
+  {
+    ratio = 2.5,
+    progress,
+    cancelled,
+    text,
+  }: { ratio?: number; progress?: (p: PdfProgress) => void; cancelled?: () => boolean; text?: { runs: PdfRun[]; links: PdfLink[] } } = {},
 ): Promise<Blob> {
   const [{ toCanvas, getFontEmbedCSS }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
   const width = page.offsetWidth, total = Math.max(page.scrollHeight, page.offsetHeight);
@@ -32,6 +50,7 @@ export async function pdfOf(
   const per = Math.max(1, Math.floor(12000 / (ph * ratio)));
   const fontEmbedCSS = await getFontEmbedCSS(page);
   const pdf = new jsPDF({ unit: 'in', format: [sheet.w, sheet.h], orientation: sheet.w > sheet.h ? 'landscape' : 'portrait', compress: true });
+  const writes = text && text.runs.length ? await textLayer(pdf, sheet, text) : null;
   const tw = sheet.w - 2 * sheet.margin, th = ph / 96;
   const sliceAt = document.createElement('canvas');
   sliceAt.width = Math.round(width * ratio);
@@ -64,6 +83,7 @@ export async function pdfOf(
         pdf.setFillColor(sheet.bg);
         pdf.rect(0, 0, sheet.w, sheet.h, 'F');
         pdf.addImage(sliceAt, 'PNG', sheet.margin, sheet.margin, tw, Math.min(th, sheet.h - 2 * sheet.margin), undefined, 'FAST');
+        writes?.(first + k);
         if (progress) {
           const small = document.createElement('canvas');
           small.width = 240;
@@ -123,6 +143,80 @@ function faithfulCopy(): () => void {
     });
   }) as typeof window.getComputedStyle;
   return () => void (window.getComputedStyle = real);
+}
+
+/** What the PDF's own Helvetica can write (WinAnsi: Latin-1, and curly quotes, dashes, a bullet…). */
+const WIN_ANSI = new Set([...Array.from({ length: 95 }, (_, i) => 32 + i), ...Array.from({ length: 96 }, (_, i) => 160 + i), ...[...'€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ'].map((c) => c.codePointAt(0)!)]);
+/** Fonts for the rest, tried in turn: arrows and relations, Greek, more symbols, big operators. */
+const MORE_FONTS = [mainFont, mathFont, amsFont, bigFont];
+
+/**
+ * The text over the pictures: each run written where it shows, invisible (as a scanned page's
+ * recognised text is), stretched to the width it has on the page, so it can be selected,
+ * copied and searched; and the links' boxes. Returns what writes sheet `i`'s, on its page.
+ * Helvetica writes what it can; KaTeX's fonts, put in only when wanted, what it can't (π, →, ∫).
+ */
+async function textLayer(pdf: import('jspdf').jsPDF, sheet: Sheet, { runs, links }: { runs: PdfRun[]; links: PdfLink[] }) {
+  // the fonts the characters it can't write need, in turn
+  const fonts: { name: string; has: (cp: number) => boolean }[] = [];
+  let wanting = new Set<number>();
+  for (const r of runs) for (const c of r.text) if (!WIN_ANSI.has(c.codePointAt(0)!)) wanting.add(c.codePointAt(0)!);
+  for (let k = 0; k < MORE_FONTS.length && wanting.size; k++) {
+    const bytes = new Uint8Array(await (await fetch(MORE_FONTS[k])).arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const name = `nx-text-${k}`;
+    pdf.addFileToVFS(`${name}.ttf`, btoa(bin));
+    pdf.addFont(`${name}.ttf`, name, 'normal');
+    pdf.setFont(name, 'normal');
+    const meta = (pdf.getFont() as unknown as { metadata: { characterToGlyph: (cp: number) => number } }).metadata;
+    const has = (cp: number) => meta.characterToGlyph(cp) > 0;
+    if ([...wanting].some(has)) fonts.push({ name, has });
+    wanting = new Set([...wanting].filter((cp) => !has(cp)));
+  }
+  const fontOf = (c: string) => {
+    const cp = c.codePointAt(0)!;
+    return WIN_ANSI.has(cp) ? 'helvetica' : (fonts.find((f) => f.has(cp))?.name ?? null);
+  };
+  const ph = sheet.textHeight, m = sheet.margin;
+  const sheetOf = (y: number) => Math.floor(y / ph);
+  return (i: number) => {
+    for (const r of runs) {
+      if (sheetOf(r.y + r.h / 2) !== i) continue;
+      pdf.setFontSize(r.size * 0.75);
+      // the run in pieces of one font each (a character no font has is left out)
+      const chars = [...r.text];
+      const pieces: { font: string; from: number; to: number; natural: number }[] = [];
+      chars.forEach((c, k) => {
+        const font = fontOf(c), last = pieces[pieces.length - 1];
+        if (!font) return;
+        if (last && last.font === font && last.to === k) last.to = k + 1;
+        else pieces.push({ font, from: k, to: k + 1, natural: 0 });
+      });
+      for (const p of pieces) {
+        pdf.setFont(p.font, 'normal');
+        p.natural = pdf.getTextWidth(chars.slice(p.from, p.to).join(''));
+      }
+      // where each piece starts and ends: its characters' places, or shared out by width
+      const total = pieces.reduce((a, p) => a + p.natural, 0);
+      let shared = r.x;
+      for (const p of pieces) {
+        const left = r.xs?.[p.from] ?? shared;
+        const right = r.xs ? (r.xs[p.to] ?? r.x + r.w) : shared + (total ? (p.natural / total) * r.w : 0);
+        shared = right;
+        if (!p.natural || right <= left) continue;
+        pdf.setFont(p.font, 'normal');
+        // (the baseline a third of the text's size under its box's middle: a line's, or a tall formula's)
+        pdf.text(chars.slice(p.from, p.to).join(''), m + left / 96, m + (r.y - i * ph + r.h / 2 + r.size * 0.32) / 96, { renderingMode: 'invisible', horizontalScale: (right - left) / 96 / p.natural });
+      }
+    }
+    for (const l of links) {
+      if (sheetOf(l.y + l.h / 2) !== i) continue;
+      const [x, y, w, h] = [m + l.x / 96, m + (l.y - i * ph) / 96, l.w / 96, l.h / 96];
+      if (l.url) pdf.link(x, y, w, h, { url: l.url });
+      else if (l.to !== undefined) pdf.link(x, y, w, h, { pageNumber: sheetOf(l.to) + 1, magFactor: 'XYZ', top: m + (l.to - sheetOf(l.to) * ph) / 96 });
+    }
+  };
 }
 
 /** What decides how an SVG's shapes look. */

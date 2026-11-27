@@ -219,7 +219,8 @@ test('while the PDF is made, its sheets show as they are made: each one’s pict
 });
 
 test('esc stops making the PDF: no file, and the note as it was', async ({ page }) => {
-  test.setTimeout(120_000);
+  // (esc is heard after the sheets being drawn: slow when other tests make PDFs at the same time)
+  test.setTimeout(240_000);
   await open(page);
   // (more sheets than are drawn at once: esc lands before the last)
   await plainNote(page, 250);

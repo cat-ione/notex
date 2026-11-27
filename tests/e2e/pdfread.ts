@@ -225,3 +225,92 @@ export function sample(page: Page, i: number, r: { x: number; y: number; w: numb
     { i, r, ratio },
   );
 }
+
+/** A piece of the PDF's text: where it starts (points, from the page's top left), its size, whether it's drawn. */
+export type PdfText = { x: number; y: number; size: number; text: string; invisible: boolean };
+/** A link on a page: its box (points, from the top left: x0, y0, x1, y1), the address it opens or the page (from 0) it goes to. */
+export type PdfLinkBox = { rect: number[]; url?: string; page?: number };
+
+/** The text and links of each page of the PDF in `window.__blob`. */
+export function readPdfText(page: Page): Promise<{ text: PdfText[]; links: PdfLinkBox[] }[]> {
+  return page.evaluate(async () => {
+    const bytes = new Uint8Array(await (window as any).__blob.arrayBuffer());
+    const src = new TextDecoder('latin1').decode(bytes);
+    const objs = new Map<number, { dict: string; data?: Uint8Array }>();
+    const re = /(\d+) 0 obj\s*/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src))) {
+      const end = src.indexOf('endobj', re.lastIndex);
+      const body = src.slice(re.lastIndex, end);
+      const s = body.search(/stream\r?\n/);
+      if (s < 0) objs.set(+m[1], { dict: body });
+      else {
+        const dict = body.slice(0, s);
+        const len = +/\/Length (\d+)/.exec(dict)![1];
+        const from = re.lastIndex + s + body.slice(s).indexOf('\n') + 1;
+        objs.set(+m[1], { dict, data: bytes.subarray(from, from + len) });
+      }
+      re.lastIndex = end;
+    }
+    const inflate = async (o: { dict: string; data?: Uint8Array }) => {
+      const raw = /FlateDecode/.test(o.dict) ? new Uint8Array(await new Response(new Blob([o.data! as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer()) : o.data!;
+      return new TextDecoder('latin1').decode(raw);
+    };
+    const ref = (s: string, key: string) => +new RegExp(`/${key} (\\d+) 0 R`).exec(s)![1];
+    const kids = [.../\/Kids \[([^\]]*)\]/.exec([...objs.values()].find((o) => /\/Type \/Pages/.test(o.dict))!.dict)![1].matchAll(/(\d+) 0 R/g)].map((k) => +k[1]);
+    // how each font's codes read: WinAnsi bytes, or glyph numbers through its ToUnicode map
+    const WIN = '€\x81‚ƒ„…†‡ˆ‰Š‹Œ\x8dŽ\x8f\x90‘’“”•–—˜™š›œ\x9džŸ';
+    const fonts = new Map<number, (code: string, hex: boolean) => string>();
+    const fontOf = async (n: number) => {
+      if (fonts.has(n)) return fonts.get(n)!;
+      const d = objs.get(n)!.dict;
+      let read: (code: string, hex: boolean) => string;
+      if (/\/ToUnicode/.test(d)) {
+        const map = new Map<string, string>();
+        const cmap = await inflate(objs.get(ref(d, 'ToUnicode'))!);
+        for (const b of cmap.matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g))
+          map.set(b[1].toLowerCase().padStart(4, '0'), String.fromCodePoint(...(b[2].match(/.{4}/g) ?? []).map((h) => parseInt(h, 16))));
+        read = (code) => (code.match(/.{4}/g) ?? []).map((g) => map.get(g.toLowerCase()) ?? '�').join('');
+      } else read = (code) => [...code].map((c) => (c.charCodeAt(0) >= 0x80 && c.charCodeAt(0) < 0xa0 ? WIN[c.charCodeAt(0) - 0x80] : c)).join('');
+      fonts.set(n, read);
+      return read;
+    };
+    const unescape = (s: string) => s.replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (_, e) => ({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' } as Record<string, string>)[e] ?? (/\d/.test(e) ? String.fromCharCode(parseInt(e, 8)) : e));
+    const out = [];
+    for (const k of kids) {
+      const pg = objs.get(k)!.dict;
+      const box = /\/MediaBox \[([^\]]*)\]/.exec(pg)![1].trim().split(/\s+/).map(Number);
+      const res = objs.get(ref(pg, 'Resources'))!.dict;
+      const fontRefs = new Map([...(/\/Font <<([^>]*)>>/.exec(res)?.[1] ?? '').matchAll(/\/(\S+) (\d+) 0 R/g)].map((f) => [f[1], +f[2]]));
+      const ops = await inflate(objs.get(ref(pg, 'Contents'))!);
+      const text: any[] = [];
+      for (const t of ops.matchAll(/BT([\s\S]*?)ET/g)) {
+        const body = t[1];
+        const tf = /\/(\S+) ([\d.]+) Tf/.exec(body), td = /([-\d.]+) ([-\d.]+) Td/.exec(body);
+        if (!tf || !td) continue;
+        const read = await fontOf(fontRefs.get(tf[1])!);
+        let s = '';
+        for (const piece of body.matchAll(/\((?:\\.|[^\\)])*\)|<[0-9a-fA-F]*>/g)) {
+          const p = piece[0];
+          s += p.startsWith('(') ? read(unescape(p.slice(1, -1)), false) : read(p.slice(1, -1), true);
+        }
+        text.push({ x: +td[1], y: box[3] - +td[2], size: +tf[2], text: s, invisible: /\b3 Tr/.test(body) });
+      }
+      const links: any[] = [];
+      // (written in the page's own dictionary, or as objects of their own)
+      const annots = (/\/Annots \[\n([\s\S]*?)\n\]/.exec(pg) ?? /\/Annots \[([^\]]*)\]/.exec(pg))?.[1] ?? '';
+      const dicts = annots.includes('<<') ? annots.split(/(?=<<\s*\/Type \/Annot)/).filter((d) => d.includes('/Annot')) : [...annots.matchAll(/(\d+) 0 R/g)].map((a) => objs.get(+a[1])!.dict);
+      for (const d of dicts) {
+        if (!/\/Subtype \/Link/.test(d)) continue;
+        const q = /\/Rect \[([^\]]*)\]/.exec(d)![1].trim().split(/\s+/).map(Number);
+        // (either corner first)
+        const r = [Math.min(q[0], q[2]), Math.min(q[1], q[3]), Math.max(q[0], q[2]), Math.max(q[1], q[3])];
+        const url = /\/URI \(((?:\\.|[^\\)])*)\)/.exec(d)?.[1];
+        const dest = /\/Dest \[(\d+) 0 R/.exec(d)?.[1];
+        links.push({ rect: [r[0], box[3] - r[3], r[2], box[3] - r[1]], url: url && unescape(url), page: dest ? kids.indexOf(+dest) : undefined });
+      }
+      out.push({ text, links });
+    }
+    return out;
+  });
+}
