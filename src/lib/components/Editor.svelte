@@ -337,6 +337,8 @@
       return;
     }
     if (t.closest?.('.dbar, .lbl-edit, .palette, .selmore')) return;
+    // (a drawing on the text, or its handle, takes a pen or finger itself: see MarkLayer)
+    if (!ed.sketch.active && t.closest?.('.marks .hit, .marks .handle')) return;
     const svg = t.closest?.('svg.canvas');
     const canvas = svg ? ((svg.closest('[data-diagram]') as HTMLElement | null)?.dataset.diagram ?? null) : null;
     if (ed.sketch.pointerDown(e, canvas)) {

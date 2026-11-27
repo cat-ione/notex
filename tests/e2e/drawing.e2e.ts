@@ -92,3 +92,66 @@ test('drawing the arrow deletes nothing and is one undo step', async ({ page }) 
   await page.keyboard.press('Control+z');
   expect(await ed(page, (e) => e.doc.arrows.length)).toBe(0);
 });
+
+// ── a highlight: under the text, but its edge takes a click ──
+
+/** A highlight on "all leads" (line one), then back to the text. Its box on the page. */
+async function highlighted(page: Page) {
+  await page.keyboard.press('Control+Home');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('Control+ArrowRight');
+  await page.keyboard.press('Control+Shift+ArrowRight');
+  await page.keyboard.press('Control+Shift+ArrowRight');
+  await type(page, String.fromCharCode(92) + 'highlight');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Home');
+  expect(await ed(page, (e) => [e.doc.marks[0]?.kind, e.mode])).toEqual(['highlight', 'text']);
+  return (await page.locator('.marks.under .mark').first().boundingBox())!;
+}
+const words = (page: Page) => ed(page, (e) => e.doc.marks[0].at.length);
+
+/** A pen or finger along points on the page. */
+async function along(page: Page, kind: 'pen' | 'touch', pts: [number, number][]) {
+  await page.evaluate(([kind, pts]) => {
+    const fire = (type: string, [x, y]: [number, number], b: number) =>
+      (document.elementFromPoint(x, y) ?? document.body).dispatchEvent(new PointerEvent(type, { pointerType: kind, pointerId: 9, isPrimary: true, clientX: x, clientY: y, buttons: b, button: type === 'pointermove' ? -1 : 0, pressure: 0.5, bubbles: true, cancelable: true }));
+    fire('pointerdown', pts[0], 1);
+    for (const p of pts.slice(1)) fire('pointermove', p, 1);
+    fire('pointerup', pts[pts.length - 1], 0);
+  }, [kind, pts] as const);
+  await page.waitForTimeout(100);
+}
+const endHandle = async (page: Page) => {
+  const b = (await page.locator('.marks .handle').nth(1).boundingBox())!;
+  return [b.x + b.width / 2, b.y + b.height / 2] as [number, number];
+};
+
+test('a highlight is selected by a click on its edge (in it, the click is the caret’s), and resized by its handles', async ({ page }) => {
+  const box = await highlighted(page);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  expect(await ed(page, (e) => e.mode)).toBe('text');
+  await page.mouse.click(box.x + box.width / 2, box.y + 1);
+  expect(await ed(page, (e) => [e.mode, e.styling === e.doc.marks[0].id])).toEqual(['style', true]);
+  const before = await words(page);
+  const [x, y] = await endHandle(page);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 50, y, { steps: 5 });
+  await page.mouse.up();
+  expect(await words(page)).toBeGreaterThan(before);
+});
+
+for (const kind of ['pen', 'touch'] as const) {
+  test(`a ${kind}: a tap on a highlight’s edge selects it (no ink), and its handle drags`, async ({ page }) => {
+    const box = await highlighted(page);
+    await along(page, kind, [[box.x + box.width / 2, box.y + 1]]);
+    expect(await ed(page, (e) => [e.mode, !!e.styling, (e.doc.ink ?? []).length])).toEqual(['style', true, 0]);
+    const before = await words(page);
+    const [x, y] = await endHandle(page);
+    // shorter: back over the last word
+    await along(page, kind, Array.from({ length: 7 }, (_, i) => [x - i * 9, y] as [number, number]));
+    expect(await words(page)).toBeLessThan(before);
+    expect(await ed(page, (e) => (e.doc.ink ?? []).length)).toBe(0);
+  });
+}

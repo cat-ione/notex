@@ -8,6 +8,28 @@
   let { ed, under = false }: { ed: Editor; under?: boolean } = $props();
 
   const clickable = $derived(ed.mode === 'text' || ed.mode === 'style' || ed.mode === 'math');
+
+  // A pen or finger on a shape or its handle: what a mouse press does there, its moves and
+  // lift followed till it lifts (the page doesn't draw or scroll with it). A mouse has its
+  // own mouse events.
+  function press(e: PointerEvent, start: () => void) {
+    if (e.pointerType === 'mouse') return;
+    e.preventDefault();
+    e.stopPropagation();
+    start();
+    const id = e.pointerId;
+    const move = (m: PointerEvent) => m.pointerId === id && ed.mouseMove(m);
+    const up = (u: PointerEvent) => {
+      if (u.pointerId !== id) return;
+      ed.mouseUp();
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+    };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+  }
 </script>
 
 <svg class="marks" class:under class:clickable aria-hidden="true">
@@ -28,6 +50,7 @@
             class="hit"
             d={g.d}
             onmousedown={(e) => { if (e.button > 1) return; e.stopPropagation(); e.preventDefault(); ed.drawingDown(m.id, e); }}
+            onpointerdown={(e) => press(e, () => ed.drawingDown(m.id, e))}
             oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(m.id, e.clientX, e.clientY); }}
             ondblclick={(e) => { e.stopPropagation(); ed.editNoteOf(m.id); }}
             onpointerenter={() => ed.hover(m.id, true)}
@@ -37,6 +60,29 @@
       </g>
     {/if}
   {/each}
+  <!-- a highlight is under the text, out of reach: its edge, over the text, is what takes
+       a click (as a box's outline does), to select it, move it, resize it by its handles -->
+  {#if !under}
+    {#each ed.doc.marks as m (m.id)}
+      {@const g = ed.markGeos[m.id]}
+      {#if g?.filled}
+        {#if ed.styling === m.id || ed.hovered === m.id}
+          <path class="edgeline" style="--ink: {inkVar(m.color)}" d={g.d} />
+        {/if}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <path
+          class="hit edge"
+          d={g.d}
+          onmousedown={(e) => { if (e.button > 1) return; e.stopPropagation(); e.preventDefault(); ed.drawingDown(m.id, e); }}
+          onpointerdown={(e) => press(e, () => ed.drawingDown(m.id, e))}
+          oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); ed.openDrawingMenu(m.id, e.clientX, e.clientY); }}
+          ondblclick={(e) => { e.stopPropagation(); ed.editNoteOf(m.id); }}
+          onpointerenter={() => ed.hover(m.id, true)}
+          onpointerleave={() => ed.hover(m.id, false)}
+        />
+      {/if}
+    {/each}
+  {/if}
   <!-- the selected shape's ends: drag to cover more or less -->
   {#if !under && ed.mode === 'style' && ed.markEnds}
     {@const me = ed.markEnds}
@@ -52,6 +98,7 @@
         height="12"
         rx="2"
         onmousedown={(e) => { if (e.button) return; e.stopPropagation(); e.preventDefault(); ed.beginMarkResize(me.id, part); }}
+        onpointerdown={(e) => press(e, () => ed.beginMarkResize(me.id, part))}
         data-tip="drag to resize"
         data-tip-key="{part === 'end' ? 'shift' : 'ctrl+shift'}+← →"
         in:fade={{ duration: 120 }}
@@ -118,6 +165,23 @@
     stroke-width: 1.5;
     pointer-events: all;
     cursor: ew-resize;
+    touch-action: none;
+  }
+  /* (a pen or finger: a handle big enough to hit) */
+  @media (pointer: coarse) {
+    .handle {
+      stroke-width: 6;
+      paint-order: stroke;
+    }
+  }
+  /* a highlight's edge: shown when it's hovered or selected */
+  .edgeline {
+    fill: none;
+    stroke: color-mix(in srgb, var(--ink) 60%, transparent);
+    stroke-width: 1.2;
+  }
+  .clickable .hit.edge {
+    stroke-width: 9;
   }
   .handle:hover {
     fill: var(--ink);
@@ -133,6 +197,7 @@
   .clickable .hit {
     pointer-events: stroke;
     cursor: pointer;
+    touch-action: none;
   }
   .clickable .sel .hit {
     cursor: move;
