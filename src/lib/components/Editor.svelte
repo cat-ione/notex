@@ -203,13 +203,13 @@
     const ro = new ResizeObserver(() => {
       if (page.clientWidth !== width) {
         width = page.clientWidth;
-        ed.relayoutAll();
-      } else if (page.offsetHeight !== ed.laidHeight) ed.layout();
+        ed.pageLayout.relayoutAll();
+      } else if (page.offsetHeight !== ed.pageLayout.laidHeight) ed.pageLayout.layout();
     });
     ro.observe(page);
-    document.fonts?.ready.then(() => ed.relayoutAll());
+    document.fonts?.ready.then(() => ed.pageLayout.relayoutAll());
     // KaTeX loads some fonts (big delimiters, scripts) only when first used, which moves glyphs
-    const relayout = () => (ed.fontEpoch++, ed.relayoutAll());
+    const relayout = () => (ed.fontEpoch++, ed.pageLayout.relayoutAll());
     document.fonts?.addEventListener('loadingdone', relayout);
     return () => {
       document.fonts?.removeEventListener('loadingdone', relayout);
@@ -228,7 +228,7 @@
     // (once a frame, however many steps a pinch on a trackpad takes)
     if (relayout) return;
     relayout = true;
-    requestAnimationFrame(() => ((relayout = false), ed.relayoutAll()));
+    requestAnimationFrame(() => ((relayout = false), ed.pageLayout.relayoutAll()));
   });
 
   // Re-measure overlays after every state change has hit the DOM.
@@ -515,7 +515,7 @@
     onpointerdowncapture={pointerDown}
     onmousedown={(e) => ed.mouseDown(e)}
     oncontextmenu={(e) => ed.menus.openPageMenu(e)}
-    onscroll={() => ed.scrolled()}
+    onscroll={() => ed.pageLayout.scrolled()}
     ondragover={(e) => e.dataTransfer?.types.includes('Files') && e.preventDefault()}
     ondrop={(e) => ed.dropFiles(e)}
   >

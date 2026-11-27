@@ -32,10 +32,10 @@ const cdp = await page.context().newCDPSession(page);
 // instrument once: layout counter and per-key latency
 await page.evaluate((cull) => {
   const ed = window.__nx.ed;
-  if (cull) ed.cullScreens = Number(cull);
+  if (cull) ed.pageLayout.cullScreens = Number(cull);
   const S = (window.__perf = { layouts: 0, layoutMs: 0, lat: [] });
-  const layout = ed.layout.bind(ed);
-  ed.layout = () => {
+  const layout = ed.pageLayout.layout.bind(ed.pageLayout);
+  ed.pageLayout.layout = () => {
     S.layouts++;
     const t = performance.now();
     const r = layout();

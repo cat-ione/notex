@@ -74,8 +74,8 @@ function collisions(page: Page): Promise<Hit[]> {
 
 /** Let the notes settle (they are placed over a few passes). */
 async function settle(page: Page) {
-  await page.evaluate(() => ((window as any).__nx.ed.cullScreens = Infinity));
-  await page.evaluate(() => (window as any).__nx.ed.relayoutAll());
+  await page.evaluate(() => ((window as any).__nx.ed.pageLayout.cullScreens = Infinity));
+  await page.evaluate(() => (window as any).__nx.ed.pageLayout.relayoutAll());
   await page.waitForTimeout(700);
 }
 
@@ -142,13 +142,13 @@ test("notes moved by typing are placed properly once typing pauses, and then the
   await ed(page, (e) => {
     const w = window as any;
     w.layouts = 0;
-    const layout = e.layout.bind(e);
-    e.layout = () => (w.layouts++, layout());
+    const layout = e.pageLayout.layout.bind(e.pageLayout);
+    e.pageLayout.layout = () => (w.layouts++, layout());
     // measuring the page before its notes are placed, as slow as in a long note (it once
     // used up the time for placing them, every time: they were never placed properly, and
     // the page was laid out again and again for good)
-    const near = e.nearScreen.bind(e);
-    e.nearScreen = (o: DOMRect) => {
+    const near = e.pageLayout.nearScreen.bind(e.pageLayout);
+    e.pageLayout.nearScreen = (o: DOMRect) => {
       const t = performance.now();
       while (performance.now() - t < 15);
       return near(o);
@@ -202,7 +202,7 @@ test('enter in a line with notes under it makes room for them at once, not some 
   const n = await page.evaluate(() => (window as any).roomChanges);
   expect(n).toBeLessThan(3);
   // and it's the room the line needs: laid out afresh, nothing changes
-  await ed(page, (e) => e.relayoutAll());
+  await ed(page, (e) => e.pageLayout.relayoutAll());
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => (window as any).roomChanges)).toBe(n);
 });

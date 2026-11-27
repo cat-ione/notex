@@ -19,7 +19,7 @@ const errs = []; page.on('pageerror', (e) => errs.push(e.message));
 await page.goto(process.env.URL ?? 'http://127.0.0.1:1420/');
 await page.waitForFunction(() => window.__nx);
 // the scenarios are measured whole, not just what is on screen
-await page.evaluate(() => (window.__nx.ed.cullScreens = Infinity));
+await page.evaluate(() => (window.__nx.ed.pageLayout.cullScreens = Infinity));
 await page.evaluate(() => document.fonts.ready);
 
 const all = [];
@@ -61,8 +61,8 @@ await page.keyboard.press('Enter');
 await page.waitForTimeout(400);
 await page.evaluate(() => {
   const ed = window.__nx.ed, S = (window.__typing = { layouts: 0, lat: [] });
-  const layout = ed.layout.bind(ed);
-  ed.layout = () => (S.layouts++, layout());
+  const layout = ed.pageLayout.layout.bind(ed.pageLayout);
+  ed.pageLayout.layout = () => (S.layouts++, layout());
   window.addEventListener('keydown', () => { const t = performance.now(); requestAnimationFrame(() => setTimeout(() => S.lat.push(performance.now() - t))); }, true);
 });
 for (const c of 'typing check') { await page.keyboard.type(c); await page.waitForTimeout(120); }
