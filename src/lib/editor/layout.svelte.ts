@@ -433,7 +433,7 @@ export class PageLayout {
         const others = infos.filter((i) => !mine.has(i.m.id)).map((i) => i.g.bounds);
         // (laid out for paper, always solved: a layout coming after beginPrint's, as the page's
         // narrowing makes, mustn't move notes the page breaks were measured with)
-        const quick = !this.ed.printing && (this.quickLabels || (solves() > solvedBefore && performance.now() > until));
+        const quick = !this.ed.paper.printing && (this.quickLabels || (solves() > solvedBefore && performance.now() > until));
         const res = layoutRow(notes, { below, left, right, obstacles: [...ink, ...others, ...placed], quick });
         res.forEach((r, k) => {
           const { g } = row[k];

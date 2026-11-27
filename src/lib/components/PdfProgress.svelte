@@ -8,7 +8,7 @@
   // for paper (Editor.pdfInBrowser).
   let { ed }: { ed: Editor } = $props();
 
-  const m = $derived(ed.pdfMaking!);
+  const m = $derived(ed.paper.pdfMaking!);
   const done = $derived(m.pictures.filter(Boolean).length);
   // (fewer sheets, bigger: all of them in view)
   const size = $derived(m.count <= 3 ? 112 : m.count <= 8 ? 80 : m.count <= 18 ? 60 : m.count <= 40 ? 42 : 30);

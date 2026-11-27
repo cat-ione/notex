@@ -93,9 +93,9 @@ for (const theme of ['midnight', 'paper', 'phosphor']) {
   test(`welcome note laid out for paper in ${theme}: notes clear of text and of each other`, async ({ page }) => {
     await open(page);
     await page.evaluate((theme) => (window as any).__nx.ed.updateConfig({ pdf: { theme, paper: 'A4' } }), theme);
-    await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+    await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
     expect(await collisions(page)).toEqual([]);
-    await page.evaluate(() => (window as any).__nx.ed.endPrint());
+    await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
   });
 }
 

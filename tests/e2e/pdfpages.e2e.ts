@@ -16,7 +16,7 @@ async function makePdf(page: Page): Promise<PdfPage[]> {
     const make = URL.createObjectURL;
     URL.createObjectURL = (b: Blob | MediaSource) => (((window as any).__blob = b), make(b));
   });
-  await page.evaluate(() => (window as any).__nx.ed.exportPdf());
+  await page.evaluate(() => (window as any).__nx.ed.paper.exportPdf());
   return readPdf(page);
 }
 
@@ -41,10 +41,10 @@ async function matchesScreen(page: Page, pages: PdfPage[]) {
 /** Where the note's last block ends in the paper layout (CSS px). */
 const extent = (page: Page) =>
   ed(page, (e) => {
-    e.beginPrint();
+    e.paper.beginPrint();
     const pg = e.page as HTMLElement, top = pg.getBoundingClientRect().top;
     const bottom = Math.max(...[...pg.querySelectorAll('.block')].map((b) => b.getBoundingClientRect().bottom - top));
-    e.endPrint();
+    e.paper.endPrint();
     return bottom;
   });
 
@@ -180,7 +180,7 @@ test('the copy for the PDF writes every property the paper layout uses to look a
     const e = (window as any).__nx.ed;
     const has = new Set<string>((window as any).__nx.paperStyles);
     const skip = notShown.map((s) => new RegExp(s));
-    e.beginPrint();
+    e.paper.beginPrint();
     // a property is used where an element's value isn't a fresh element's of its kind (with no stylesheet)
     const frame = document.createElement('iframe');
     document.body.appendChild(frame);
@@ -208,7 +208,7 @@ test('the copy for the PDF writes every property the paper layout uses to look a
       }
     }
     frame.remove();
-    e.endPrint();
+    e.paper.endPrint();
     return [...out].map(([p, eg]) => `${p} (${eg})`);
   }, NOT_SHOWN.map((r) => r.source));
   expect(missing).toEqual([]);

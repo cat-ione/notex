@@ -187,11 +187,11 @@ test('narrow windows show the glyphs only, and they still work', async ({ page }
 });
 
 test('the toolbar is not printed', async ({ page }) => {
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.toolbar')).toBeHidden();
   await page.emulateMedia({ media: 'screen' });
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
 });
 
 test('with the draw menu open, another button closes it and does its thing', async ({ page }) => {

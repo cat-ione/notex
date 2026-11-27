@@ -114,8 +114,8 @@ test('printing is at no zoom', async ({ page }) => {
   await type(page, 'printed');
   const f0 = await fontSize(page);
   await page.keyboard.press('Control+=');
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   await expect.poll(() => fontSize(page)).toBeCloseTo(f0, 0);
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
   await expect.poll(() => fontSize(page)).toBeCloseTo(f0 * 1.1, 0);
 });

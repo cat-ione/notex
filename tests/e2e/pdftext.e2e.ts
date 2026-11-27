@@ -13,7 +13,7 @@ async function pdfText(page: Page) {
     const make = URL.createObjectURL;
     URL.createObjectURL = (b: Blob | MediaSource) => (((window as any).__blob = b), make(b));
   });
-  await page.evaluate(() => (window as any).__nx.ed.exportPdf());
+  await page.evaluate(() => (window as any).__nx.ed.paper.exportPdf());
   return readPdfText(page);
 }
 

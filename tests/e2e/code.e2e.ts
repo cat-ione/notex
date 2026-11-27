@@ -119,11 +119,11 @@ test("the welcome note's code block is coloured", async ({ page }) => {
 
 test('the colours are printed too', async ({ page }) => {
   await codeBlock(page, 'py', ['def f(): pass']);
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   await page.emulateMedia({ media: 'print' });
   const kw = await page.locator('.ch[data-tk="kw"]').first().evaluate((e) => getComputedStyle(e).color);
   const plain = await page.locator('.block.code .ch:not([data-tk])').first().evaluate((e) => getComputedStyle(e).color);
   expect(kw).not.toBe(plain);
   await page.emulateMedia({ media: 'screen' });
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
 });

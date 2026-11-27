@@ -87,13 +87,13 @@ export function readPdf(page: Page): Promise<PdfPage[]> {
  */
 export async function paperPicture(page: Page) {
   const size = page.viewportSize()!;
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   const h = await page.evaluate(() => document.querySelector('.page')!.scrollHeight);
   await page.setViewportSize({ width: size.width, height: Math.ceil(h) + 300 });
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
   // (the window resized: its own layout done first)
   await page.waitForTimeout(500);
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   const veil = await page.addStyleTag({ content: '.veil { display: none !important; }' });
   const box = await page.evaluate(() => {
     const pg = document.querySelector('.page')!;
@@ -104,7 +104,7 @@ export async function paperPicture(page: Page) {
   await page.waitForTimeout(100);
   const png = await page.screenshot({ clip: box });
   await veil.evaluate((s) => (s as Element).remove());
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
   await page.evaluate(async (b64) => {
     const bmp = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
     const c = new OffscreenCanvas(bmp.width, bmp.height).getContext('2d')!;

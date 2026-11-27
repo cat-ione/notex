@@ -35,7 +35,7 @@ function blocksOnPaper(page: Page) {
 test('laid out for paper: the PDF theme and the paper width, then back as it was', async ({ page }) => {
   await open(page);
   const before = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, w: document.querySelector('.page')!.getBoundingClientRect().width }));
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   const during = await page.evaluate(() => ({
     theme: document.documentElement.dataset.theme,
     w: document.querySelector('.page')!.getBoundingClientRect().width,
@@ -43,7 +43,7 @@ test('laid out for paper: the PDF theme and the paper width, then back as it was
   }));
   expect(during).toEqual({ theme: 'paper', w: Math.floor((8.27 - 1.4) * 96), printing: true });
   await expect(page.locator('.veil')).toBeVisible();
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
   const after = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, w: document.querySelector('.page')!.getBoundingClientRect().width }));
   expect(after).toEqual(before);
   await expect(page.locator('.veil')).toHaveCount(0);
@@ -53,29 +53,29 @@ test('laid out for paper: the PDF theme and the paper width, then back as it was
 test('Letter paper and another theme, from the settings', async ({ page }) => {
   await open(page);
   await page.evaluate(() => (window as any).__nx.ed.updateConfig({ pdf: { theme: 'midnight', paper: 'Letter' } }));
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   const w = await page.evaluate(() => document.querySelector('.page')!.getBoundingClientRect().width);
   expect(w).toBe(Math.floor((8.5 - 1.4) * 96));
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('midnight');
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
 });
 
 test('no line or formula is cut by a page break', async ({ page }) => {
   await open(page);
   await longNote(page);
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   const { height, blocks } = await blocksOnPaper(page);
   const cut = blocks.filter((b) => !b.tall && Math.floor(b.top / height) !== Math.floor((b.bottom - 1) / height));
   expect(cut).toEqual([]);
   // and some did have to move to the next page
   expect(await page.locator('.nx-page-push').count()).toBeGreaterThan(0);
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
 });
 
 test('drawings stay on their words in the paper layout', async ({ page }) => {
   await open(page);
   await longNote(page);
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   const off = await ed(page, (e) => {
     const origin = e.page.getBoundingClientRect();
     const out: string[] = [];
@@ -89,15 +89,15 @@ test('drawings stay on their words in the paper layout', async ({ page }) => {
     return out;
   });
   expect(off).toEqual([]);
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
 });
 
 test('a PDF comes out, several A4 pages long', async ({ page }) => {
   await open(page);
   await longNote(page);
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true });
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
   const s = pdf.toString('latin1');
   expect(s.startsWith('%PDF-')).toBe(true);
   const pages = s.match(/\/Type\s*\/Page[^s]/g)?.length ?? 0;
@@ -156,14 +156,14 @@ test('the editing marks (caret, selection, markers) are not printed', async ({ p
   await fresh(page);
   await type(page, 'some **bold** text');
   await page.keyboard.press('Shift+Home');
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   await page.emulateMedia({ media: 'print' });
   for (const sel of ['.caret', '.selrect', '.ch.mk']) {
     const shown = await page.locator(sel).evaluateAll((els) => els.filter((e) => getComputedStyle(e).display !== 'none').length);
     expect(shown, sel).toBe(0);
   }
   await page.emulateMedia({ media: 'screen' });
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
 });
 
 /** A new note of plain lines, a few sheets of them (quick to draw, even with other tests making PDFs). */
@@ -185,7 +185,7 @@ async function startPdf(page: Page) {
     delete (window as any).showSaveFilePicker;
   });
   const download = page.waitForEvent('download', { timeout: 200_000 }).catch(() => null);
-  const made = page.evaluate(() => (window as any).__nx.ed.exportPdf());
+  const made = page.evaluate(() => (window as any).__nx.ed.paper.exportPdf());
   return { download, made };
 }
 

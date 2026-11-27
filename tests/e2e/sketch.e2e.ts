@@ -619,9 +619,9 @@ test('laid out for the PDF: what is drawn on the note stays with its line', asyn
   await page.keyboard.press('Escape');
   const gap = async () => (await page.locator('.note-ink path').first().boundingBox())!.y - (await page.locator('.block').nth(1).boundingBox())!.y;
   const before = await gap();
-  await page.evaluate(() => (window as any).__nx.ed.beginPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.beginPrint());
   await expect.poll(async () => Math.round(await gap())).toBe(Math.round(before));
-  await page.evaluate(() => (window as any).__nx.ed.endPrint());
+  await page.evaluate(() => (window as any).__nx.ed.paper.endPrint());
 });
 
 test('snapping on, shapes keep to the diagram’s grid; alt held, they go where they are put', async ({ page }) => {

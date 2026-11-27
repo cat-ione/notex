@@ -667,9 +667,9 @@
     <Settings {ed} />
   {/if}
 
-  {#if ed.pdfMaking}
+  {#if ed.paper.pdfMaking}
     <PdfProgress {ed} />
-  {:else if ed.printing}
+  {:else if ed.paper.printing}
     <div class="veil"><span>saving PDF…</span></div>
   {/if}
 
