@@ -14,8 +14,8 @@
 
   type Button = { id: string; glyph: string; label?: string; tip: string; keys?: string; run: (at: DOMRect) => unknown };
   const left: Button[] = [
-    { id: 'new', glyph: '+', label: 'new', tip: 'new note', keys: 'ctrl+n', run: () => ed.newNote() },
-    { id: 'save', glyph: '↓', label: 'save', tip: isDesktop() ? 'save' : 'save to a file', keys: 'ctrl+s', run: () => ed.saveNote() },
+    { id: 'new', glyph: '+', label: 'new', tip: 'new note', keys: 'ctrl+n', run: () => ed.files.newNote() },
+    { id: 'save', glyph: '↓', label: 'save', tip: isDesktop() ? 'save' : 'save to a file', keys: 'ctrl+s', run: () => ed.files.saveNote() },
   ];
   const insert: Button[] = [
     { id: 'math', glyph: '$', label: 'math', tip: 'a formula ($$ for a centred one)', keys: '$', run: () => ed.mode === 'text' && ed.insertMath(false) },
@@ -69,7 +69,7 @@
 {/snippet}
 
 <header class="toolbar" class:quiet={quiet && ed.config.ui.fadeToolbar}>
-  <button class="b note b-notes" onmousedown={(e) => press(e, { id: 'notes', glyph: '≡', tip: '', run: () => ed.openNote() })} onclick={(e) => e.preventDefault()} data-tip={`${isDesktop() ? 'open a note' : 'your notes'} · ${ed.savedWhere === 'not saved' ? 'this one is not saved yet' : `saved ${ed.savedWhere}`}`} data-tip-key="ctrl+o" aria-label="notes">
+  <button class="b note b-notes" onmousedown={(e) => press(e, { id: 'notes', glyph: '≡', tip: '', run: () => ed.files.openNote() })} onclick={(e) => e.preventDefault()} data-tip={`${isDesktop() ? 'open a note' : 'your notes'} · ${ed.files.savedWhere === 'not saved' ? 'this one is not saved yet' : `saved ${ed.files.savedWhere}`}`} data-tip-key="ctrl+o" aria-label="notes">
     <span class="g">≡</span><span class="name">{shownName({ name: ed.file.name, title: '' })}</span><span class="dot" class:off={!ed.dirty}>●</span>
   </button>
   {#each left as b (b.id)}{@render button(b)}{/each}

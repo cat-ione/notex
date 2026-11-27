@@ -191,7 +191,7 @@
       on('focus', () => isDesktop() && ed.loadConfig()),
     ];
     ed.loadConfig();
-    ed.initLibrary();
+    ed.files.initLibrary();
     // offline (see src/service-worker.ts): the built site in a browser, not the desktop app
     if (!import.meta.env.DEV && !isDesktop() && 'serviceWorker' in navigator) navigator.serviceWorker.register(`${base}/service-worker.js`).catch(() => {});
     // A change of width (window, settings) needs everything laid out afresh. Height changes
@@ -244,7 +244,7 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       ed.pruneDrawings();
-      ed.persist();
+      ed.files.persist();
     }, 600);
   });
 

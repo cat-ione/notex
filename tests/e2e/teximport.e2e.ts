@@ -60,5 +60,5 @@ test('a LaTeX file dropped on the page opens as a note: sections, theorems, numb
   await expect.poll(() => ed(page, (e) => e.message)).toContain('without its tikz pictures');
   // kept in the browser as a note of its own (not saved over the LaTeX)
   await saved(page);
-  expect(await ed(page, (e) => e.savedWhere)).toBe('in this browser');
+  expect(await ed(page, (e) => e.files.savedWhere)).toBe('in this browser');
 });

@@ -37,6 +37,7 @@ import { BIG_OPS, CMDS, GREEK_LEADER, MATH_PALETTE, OPENERS, SUB_GROUPS } from '
 import { parseLatex } from './math/parse';
 import { slotPath, toLatex, type MCursor, type MSelRange, type Step } from './math/latex';
 import { Sketcher, type Tool } from './sketch/sketcher.svelte';
+import { NoteFiles } from './editor/files.svelte';
 import { PageLayout } from './editor/layout.svelte';
 import { NoteTyping } from './editor/notes.svelte';
 import { Menus } from './editor/menus.svelte';
@@ -100,7 +101,7 @@ type Hint = { label: string; rect: Rect; act: () => void };
 type Snap = { doc: Doc; b: number; o: number };
 
 
-const STORAGE_KEY = 'notex.doc.v1';
+export const STORAGE_KEY = 'notex.doc.v1';
 
 /** The math palette with nothing typed: the commonest first, and what wraps a selection with one. */
 const MATH_COMMON = ['frac', 'sqrt', 'sum', 'int', 'lim', 'pmatrix', 'cases', 'infty'];
@@ -174,7 +175,7 @@ export class Editor {
   /** The note: its file (desktop), or its place among the notes kept in the browser (`id`). */
   file = $state<NoteFile>({ path: null, name: 'untitled' });
   /** Browser: the file on disk the note also saves to (picked with ctrl+s or opened). */
-  private handle = $state.raw<FileSystemFileHandle | null>(null);
+  handle = $state.raw<FileSystemFileHandle | null>(null);
   /** Browser: the list of notes is open (ctrl+o). */
   showNotes = $state(false);
   /** What was used last, keys or the mouse: hints show the way that fits (keys, or what to click). */
@@ -404,10 +405,10 @@ export class Editor {
   /** Per-snapshot JSON, for autosave. */
   private blockJSON = new WeakMap<Block, string>();
   /** Per-snapshot parts of the file, for autosave (see FileParts). */
-  private fileParts: FileParts = new WeakMap();
+  fileParts: FileParts = new WeakMap();
   /** Word / formula counts of a live block, until it is edited. */
   private blockCounts = new WeakMap<Block, { words: number; maths: number }>();
-  private persistedEdits = -1;
+  persistedEdits = -1;
 
   /**
    * Forget the snapshots of the blocks around the caret and the selection anchor:
@@ -527,7 +528,7 @@ export class Editor {
   }
 
   /** The document as JSON (the in-memory form), built from cached per-block JSON. */
-  private docJSON(d: Doc): string {
+  docJSON(d: Doc): string {
     const parts = d.blocks.map((b) => {
       let j = this.blockJSON.get(b);
       if (j === undefined) this.blockJSON.set(b, (j = JSON.stringify(b)));
@@ -599,213 +600,7 @@ export class Editor {
     this.msgTimer = setTimeout(() => (this.message = ''), 3500);
   }
 
-  /** Session backup (survives reloads/crashes) plus autosave to the note's file if it has one. */
-  async persist() {
-    // caret moves bump the version too: only write when something was edited
-    if (this.edits === this.persistedEdits && !(this.file.path && this.dirty)) return;
-    this.persistedEdits = this.edits;
-    try {
-      localStorage.setItem(STORAGE_KEY, this.docJSON(this.snapshot()));
-      localStorage.setItem('notex.file', JSON.stringify({ ...this.file, dirty: this.dirty }));
-    } catch {}
-    if (this.file.path && this.dirty) await this.writeTo(this.file.path, true);
-    // (only edits: opening a note doesn't make it the latest)
-    else if (!F.isDesktop() && this.dirty) await this.keepInBrowser();
-  }
-
-  /** Browser: save the note among the notes kept here, and to its file if it has one. */
-  private async keepInBrowser() {
-    const edits = this.edits;
-    const doc = this.snapshot();
-    const id = (this.file.id ??= uid());
-    try {
-      await L.saveNote({ id, name: this.file.name, doc, handle: this.handle }, this.fileParts);
-      if (this.handle && (await F.mayWrite(this.handle, false))) await F.writeFile(this.handle, doc, this.fileParts);
-      if (edits === this.edits) this.dirty = false;
-      localStorage.setItem('notex.file', JSON.stringify({ ...this.file, dirty: this.dirty }));
-      // (once there's a note to lose: asked once a visit, the browser answers by itself)
-      if (!this.askedToKeep) (this.askedToKeep = true), void L.keepForGood();
-    } catch (e) {
-      this.flash(`couldn't save: ${e}`);
-    }
-  }
-  private askedToKeep = false;
-
-  /** Browser: every note kept here saved to one zip file (of .ntx files), where the user says. */
-  async backupNotes() {
-    await this.persist();
-    const day = new Date().toISOString().slice(0, 10);
-    try {
-      const files = await L.backupFiles();
-      if (!files.length) return this.flash('no notes to back up yet');
-      const save = await F.browserSaveTarget(`notex notes ${day}`, 'zip', 'notes backup', 'application/zip');
-      if (!save) return;
-      const enc = new TextEncoder();
-      const name = await save(new Blob([zip(files.map((f) => ({ name: f.name, data: enc.encode(f.text) }))) as BlobPart], { type: 'application/zip' }));
-      try {
-        localStorage.setItem('notex.backup', String(Date.now()));
-      } catch {}
-      this.flash(`backed up ${files.length} note${files.length === 1 ? '' : 's'} to ${name}`);
-    } catch (e) {
-      this.flash(`couldn't back up: ${e}`);
-    }
-  }
-
-  /** Browser: notes from a backup (a zip), or note and markdown files, kept here as new notes. */
-  async restoreNotes() {
-    const picked = await F.pickBrowserFiles('.zip,application/zip,.ntx,.md,.markdown');
-    if (!picked.length) return;
-    await this.persist();
-    try {
-      const files: { name: string; text: string }[] = [];
-      const dec = new TextDecoder();
-      for (const f of picked) {
-        if (/\.zip$/i.test(f.name)) {
-          for (const e of await unzip(new Uint8Array(await f.arrayBuffer())))
-            if (/\.(ntx|md|markdown)$/i.test(e.name) && !/(^|\/)(__MACOSX|\.)/.test(e.name)) files.push({ name: e.name, text: dec.decode(e.data) });
-        } else files.push({ name: f.name, text: await f.text() });
-      }
-      if (!files.length) return this.flash('no notes in that file');
-      const r = await L.restoreFiles(files, F.readDoc);
-      const said = [`${r.added} note${r.added === 1 ? '' : 's'} restored`];
-      if (r.same) said.push(`${r.same} already here`);
-      if (r.bad.length) said.push(`couldn't read ${r.bad.join(', ')}`);
-      this.flash(said.join(', '));
-      this.notesChanged++;
-    } catch (e) {
-      this.flash(`couldn't restore: ${e}`);
-    }
-  }
-  /** Bumped when notes are added to those kept here by other means than typing (the list shows them). */
-  notesChanged = $state(0);
-
-  /**
-   * Browser: pick up where the last visit left off (the open note's file, to go on saving
-   * to it) and keep a note from before notes were kept here.
-   */
-  async initLibrary() {
-    if (F.isDesktop()) return;
-    try {
-      const row = this.file.id ? await L.loadNote(this.file.id) : null;
-      if (row) this.handle = row.handle;
-      else if (this.file.name !== 'welcome' || this.dirty) await this.keepInBrowser();
-    } catch {}
-  }
-
-  /** Browser: open one of the notes kept here. */
-  async openKept(id: string) {
-    if (id === this.file.id) return void (this.showNotes = false);
-    await this.persist();
-    const row = await L.loadNote(id);
-    if (!row) return this.flash('that note is gone');
-    this.load(row.doc, { path: null, name: row.name, id }, row.handle);
-    this.showNotes = false;
-  }
-
-  /** Browser: open a note file from disk (kept here from then on, and saved back to it). */
-  async openFromDisk() {
-    await this.persist();
-    try {
-      if (F.canUseFiles()) {
-        const h = await F.pickOpenFile();
-        if (!h) return;
-        const known = await L.noteForFile(h);
-        if (known) return this.openKept(known);
-        // (a markdown or LaTeX file is read in, not saved back to: a note isn't written over it)
-        this.load(await F.readFile(h), { path: null, name: F.baseName(h.name), id: uid() }, F.isForeign(h.name) ? null : h);
-      } else {
-        const r = await F.openNote();
-        if (!r) return;
-        this.load(r.doc, { path: null, name: r.name, id: uid() });
-      }
-      this.showNotes = false;
-      await this.keepInBrowser();
-    } catch (e) {
-      this.flash(`couldn't open: ${e}`);
-    }
-  }
-
-  /** Browser: rename a kept note (the open one too). */
-  async renameKept(id: string, name: string) {
-    name = name.trim() || 'untitled';
-    if (id === this.file.id) {
-      this.file.name = name;
-      await this.keepInBrowser();
-    } else await L.renameNote(id, name);
-  }
-
-  /** Browser: delete a kept note; deleting the open one opens the next (or a new one). */
-  async deleteKept(id: string) {
-    await L.deleteNote(id);
-    if (id !== this.file.id) return;
-    const next = (await L.listNotes())[0];
-    const row = next ? await L.loadNote(next.id) : null;
-    if (row) this.load(row.doc, { path: null, name: row.name, id: row.id }, row.handle);
-    else this.load({ blocks: [block()], arrows: [], marks: [] }, { path: null, name: 'untitled', id: uid() });
-    try {
-      localStorage.setItem('notex.file', JSON.stringify({ ...this.file, dirty: false }));
-      localStorage.setItem(STORAGE_KEY, this.docJSON(this.snapshot()));
-    } catch {}
-  }
-
-  /** Where the note is saved, for the status bar. */
-  get savedWhere(): string {
-    if (this.file.path) return this.file.path;
-    if (F.isDesktop()) return 'not saved';
-    return this.handle ? `in this browser and in ${this.handle.name}` : 'in this browser';
-  }
-
-  private async writeTo(path: string, quiet = false) {
-    const edits = this.edits;
-    try {
-      await F.writeNote(path, this.snapshot(), this.fileParts);
-      if (edits === this.edits) this.dirty = false;
-      if (!quiet) this.flash(`saved ${F.baseName(path)}`);
-      return true;
-    } catch (e) {
-      this.flash(String(e));
-      return false;
-    }
-  }
-
-  async saveNote() {
-    if (this.file.path) return this.writeTo(this.file.path);
-    if (!F.isDesktop() && this.handle && (await F.mayWrite(this.handle, true))) return this.saveToDisk(this.handle);
-    return this.saveNoteAs();
-  }
-
-  /** Browser: write the note to its file (and keep it here too). */
-  private async saveToDisk(h: FileSystemFileHandle) {
-    try {
-      await F.writeFile(h, this.snapshot());
-      this.handle = h;
-      await this.keepInBrowser();
-      this.flash(`saved ${h.name}`);
-      return true;
-    } catch (e) {
-      this.flash(`couldn't save: ${e}`);
-      return false;
-    }
-  }
-
-  async saveNoteAs() {
-    if (!F.isDesktop()) {
-      if (F.canUseFiles()) {
-        const h = await F.pickSaveFile(this.file.name);
-        if (!h) return false;
-        this.file.name = F.baseName(h.name);
-        return this.saveToDisk(h);
-      }
-      F.downloadNote(this.file.name, this.snapshot());
-      return true;
-    }
-    const path = await F.chooseSavePath(this.file.name);
-    if (!path) return false;
-    if (!(await this.writeTo(path))) return false;
-    this.file = { path, name: F.baseName(path) };
-    return true;
-  }
-
+  files = new NoteFiles(this);
   /** Laid out for paper (see beginPrint); the screen shows a veil meanwhile. */
   printing = $state(false);
   /**
@@ -1112,19 +907,6 @@ export class Editor {
     }
   }
 
-  /** Untitled notes with changes would be lost; ask before replacing them. */
-  private async okToReplace(): Promise<boolean> {
-    // (in the browser every note is kept: save this one and go)
-    if (!F.isDesktop()) return await this.persist(), true;
-    if (!this.dirty || this.file.path) return true;
-    const msg = `"${this.file.name}" has unsaved changes. Discard them?`;
-    if (F.isDesktop()) {
-      const { ask } = await import('@tauri-apps/plugin-dialog');
-      return ask(msg, { title: 'notex', kind: 'warning', okLabel: 'Discard', cancelLabel: 'Keep' });
-    }
-    return confirm(msg);
-  }
-
   load(doc: Doc, file: NoteFile, handle: FileSystemFileHandle | null = null) {
     // (a file read in, LaTeX: what it left out said once it's open)
     const { dropped, ...rest } = doc as Doc & { dropped?: string[] };
@@ -1147,23 +929,6 @@ export class Editor {
     this.styling = null;
     this.sketch.exit();
     this.setMode('text');
-  }
-
-  async openNote() {
-    // (in the browser: the notes kept here, and files from there)
-    if (!F.isDesktop()) return void (this.showNotes = true);
-    if (!(await this.okToReplace())) return;
-    try {
-      const r = await F.openNote();
-      if (r) this.load(r.doc, { path: r.path, name: r.name });
-    } catch (e) {
-      this.flash(`couldn't open: ${e}`);
-    }
-  }
-
-  async newNote() {
-    if (!(await this.okToReplace())) return;
-    this.load({ blocks: [block()], arrows: [], marks: [] }, { path: null, name: 'untitled', ...(F.isDesktop() ? {} : { id: uid() }) });
   }
 
   checkpoint(kind = 'edit') {
@@ -1557,9 +1322,9 @@ export class Editor {
     } catch (e) {
       return this.flash(`couldn't open ${f.name}: ${e}`);
     }
-    if (!(await this.okToReplace())) return;
+    if (!(await this.files.okToReplace())) return;
     this.load(doc, { path: null, name: F.baseName(f.name), ...(F.isDesktop() ? {} : { id: uid() }) });
-    if (!F.isDesktop()) await this.keepInBrowser();
+    if (!F.isDesktop()) await this.files.keepInBrowser();
   }
 
   /** \markdown: a copy of the note saved as a markdown file (drawings aren't in it: said so). */
@@ -2569,10 +2334,10 @@ export class Editor {
     // Let the browser fire copy/cut/paste events; those are handled separately.
     if (/^C-[cxv]$/.test(k)) return;
     const fileKeys: Record<string, () => unknown> = {
-      'C-s': () => this.saveNote(),
-      'C-S-s': () => this.saveNoteAs(),
-      'C-o': () => this.openNote(),
-      'C-n': () => this.newNote(),
+      'C-s': () => this.files.saveNote(),
+      'C-S-s': () => this.files.saveNoteAs(),
+      'C-o': () => this.files.openNote(),
+      'C-n': () => this.files.newNote(),
       // (no printing: ctrl+p saves the PDF, rather than the browser's print dialog)
       'C-p': () => void this.exportPdf(),
     };
@@ -3747,19 +3512,19 @@ export class Editor {
       } catch {
         return this.flash(`no note called “${name}” next to this one`);
       }
-      if (!(await this.okToReplace())) return;
+      if (!(await this.files.okToReplace())) return;
       this.load(doc, { path, name: F.baseName(path) });
       return;
     }
     const notes = await L.listNotes();
     const hit = notes.find((n) => n.name.toLowerCase() === want) ?? notes.find((n) => L.shownName(n).toLowerCase() === want || n.title.toLowerCase() === want);
-    if (hit) return this.openKept(hit.id);
-    await this.persist();
+    if (hit) return this.files.openKept(hit.id);
+    await this.files.persist();
     this.load({ blocks: [block(chars('# ' + name.trim())), block()], arrows: [], marks: [] }, { path: null, name: name.trim(), id: uid() });
     this.b = 1;
     this.o = 0;
     this.touch();
-    await this.keepInBrowser();
+    await this.files.keepInBrowser();
     this.flash(`a new note: ${name.trim()}`);
   }
 
@@ -4417,17 +4182,17 @@ export class Editor {
       { name: 'pdf', desc: 'save as a PDF file  ctrl+p', run: () => this.exportPdf() },
       { name: 'json', desc: 'copy document as JSON', run: () => this.copyText(JSON.stringify($state.snapshot(this.doc)), 'JSON') },
       { name: 'import', desc: 'replace document with JSON from clipboard', run: () => this.importJSON() },
-      { name: 'new', desc: 'new note  ctrl+n', run: () => this.newNote() },
-      { name: 'open', desc: 'open a note  ctrl+o', run: () => this.openNote() },
+      { name: 'new', desc: 'new note  ctrl+n', run: () => this.files.newNote() },
+      { name: 'open', desc: 'open a note  ctrl+o', run: () => this.files.openNote() },
       ...(F.isDesktop()
         ? []
         : [
-            { name: 'notes', desc: 'your notes  ctrl+o', run: () => this.openNote() },
-            { name: 'backup', desc: 'save every note kept in this browser to a zip file', run: () => void this.backupNotes() },
-            { name: 'restore', desc: 'bring back notes from a backup (or .ntx and .md files)', run: () => void this.restoreNotes() },
+            { name: 'notes', desc: 'your notes  ctrl+o', run: () => this.files.openNote() },
+            { name: 'backup', desc: 'save every note kept in this browser to a zip file', run: () => void this.files.backupNotes() },
+            { name: 'restore', desc: 'bring back notes from a backup (or .ntx and .md files)', run: () => void this.files.restoreNotes() },
           ]),
-      { name: 'save', desc: 'save  ctrl+s', run: () => this.saveNote() },
-      { name: 'saveas', desc: 'save as…  ctrl+shift+s', run: () => this.saveNoteAs() },
+      { name: 'save', desc: 'save  ctrl+s', run: () => this.files.saveNote() },
+      { name: 'saveas', desc: 'save as…  ctrl+shift+s', run: () => this.files.saveNoteAs() },
       { name: 'welcome', desc: 'open the welcome note', run: () => this.openWelcome() },
       { name: 'forget', desc: 'forget which commands you use most', run: () => (U.forget(), this.flash('the palette is back to its first order')) },
       { name: 'help', desc: 'keyboard shortcuts  F1', run: () => (this.showHelp = !this.showHelp) },
@@ -4526,7 +4291,7 @@ export class Editor {
 
   tables = new Tables(this);
   async openWelcome() {
-    if (!(await this.okToReplace())) return;
+    if (!(await this.files.okToReplace())) return;
     this.load(welcomeDoc(), { path: null, name: 'welcome', ...(F.isDesktop() ? {} : { id: uid() }) });
     this.showNotes = false;
     this.showHelp = false;

@@ -73,14 +73,14 @@
     // (found by what it says: there, found)
     if (r.kind === 'note') {
       const found = !byName(r.note) && hits.has(r.note.id) ? query.trim() : '';
-      await ed.openKept(r.note.id);
+      await ed.files.openKept(r.note.id);
       if (found) ed.finder.findText(found);
     }
-    else if (r.kind === 'new') (close(), await ed.newNote());
+    else if (r.kind === 'new') (close(), await ed.files.newNote());
     else if (r.kind === 'welcome') await ed.openWelcome();
-    else if (r.kind === 'backup') await ed.backupNotes();
-    else if (r.kind === 'restore') await ed.restoreNotes();
-    else await ed.openFromDisk();
+    else if (r.kind === 'backup') await ed.files.backupNotes();
+    else if (r.kind === 'restore') await ed.files.restoreNotes();
+    else await ed.files.openFromDisk();
   }
 
   async function startRename(n: NoteMeta) {
@@ -92,7 +92,7 @@
   }
 
   async function finishRename() {
-    if (renaming) await ed.renameKept(renaming, newName);
+    if (renaming) await ed.files.renameKept(renaming, newName);
     renaming = null;
     await refresh();
     input?.focus();
@@ -101,7 +101,7 @@
   async function remove(n: NoteMeta, by: 'keys' | 'mouse') {
     if (deleting?.id !== n.id) return void (deleting = { id: n.id, by });
     deleting = null;
-    await ed.deleteKept(n.id);
+    await ed.files.deleteKept(n.id);
     await refresh();
     input?.focus();
   }
@@ -130,7 +130,7 @@
         break;
       }
       default:
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') (close(), ed.newNote());
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') (close(), ed.files.newNote());
         else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') close();
         else return;
     }
@@ -154,7 +154,7 @@
   });
   // notes restored: listed
   $effect(() => {
-    if (ed.notesChanged) void refresh();
+    if (ed.files.notesChanged) void refresh();
   });
   // filtering starts from the top
   $effect(() => {

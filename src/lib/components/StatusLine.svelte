@@ -66,7 +66,7 @@
   <span class="spacer"></span>
   <!-- (the toolbar shows the note's name) -->
   {#if !ed.config.ui.toolbar}
-    <span class="file" data-tip={ed.savedWhere} data-tip-key="ctrl+s">
+    <span class="file" data-tip={ed.files.savedWhere} data-tip-key="ctrl+s">
       {ed.file.name}{#if ed.dirty}<span class="dot" class:warn={!ed.file.path} in:fly={{ y: -4, duration: 150 }}>●</span>{/if}
     </span>
   {/if}

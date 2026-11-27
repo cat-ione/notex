@@ -213,7 +213,7 @@ async function suite(doc, load) {
     rows.push({ doc, name: 'scroll 300px', median: lat[15], p95: lat[28], max: lat[29], perAction: s.layouts / 30, layoutMs: s.layoutMs / 30 });
   }
   // autosave
-  const persistMs = await page.evaluate(() => { const t = performance.now(); window.__nx.ed.persist(); return performance.now() - t; });
+  const persistMs = await page.evaluate(() => { const t = performance.now(); window.__nx.ed.files.persist(); return performance.now() - t; });
   rows.push({ doc, name: 'autosave (sync part)', median: persistMs, p95: persistMs, max: persistMs, perAction: 0 });
 }
 
