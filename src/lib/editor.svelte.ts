@@ -4234,13 +4234,18 @@ export class Editor {
   /** References show what they point at now (a renumbering, or a target gone: ?). */
   private relabelRefs() {
     const labels = this.labels;
-    for (const blk of this.doc.blocks)
-      for (const it of blk.items)
-        if (isRefItem(it)) {
-          const s = it.root[0] as MSym;
+    for (const blk of this.doc.blocks) {
+      // a block's cached snapshot is what it holds now (any change forgets it), and walking
+      // it is far quicker than reading every character through the live block's proxies
+      const snap = this.blockSnaps.get(blk);
+      const items = snap && snap.items.length === blk.items.length ? snap.items : blk.items;
+      for (let o = 0; o < items.length; o++)
+        if (isRefItem(items[o])) {
+          const s = (blk.items[o] as MathItem).root[0] as MSym;
           const want = labels.get(s.ref!) ?? (/^\(/.test(s.v) ? '(?)' : '??');
           if (s.v !== want) (s.v = want), this.forget(blk);
         }
+    }
   }
 
   /** Number the display formula at the caret (or take its number off). */
