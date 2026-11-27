@@ -166,6 +166,18 @@ test('the editing marks (caret, selection, markers) are not printed', async ({ p
   await page.evaluate(() => (window as any).__nx.ed.endPrint());
 });
 
+/** A new note of plain lines, a few sheets of them (quick to draw, even with other tests making PDFs). */
+async function plainNote(page: Page, lines = 80) {
+  await fresh(page);
+  await page.evaluate((lines) => {
+    const e = (window as any).__nx.ed;
+    let n = 0;
+    e.doc.blocks = Array.from({ length: lines }, (_, i) => ({ id: 'q' + i, kind: 'p', items: [...`Line ${i + 1} of a plain note.`].map((ch) => ({ t: 'c', ch, id: 'qc' + n++ })) }));
+    e.touch();
+  }, lines);
+  await page.waitForTimeout(300);
+}
+
 /** Make the PDF the browser's way (a download), not waiting for it; the download, if any comes. */
 async function startPdf(page: Page) {
   await page.evaluate(() => {
@@ -181,7 +193,14 @@ test('while the PDF is made, its sheets show as they are made: each one’s pict
   // (slow when other tests make PDFs at the same time)
   test.setTimeout(240_000);
   await open(page);
-  await longNote(page);
+  await plainNote(page);
+  // (the most sheets shown done, kept by the page: it's only a moment before it goes)
+  await page.evaluate(() => {
+    (window as any).__done = 0;
+    new MutationObserver(() => {
+      (window as any).__done = Math.max((window as any).__done, document.querySelectorAll('.making .sheet.done img').length);
+    }).observe(document.body, { childList: true, subtree: true });
+  });
   const { download, made } = await startPdf(page);
   await expect(page.locator('.making')).toBeVisible();
   // in the screen's theme (midnight: dark), not the PDF's (paper: light)
@@ -193,8 +212,8 @@ test('while the PDF is made, its sheets show as they are made: each one’s pict
   const count = await page.locator('.making .sheet').count();
   await expect(page.locator('.making .sheet.done img').first()).toBeVisible({ timeout: 120_000 });
   await expect(page.locator('.making .count')).toContainText(`/ ${count} sheets`);
-  await expect.poll(() => page.locator('.making .sheet.done img').count(), { timeout: 200_000 }).toBe(count);
   await made;
+  expect(await page.evaluate(() => (window as any).__done)).toBe(count);
   expect(await download).not.toBeNull();
   await expect(page.locator('.making')).toHaveCount(0);
 });
@@ -202,10 +221,12 @@ test('while the PDF is made, its sheets show as they are made: each one’s pict
 test('esc stops making the PDF: no file, and the note as it was', async ({ page }) => {
   test.setTimeout(120_000);
   await open(page);
-  await longNote(page);
+  // (more sheets than are drawn at once: esc lands before the last)
+  await plainNote(page, 250);
   const before = await text(page);
   const { download, made } = await startPdf(page);
-  await expect(page.locator('.making .sheet').first()).toBeVisible();
+  // (drawing sheets keeps the page busy: give it time to answer)
+  await expect(page.locator('.making .sheet').first()).toBeVisible({ timeout: 60_000 });
   // (keys while it's made don't reach the note)
   await page.keyboard.type('xyz');
   await page.keyboard.press('Escape');
