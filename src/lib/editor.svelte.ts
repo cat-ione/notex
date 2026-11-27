@@ -22,7 +22,7 @@ import { docToLatex } from './export';
 import { inlineItems, parsePaste, type PastedBlock } from './paste';
 import { docToMarkdown } from './mdfile';
 import { BOLD, CODE, HIGHLIGHT, ITALIC, LINK, MARK, OBJ, STRIKE, closesFence, fenceOf, headingOf, parseInline, ruleBlock, type Link } from './markdown';
-import { withMarkdown } from './format';
+import { withMarkdown, type FileParts } from './format';
 import { welcomeDoc } from './welcome';
 import { imageSrc, pickImageFiles } from './images';
 import * as F from './files';
@@ -396,6 +396,8 @@ export class Editor {
   private idSets = new WeakMap<Block, Set<Id>>();
   /** Per-snapshot JSON, for autosave. */
   private blockJSON = new WeakMap<Block, string>();
+  /** Per-snapshot parts of the file, for autosave (see FileParts). */
+  private fileParts: FileParts = new WeakMap();
   /** Word / formula counts of a live block, until it is edited. */
   private blockCounts = new WeakMap<Block, { words: number; maths: number }>();
   private persistedEdits = -1;
@@ -610,8 +612,8 @@ export class Editor {
     const doc = this.snapshot();
     const id = (this.file.id ??= uid());
     try {
-      await L.saveNote({ id, name: this.file.name, doc, handle: this.handle });
-      if (this.handle && (await F.mayWrite(this.handle, false))) await F.writeFile(this.handle, doc);
+      await L.saveNote({ id, name: this.file.name, doc, handle: this.handle }, this.fileParts);
+      if (this.handle && (await F.mayWrite(this.handle, false))) await F.writeFile(this.handle, doc, this.fileParts);
       if (edits === this.edits) this.dirty = false;
       localStorage.setItem('notex.file', JSON.stringify({ ...this.file, dirty: this.dirty }));
     } catch (e) {
@@ -698,7 +700,7 @@ export class Editor {
   private async writeTo(path: string, quiet = false) {
     const edits = this.edits;
     try {
-      await F.writeNote(path, this.snapshot());
+      await F.writeNote(path, this.snapshot(), this.fileParts);
       if (edits === this.edits) this.dirty = false;
       if (!quiet) this.flash(`saved ${F.baseName(path)}`);
       return true;

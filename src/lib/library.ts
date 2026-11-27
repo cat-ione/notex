@@ -3,7 +3,7 @@
 // handle is kept with it so it goes on saving there.
 
 import type { Doc } from './model';
-import { deserialize, serialize } from './format';
+import { deserialize, serialize, type FileParts } from './format';
 
 export type NoteMeta = {
   id: string;
@@ -75,8 +75,9 @@ export async function loadNote(id: string): Promise<(NoteMeta & { doc: Doc; hand
 }
 
 /** Save a note (all of it: its file's handle too, or none). */
-export async function saveNote(n: { id: string; name: string; doc: Doc; handle: FileSystemFileHandle | null }) {
-  const row: Row = { id: n.id, name: n.name, title: titleOf(n.doc), updated: Date.now(), doc: serialize(n.doc) };
+/** (`parts`: see FileParts; for a snapshot of the editor's) */
+export async function saveNote(n: { id: string; name: string; doc: Doc; handle: FileSystemFileHandle | null }, parts?: FileParts) {
+  const row: Row = { id: n.id, name: n.name, title: titleOf(n.doc), updated: Date.now(), doc: serialize(n.doc, parts) };
   if (n.handle) (row.handle = n.handle), (row.file = n.handle.name);
   await done((await store('readwrite')).put(row));
 }

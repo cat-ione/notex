@@ -2,7 +2,7 @@
 // commands; in a plain browser we fall back to download / file-picker.
 
 import type { Doc } from './model';
-import { deserialize, serialize } from './format';
+import { deserialize, serialize, type FileParts } from './format';
 import { markdownToDoc } from './mdfile';
 
 export const EXT = 'ntx';
@@ -87,9 +87,10 @@ export async function chooseSavePath(suggested: string): Promise<string | null> 
   return path.toLowerCase().endsWith(`.${EXT}`) ? path : `${path}.${EXT}`;
 }
 
-export async function writeNote(path: string, doc: Doc) {
+/** (`parts`: see FileParts; for a snapshot of the editor's) */
+export async function writeNote(path: string, doc: Doc, parts?: FileParts) {
   const { invoke } = await core();
-  await invoke('write_note', { path, contents: serialize(doc) });
+  await invoke('write_note', { path, contents: serialize(doc, parts) });
 }
 
 /** The Windows app writes PDFs itself; elsewhere a PDF comes from the print dialog. */
@@ -154,9 +155,9 @@ export async function pickOpenFile(): Promise<FileSystemFileHandle | null> {
   }
 }
 
-export async function writeFile(h: FileSystemFileHandle, doc: Doc) {
+export async function writeFile(h: FileSystemFileHandle, doc: Doc, parts?: FileParts) {
   const w = await h.createWritable();
-  await w.write(serialize(doc));
+  await w.write(serialize(doc, parts));
   await w.close();
 }
 

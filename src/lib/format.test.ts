@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decode, deserialize, encode, serialize } from './format';
+import { decode, deserialize, encode, serialize, type FileParts } from './format';
 import { block, chars, cmd, math, sym, type Doc } from './model';
 import { boxShape, inkShape } from './sketch/shapes';
 
@@ -28,6 +28,22 @@ describe('note format', () => {
     expect(f.blocks[0].content[2]).toBe(' here');
     // (a heading is its text: the kind is read from it)
     expect(f.blocks[1]).toEqual({ kind: 'p', content: ['## second'] });
+  });
+
+  it('writes the same file when blocks it has written before are reused, and writes anew a block that changed', () => {
+    const doc = sample();
+    const parts: FileParts = new WeakMap();
+    const first = serialize(doc, parts);
+    expect(first).toBe(serialize(doc));
+    // the same blocks again (as autosave's snapshots share unchanged blocks): their parts reused
+    const again = encode(doc, parts);
+    expect(again.blocks[0]).toBe(encode(doc, parts).blocks[0]);
+    // a changed block is a new block (snapshots are never changed in place): written anew,
+    // and the arrows to the characters after it still find them
+    const b0 = doc.blocks[0];
+    const changed: Doc = { ...doc, blocks: [{ ...b0, items: [...chars('>> '), ...b0.items] }, ...doc.blocks.slice(1)] };
+    expect(serialize(changed, parts)).toBe(serialize(changed));
+    expect(encode(changed, parts).arrows[0].to).toEqual(['c0.9', 'c0.10', 'c0.11', 'c0.12']);
   });
 
   it('round-trips text and math', () => {

@@ -31,42 +31,25 @@ type FileInk = Placed;
 /** Version 2: the markdown is in the text (** ` # ```); version 1 had styles and kinds for it. */
 export type NoteFile = { format: 'notex'; version: 1 | 2; blocks: FileBlock[]; arrows: FileArrow[]; marks?: FileMark[]; ink?: FileInk[] };
 
-export function encode(doc: Doc): NoteFile {
+/**
+ * Each block's part of the file, by block, for blocks that never change once made (the
+ * editor's snapshots): saving again then encodes only the blocks that changed. Never for
+ * live blocks, which change in place.
+ */
+export type FileParts = WeakMap<Block, FileBlock>;
+
+export function encode(doc: Doc, parts?: FileParts): NoteFile {
+  // only the characters drawings are anchored to need their place written down
+  const anchored = new Set<Id>();
+  for (const a of doc.arrows) for (const id of [...a.from, ...a.to]) anchored.add(id);
+  for (const m of doc.marks) for (const id of m.at) anchored.add(id);
   const where = new Map<Id, string>();
   const blocks = doc.blocks.map((b, bi): FileBlock => {
     where.set(b.id, `b${bi}`);
-    const content: Content[] = [];
-    let run = '';
-    const flush = () => {
-      if (run) content.push(run);
-      run = '';
-    };
-    b.items.forEach((it, o) => {
-      if (it.t === 'c') {
-        where.set(it.id, `c${bi}.${o}`);
-        run += it.ch;
-      } else {
-        flush();
-        content.push({ m: it.root, id: it.id, ...(it.display ? { d: 1 as const } : {}), ...(it.num ? { n: 1 as const } : {}) });
-      }
-    });
-    flush();
-    return {
-      // (headings and code are in the text)
-      kind: b.kind === 'li' || b.kind === 'ol' || b.kind === 'img' || b.kind === 'tr' || b.kind === 'diagram' ? b.kind : 'p',
-      content,
-      ...(b.kind === 'tr' && b.head ? { head: 1 as const, aligns: b.aligns ?? [] } : {}),
-      ...(b.kind === 'tr' && b.items.some((it) => it.t === 'c' && it.ch === '|' && !it.cell)
-        ? { lit: b.items.flatMap((it, o) => (it.t === 'c' && it.ch === '|' && !it.cell ? [o] : [])) }
-        : {}),
-      ...(b.indent ? { indent: b.indent } : {}),
-      ...(b.src ? { src: b.src } : {}),
-      ...(b.w ? { w: b.w } : {}),
-      ...(b.kind === 'diagram' ? { h: b.h ?? 0, shapes: b.shapes ?? [] } : {}),
-      ...(b.check !== undefined && b.kind === 'li' ? { check: b.check } : {}),
-      ...(b.box ? { box: { k: b.box.k, id: b.box.id } } : {}),
-      ...(b.fold ? { fold: 1 as const } : {}),
-    };
+    if (anchored.size) b.items.forEach((it, o) => it.t === 'c' && anchored.has(it.id) && where.set(it.id, `c${bi}.${o}`));
+    let fb = parts?.get(b);
+    if (!fb) (fb = encodeBlock(b)), parts?.set(b, fb);
+    return fb;
   });
   const mapIds = (ids: Id[]) => ids.map((id) => where.get(id) ?? id);
   const arrows = doc.arrows.map(({ id: _id, ...a }) => ({ ...a, from: mapIds(a.from), to: mapIds(a.to) }));
@@ -77,6 +60,40 @@ export function encode(doc: Doc): NoteFile {
   const ink = (doc.ink ?? []).filter((s) => where.has(s.at)).map((s) => ({ ...s, at: where.get(s.at)! }) as FileInk);
   if (ink.length) file.ink = ink;
   return file;
+}
+
+/** A block as it's written in the file (where it is in the note doesn't come into it). */
+function encodeBlock(b: Block): FileBlock {
+  const content: Content[] = [];
+  let run = '';
+  const flush = () => {
+    if (run) content.push(run);
+    run = '';
+  };
+  for (const it of b.items) {
+    if (it.t === 'c') run += it.ch;
+    else {
+      flush();
+      content.push({ m: it.root, id: it.id, ...(it.display ? { d: 1 as const } : {}), ...(it.num ? { n: 1 as const } : {}) });
+    }
+  }
+  flush();
+  return {
+    // (headings and code are in the text)
+    kind: b.kind === 'li' || b.kind === 'ol' || b.kind === 'img' || b.kind === 'tr' || b.kind === 'diagram' ? b.kind : 'p',
+    content,
+    ...(b.kind === 'tr' && b.head ? { head: 1 as const, aligns: b.aligns ?? [] } : {}),
+    ...(b.kind === 'tr' && b.items.some((it) => it.t === 'c' && it.ch === '|' && !it.cell)
+      ? { lit: b.items.flatMap((it, o) => (it.t === 'c' && it.ch === '|' && !it.cell ? [o] : [])) }
+      : {}),
+    ...(b.indent ? { indent: b.indent } : {}),
+    ...(b.src ? { src: b.src } : {}),
+    ...(b.w ? { w: b.w } : {}),
+    ...(b.kind === 'diagram' ? { h: b.h ?? 0, shapes: b.shapes ?? [] } : {}),
+    ...(b.check !== undefined && b.kind === 'li' ? { check: b.check } : {}),
+    ...(b.box ? { box: { k: b.box.k, id: b.box.id } } : {}),
+    ...(b.fold ? { fold: 1 as const } : {}),
+  };
 }
 
 export function decode(file: NoteFile): Doc {
@@ -187,8 +204,8 @@ function withMarkers(items: Item[]): Item[] {
   return out;
 }
 
-export function serialize(doc: Doc): string {
-  return JSON.stringify(encode(doc));
+export function serialize(doc: Doc, parts?: FileParts): string {
+  return JSON.stringify(encode(doc, parts));
 }
 
 export function deserialize(text: string): Doc {
